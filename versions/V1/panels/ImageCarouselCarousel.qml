@@ -19,7 +19,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-image-carousel-cr"
-    WlrLayershell.keyboardFocus: panel.ready ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: panel.visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     readonly property bool active: root.pickerStyle === "carousel"
     readonly property bool isThemeMode: root.imagePickerMode === "theme"
@@ -27,6 +27,7 @@ PanelWindow {
 
     property bool imagesLoaded:  false
     property bool layoutSettled: false
+    property bool scanDone:      false   // a scan finished (distinguishes "loading" from "nothing found")
     property var  imageArray:    []
     property int  selectedIndex: 0
     property string filterText:  ""
@@ -45,7 +46,7 @@ PanelWindow {
                 currentProc.running = false; currentProc.running = true
             }
         } else {
-            panel.imagesLoaded  = false
+            panel.imagesLoaded  = false; panel.scanDone = false
             panel.layoutSettled = false
         }
     }
@@ -164,18 +165,18 @@ PanelWindow {
     property string _lastScan: ""
     function applyScan(text, fromCache) {
         var t = String(text || "")
-        if (!t.trim()) return
+        if (fromCache && !t.trim()) return   // cache empty → wait for live scan; live empty → fall through to empty-state
         if (fromCache && panel.imagesLoaded) return          // live scan already won
         if (!fromCache && t.trim() === panel._lastScan.trim() && panel.imagesLoaded) return  // unchanged → no flicker
         panel._lastScan = t
         var images = Model.loadRows(t)
         panel.imageArray    = images
         panel.selectedIndex = Model.indexForSelectedImage(images, panel.currentImage)
-        panel.imagesLoaded  = images.length > 0
+        panel.imagesLoaded  = images.length > 0; panel.scanDone = true
         Qt.callLater(function() {
             if (root.imagePickerVisible && panel.active) {
                 panel.layoutSettled = true
-                carousel.forceActiveFocus()
+                if (panel.imageArray.length > 0) carousel.forceActiveFocus()   // keep Esc-catcher focused when empty
                 if (!fromCache) warmTimer.restart()
             }
         })
@@ -219,7 +220,7 @@ PanelWindow {
     // NO scrim — the carousel floats over the live desktop (no extra background).
     MouseArea {
         anchors.fill: parent
-        enabled: panel.ready
+        enabled: panel.visible
         onClicked: root.imagePickerVisible = false
         onWheel: function(wheel) {
             if (!panel.ready) return
@@ -227,11 +228,21 @@ PanelWindow {
         }
     }
 
-    // ── Loading indicator ──
+    // ── empty/loading — also catches Esc to close when the carousel isn't focused ──
+    Item {
+        anchors.fill: parent
+        focus: panel.visible && !(panel.ready && panel.imageArray.length > 0)
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) { root.imagePickerVisible = false; event.accepted = true }
+        }
+    }
     Text {
         visible: root.imagePickerVisible && panel.active && !panel.ready
         anchors.centerIn: parent
-        text: "Loading…"
+        horizontalAlignment: Text.AlignHCenter
+        text: panel.scanDone
+              ? (panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
+              : "Loading…"
         color: root.ink
         style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.6)
         font.family: root.mono; font.pixelSize: 18
@@ -245,7 +256,7 @@ PanelWindow {
         anchors.verticalCenterOffset: -40
         width: panel.expandedW + 13 * (panel.sliceW + panel.sliceGap)
         height: panel.expandedH
-        focus: true
+        focus: panel.ready && panel.imageArray.length > 0
 
         readonly property real itemStep: panel.sliceW + panel.sliceGap
         readonly property real previewX: (width - panel.expandedW) / 2

@@ -18,7 +18,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-image-carousel-hs"
-    WlrLayershell.keyboardFocus: panel.ready ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: panel.visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     readonly property bool active: root.pickerStyle === "hearthstone"
     readonly property bool isThemeMode: root.imagePickerMode === "theme"
@@ -26,6 +26,7 @@ PanelWindow {
 
     property bool imagesLoaded:  false
     property bool layoutSettled: false
+    property bool scanDone:      false   // a scan finished (distinguishes "loading" from "nothing found")
     property var  imageArray:    []
     property int  selFilt:       0
     property string filterText:  ""
@@ -76,7 +77,7 @@ PanelWindow {
                 currentProc.running = false; currentProc.running = true
             }
         } else {
-            panel.imagesLoaded  = false
+            panel.imagesLoaded  = false; panel.scanDone = false
             panel.layoutSettled = false
             panel.reveal        = 0
             panel.dealT         = 0
@@ -130,18 +131,18 @@ PanelWindow {
     }
     function applyScan(text, fromCache) {
         var t = String(text || "")
-        if (!t.trim()) return
+        if (fromCache && !t.trim()) return   // cache empty → wait for live scan; live empty → fall through to empty-state
         if (fromCache && imagesLoaded) return
         if (!fromCache && t.trim() === _lastScan.trim() && imagesLoaded) return
         _lastScan = t
         var images = Model.loadRows(t)
         panel.imageArray   = images
         panel.selFilt      = Model.indexForSelectedImage(images, panel.currentImage)
-        panel.imagesLoaded = images.length > 0
+        panel.imagesLoaded = images.length > 0; panel.scanDone = true
         Qt.callLater(function() {
             if (root.imagePickerVisible && panel.active) {
                 panel.layoutSettled = true
-                hand.forceActiveFocus()
+                if (panel.imageArray.length > 0) hand.forceActiveFocus()   // keep Esc-catcher focused when empty
                 panel.fetchMeta()
                 if (!fromCache) { panel.warmMeta(); warmTimer.restart() }
             }
@@ -318,7 +319,7 @@ PanelWindow {
     }
     MouseArea {
         anchors.fill: parent
-        enabled: panel.ready
+        enabled: panel.visible
         onClicked: root.imagePickerVisible = false
         onWheel: function(wheel) {
             if (!panel.ready) return
@@ -327,10 +328,20 @@ PanelWindow {
     }
 
     // ── loading ──
+    Item {
+        anchors.fill: parent
+        focus: panel.visible && !(panel.ready && panel.filtered.length > 0)
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) { root.imagePickerVisible = false; event.accepted = true }
+        }
+    }
     Text {
         visible: root.imagePickerVisible && panel.active && !panel.ready
         anchors.centerIn: parent
-        text: "Loading…"
+        horizontalAlignment: Text.AlignHCenter
+        text: panel.scanDone
+              ? (panel.isThemeMode ? "No themes found" : "No wallpapers found") + "\n\nEsc or click to close"
+              : "Loading…"
         color: panel.textLight
         font.family: root.mono; font.pixelSize: 16; font.letterSpacing: 1
     }
@@ -350,7 +361,7 @@ PanelWindow {
     Item {
         id: hand
         visible: panel.ready && panel.filtered.length > 0
-        focus: true
+        focus: panel.ready && panel.filtered.length > 0
         anchors.centerIn: parent
         anchors.verticalCenterOffset: -16
         width: parent.width

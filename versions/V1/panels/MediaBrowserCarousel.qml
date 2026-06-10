@@ -19,7 +19,7 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "omarchy-media-carousel"
-    WlrLayershell.keyboardFocus: panel.ready ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: panel.visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     readonly property bool active: root.pickerStyle === "carousel"
     readonly property bool isVideos: root.mediaBrowserMode === "videos"
@@ -57,12 +57,14 @@ PanelWindow {
     function buildScanCmd() {
         if (isVideos) {
             return ["bash", "-c",
-                "find ~/Videos -maxdepth 1 -type f " +
+                "D=\"${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$(xdg-user-dir VIDEOS 2>/dev/null)}}\"; case \"$D\" in \"\"|\"$HOME\") D=\"$HOME/Videos\";; esac; " +
+                "find \"$D\" -maxdepth 1 -type f " +
                 "\\( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.avi' -o -iname '*.m4v' \\) " +
                 "-printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -100 | cut -f2-"]
         } else {
             return ["bash", "-c",
-                "find ~/Pictures -maxdepth 1 -type f -iname 'screenshot-*.png' " +
+                "D=\"${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-$(xdg-user-dir PICTURES 2>/dev/null)}}\"; case \"$D\" in \"\"|\"$HOME\") D=\"$HOME/Pictures\";; esac; " +
+                "find \"$D\" -maxdepth 1 -type f -iname 'screenshot-*.png' " +
                 "-printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -100 | cut -f2- | " +
                 "while IFS= read -r f; do printf '%s\\t%s\\n' \"$f\" \"$f\"; done"]
         }
@@ -95,7 +97,7 @@ PanelWindow {
         Qt.callLater(function() {
             if (root.mediaBrowserVisible && panel.active) {
                 panel.layoutSettled = true
-                carousel.forceActiveFocus()
+                if (panel.imageArray.length > 0) carousel.forceActiveFocus()   // keep Esc-catcher focused when empty
                 if (!fromCache) warmTimer.restart()
             }
         })
@@ -213,7 +215,7 @@ PanelWindow {
     // NO scrim — floats over the desktop.
     MouseArea {
         anchors.fill: parent
-        enabled: panel.ready
+        enabled: panel.visible
         onClicked: root.mediaBrowserVisible = false
         onWheel: function(wheel) {
             if (!panel.ready) return
@@ -221,12 +223,21 @@ PanelWindow {
         }
     }
 
+    // ── empty/loading — also catches Esc to close when the carousel isn't focused ──
+    Item {
+        anchors.fill: parent
+        focus: panel.visible && !(panel.ready && panel.imageArray.length > 0)
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) { root.mediaBrowserVisible = false; event.accepted = true }
+        }
+    }
     // ── Loading / empty ──
     Text {
         visible: root.mediaBrowserVisible && panel.active && !panel.ready
         anchors.centerIn: parent
+        horizontalAlignment: Text.AlignHCenter
         text: panel.layoutSettled && !panel.loaded
-              ? (panel.isVideos ? "No recordings in ~/Videos" : "No screenshots in ~/Pictures")
+              ? (panel.isVideos ? "No recordings in ~/Videos" : "No screenshots in ~/Pictures") + "\n\nEsc or click to close"
               : "Loading…"
         color: root.ink
         style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.6)
@@ -241,7 +252,7 @@ PanelWindow {
         anchors.verticalCenterOffset: -40
         width: panel.expandedW + 13 * (panel.sliceW + panel.sliceGap)
         height: panel.expandedH
-        focus: true
+        focus: panel.ready && panel.imageArray.length > 0
 
         readonly property real itemStep: panel.sliceW + panel.sliceGap
         readonly property real previewX: (width - panel.expandedW) / 2
