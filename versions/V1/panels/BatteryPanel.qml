@@ -20,12 +20,15 @@ PanelWindow {
     property int    percent: 0
     property string status:  "Unknown"
     property string capacity: ""
+    property string sizeText: ""        // total energy capacity in Wh (from sysfs)
+    property int    cycles:   0          // charge cycles (from sysfs)
     readonly property bool charging: status === "Charging"
 
     // live time estimates from UPower (seconds); 0 when unknown / not applicable
     readonly property var  dev:         UPower.displayDevice
     readonly property real timeToEmpty: dev ? dev.timeToEmpty : 0
     readonly property real timeToFull:  dev ? dev.timeToFull  : 0
+    readonly property real changeRate:  dev ? Math.abs(dev.changeRate) : 0   // live W (charge/discharge)
     readonly property string timeLabel: charging ? "Time to full" : "Time left"
     readonly property string timeText:  charging ? fmtDuration(timeToFull) : fmtDuration(timeToEmpty)
     function fmtDuration(s) {
@@ -56,7 +59,7 @@ PanelWindow {
         border.color: root.sep
         border.width: 1
 
-        x: parent.width - width - 6
+        x: Math.round(Math.max(6, Math.min(root.batteryBarX - width / 2, parent.width - width - 6)))
         y: barBottom + gap
         opacity: batPanel.reveal
         focus: root.batteryVisible
@@ -139,6 +142,24 @@ PanelWindow {
                     Text { text: "Health"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
                     Text { text: batPanel.capacity; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
+                Row {
+                    width: parent.width
+                    visible: batPanel.changeRate > 0.05
+                    Text { text: "Power draw"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    Text { text: batPanel.changeRate.toFixed(1) + " W"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                }
+                Row {
+                    width: parent.width
+                    visible: batPanel.sizeText !== ""
+                    Text { text: "Battery size"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    Text { text: batPanel.sizeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                }
+                Row {
+                    width: parent.width
+                    visible: batPanel.cycles > 0
+                    Text { text: "Charge cycles"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    Text { text: String(batPanel.cycles); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
@@ -166,8 +187,13 @@ PanelWindow {
             "STA=$(cat /sys/class/power_supply/$BAT/status 2>/dev/null || echo Unknown); " +
             "FULL=$(cat /sys/class/power_supply/$BAT/charge_full 2>/dev/null || cat /sys/class/power_supply/$BAT/energy_full 2>/dev/null || echo 0); " +
             "DESIGN=$(cat /sys/class/power_supply/$BAT/charge_full_design 2>/dev/null || cat /sys/class/power_supply/$BAT/energy_full_design 2>/dev/null || echo 0); " +
-            "HEALTH=$(awk -v f=\"$FULL\" -v d=\"$DESIGN\" 'BEGIN{ if(d>0) printf \"%d%%\", f*100/d; else print \"\" }'); " +
-            "echo \"$CAP|$STA|$HEALTH\""
+            "HEALTH=$(awk -v f=\"$FULL\" -v d=\"$DESIGN\" 'BEGIN{ if(d>0){ h=f*100/d; if(h>100) h=100; printf \"%d%%\", h } else print \"\" }'); " +
+            "CYC=$(cat /sys/class/power_supply/$BAT/cycle_count 2>/dev/null || echo 0); " +
+            "EFD=$(cat /sys/class/power_supply/$BAT/energy_full_design 2>/dev/null || echo 0); " +
+            "CFD=$(cat /sys/class/power_supply/$BAT/charge_full_design 2>/dev/null || echo 0); " +
+            "VMD=$(cat /sys/class/power_supply/$BAT/voltage_min_design 2>/dev/null || cat /sys/class/power_supply/$BAT/voltage_now 2>/dev/null || echo 0); " +
+            "SIZE=$(awk -v e=\"$EFD\" -v c=\"$CFD\" -v v=\"$VMD\" 'BEGIN{ if(e>0) printf \"%.0f Wh\", e/1000000; else if(c>0&&v>0) printf \"%.0f Wh\", c*v/1000000000000; else print \"\" }'); " +
+            "echo \"$CAP|$STA|$HEALTH|$CYC|$SIZE\""
         ]
         running: false
         stdout: StdioCollector {
@@ -177,6 +203,8 @@ PanelWindow {
                     batPanel.percent = parseInt(parts[0]) || 0
                     batPanel.status = parts[1] || "Unknown"
                     batPanel.capacity = parts[2] || ""
+                    batPanel.cycles = parts.length > 3 ? (parseInt(parts[3]) || 0) : 0
+                    batPanel.sizeText = parts.length > 4 ? (parts[4] || "") : ""
                 }
             }
         }
