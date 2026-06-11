@@ -8,7 +8,8 @@ ShellRoot {
 
     Theme { id: theme }
 
-    Bar { root: theme }
+    // Bar { root: theme }              // ← original (revert: uncomment, comment BarSlot)
+    BarSlot { root: theme }             // ← WIP slot-based port (left region)
     TooltipOverlay { root: theme }
     CalendarPopup { root: theme }
     ArchUpdaterPanel { root: theme }

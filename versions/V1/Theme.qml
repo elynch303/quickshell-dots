@@ -66,9 +66,18 @@ Item {
     }
 
     // safety net: if the owning widget disappears while its tooltip is shown
-    // (e.g. ScreenRecord stops mid-hover, so onExited never fires), force-hide.
-    readonly property bool _tooltipOwnerVisible: tooltipOwner ? tooltipOwner.visible : true
-    on_TooltipOwnerVisibleChanged: if (!_tooltipOwnerVisible) { tooltipShown = false; tooltipOwner = null; }
+    // (e.g. ScreenRecord stops mid-hover, or a slot widget gets disabled), force-hide.
+    // Via Connections — NOT a `_visible` property whose change-handler writes
+    // tooltipOwner (that property read tooltipOwner → binding loop).
+    Connections {
+        target: theme.tooltipOwner
+        ignoreUnknownSignals: true
+        function onVisibleChanged() {
+            if (theme.tooltipOwner && !theme.tooltipOwner.visible) {
+                theme.tooltipShown = false; theme.tooltipOwner = null;
+            }
+        }
+    }
 
     // ── Calendar state ──
     property bool calendarVisible: false
@@ -136,6 +145,16 @@ Item {
     property bool splitMprisL: false
     property int barAnim: 0   // 0=off, 1=stream, 2=surge, 3=bolt
 
+    // ── Bar layout / unlock (drag&drop reorder). barUnlocked is transient. ──
+    property bool barUnlocked: false
+    // split-control hooks — assigned by BarSlot, called by the ControlPanel split
+    // sub-panel (same engine → shared root, no IPC needed).
+    property var  fnSplitAll:      null
+    property var  fnMergeAll:      null
+    property var  fnDefaultLayout: null
+    property bool splitsSubVisible: false
+    onControlVisibleChanged: if (!controlVisible) splitsSubVisible = false   // don't reopen with the panel
+
     readonly property bool anySplit: splitLeft || splitRight || splitArch
                                   || splitMon  || splitNet  || splitMprisL
     onAnySplitChanged: if (!anySplit) barAnim = 0
@@ -188,7 +207,7 @@ Item {
                     theme.splitMon       = parts[1] === "1"
                     theme.splitMprisL    = parts[2] === "1"
                     theme.splitNet       = parts[3] === "1"
-                    var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 3) ? ba : 0
+                    var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 4) ? ba : 0
                     theme.useThemeAccent = parts.length >= 6 && parts[5] === "1"
                 }
                 theme._splitsLoaded = true
@@ -206,6 +225,13 @@ Item {
     property bool modVolume:     true
     property bool modWeather:    true
     property bool modNetwork:    true
+    property string networkMode: "none"   // mirrored from NetworkWidget: wifi/ethernet/none
+
+    // ── wifi/bluetooth settings launchers (Omarchy way, via uwsm-app) ──
+    // iwd (Omarchy 3.8.x) → impala/bluetui through omarchy-launch-*; if NetworkManager
+    // is the active backend (Omarchy 4.0) → nmtui instead.
+    readonly property string launchWifiCmd: "if systemctl is-active --quiet NetworkManager 2>/dev/null; then omarchy-launch-or-focus-tui nmtui; else omarchy-launch-wifi; fi"
+    readonly property string launchBtCmd:   "omarchy-launch-bluetooth"
     property bool modPower:      true
     property bool modBluetooth:  true
     property bool modBattery:    true
@@ -370,6 +396,21 @@ Item {
     property bool trayVisible: false
     property var trayPinned: []
     property real trayBarX: 10
+
+    // ── slot-aware panel X anchors (center-X of each group; set by BarSlot) ──
+    property real volumeBarX:     0
+    property real networkBarX:    0
+    property real batteryBarX:    0
+    property real memoryBarX:     0
+    property real cpuBarX:        0
+    property real workspaceBarX:  0
+    property real archBarX:       0
+    property real bluetoothBarX:  0
+    property real brightnessBarX: 0
+    property real powerBarX:      0
+    property real mprisBarX:      0
+    property real weatherBarX:    0
+    property real launcherBarX:   6   // ControlPanel follows the Launcher/Control group
 
     // ── Tray context-menu state (themed menu, rendered by TrayMenu.qml) ──
     property bool trayMenuVisible: false

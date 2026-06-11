@@ -57,7 +57,7 @@ PanelWindow {
         border.color: root.sep
         border.width: 1
 
-        x: Math.round((parent.width - width) / 2)
+        x: Math.round(Math.max(6, Math.min(root.weatherBarX - width / 2, parent.width - width - 6)))
         y: barBottom + gap
         opacity: wxPanel.reveal
         focus: root.weatherVisible

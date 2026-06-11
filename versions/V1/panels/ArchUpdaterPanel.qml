@@ -45,7 +45,7 @@ PanelWindow {
         border.color: root.sep
         border.width: 1
 
-        x: 6
+        x: Math.round(Math.max(6, Math.min(root.archBarX - width / 2, parent.width - width - 6)))
         y: barBottom + gap
         opacity: archPanel.reveal
         focus: root.archVisible

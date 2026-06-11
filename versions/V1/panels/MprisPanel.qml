@@ -158,7 +158,7 @@ PanelWindow {
         border.color: root.sep
         border.width: 1
 
-        x: parent.width - width - 6
+        x: Math.round(Math.max(6, Math.min(root.mprisBarX - width / 2, parent.width - width - 6)))
         y: barBottom + gap
         opacity: mprisPanel.reveal
         focus: root.mprisVisible
