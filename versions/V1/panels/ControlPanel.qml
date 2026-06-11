@@ -16,15 +16,6 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    readonly property var splits: [
-        { key: "splitArch",   label: "Status" },
-        { key: "splitMon",    label: "Left" },
-        { key: "splitMprisL", label: "Right" },
-        { key: "splitNet",    label: "Network" }
-    ]
-    readonly property bool anySplit: root.splitArch || root.splitMon
-                                  || root.splitNet || root.splitMprisL
-
     // power sub-menu starts CLOSED — no destructive tile is ever pre-shown
     property bool powerOpen: false
     property bool widgetsOpen: false
@@ -48,6 +39,7 @@ PanelWindow {
         signal activated()
         height: 25
         radius: 4
+        opacity: enabled ? 1.0 : 0.4          // built-in `enabled` also blocks input
         color: (active || _ma.containsMouse) ? Qt.rgba(accent.r, accent.g, accent.b, 0.18)
                                              : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
         border.color: (active || _ma.containsMouse) ? accent : root.sep
@@ -79,7 +71,7 @@ PanelWindow {
         border.color: root.sep
         border.width: 1
 
-        x: 6
+        x: Math.round(Math.max(6, Math.min(root.launcherBarX - width / 2, parent.width - width - 6)))
         y: barBottom + gap
         opacity: ctrlPanel.reveal
         focus: root.controlVisible
@@ -208,123 +200,16 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            // ── SPLITS ──
+            // ── SPLITS (opens the fly-out sub-panel) ──
             Text {
                 text: "SPLITS"
                 color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
-            Grid {
+            Tile {
                 width: parent.width
-                columns: 2
-                columnSpacing: 8
-                rowSpacing: 8
-
-                Repeater {
-                    model: ctrlPanel.splits
-                    delegate: Rectangle {
-                        id: splitTile
-                        required property var modelData
-                        readonly property bool active: root[modelData.key] === true
-                        readonly property bool hovered: splitMa.containsMouse
-                        width: (col.width - 8) / 2
-                        height: 25
-                        radius: 4
-                        color: active ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                      : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                        border.color: (active || hovered) ? root.seal : root.sep
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: splitTile.modelData.label
-                            color: (splitTile.active || splitTile.hovered) ? root.seal : root.ink
-                            font.family: root.mono; font.pixelSize: 11
-                            font.weight: splitTile.active ? Font.Medium : Font.Normal
-                        }
-                        MouseArea {
-                            id: splitMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root[splitTile.modelData.key] = !root[splitTile.modelData.key]
-                        }
-                    }
-                }
-            }
-
-            // ── gap animation picker: 3 buttons in a row (only when a split is active) ──
-            Row {
-                id: animRow
-                visible: ctrlPanel.anySplit
-                width: parent.width
-                spacing: 4
-                readonly property var opts: [
-                    { label: "Stream", mode: 1 },
-                    { label: "Surge",  mode: 2 },
-                    { label: "Bolt",   mode: 3 }
-                ]
-                Repeater {
-                    model: animRow.opts
-                    delegate: Rectangle {
-                        id: animTile
-                        required property var modelData
-                        readonly property bool on:      root.barAnim === modelData.mode
-                        readonly property bool hovered: animMa.containsMouse
-                        width: (animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length
-                        height: 25; radius: 4
-                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                   : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
-                        border.color: (on || hovered) ? root.seal : root.sep
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
-                            anchors.centerIn: parent
-                            text: animTile.modelData.label
-                            color: (animTile.on || animTile.hovered) ? root.seal : root.ink
-                            font.family: root.mono; font.pixelSize: 11
-                            font.weight: animTile.on ? Font.Medium : Font.Normal
-                        }
-                        MouseArea {
-                            id: animMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.barAnim = (root.barAnim === animTile.modelData.mode
-                                                       ? 0 : animTile.modelData.mode)
-                        }
-                    }
-                }
-            }
-
-            // ── merge all ──
-            Rectangle {
-                id: mergeBtn
-                readonly property bool hovered: mergeMa.containsMouse && ctrlPanel.anySplit
-                width: parent.width
-                height: 23; radius: 4
-                color: ctrlPanel.anySplit ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
-                border.color: ctrlPanel.anySplit ? root.seal : root.sep
-                border.width: 1
-                opacity: hovered ? 0.88 : 1.0
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-                Text {
-                    anchors.centerIn: parent
-                    text: "Merge all"
-                    color: ctrlPanel.anySplit ? root.paper : root.sumi
-                    font.family: root.mono; font.pixelSize: 11
-                }
-                MouseArea {
-                    id: mergeMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: ctrlPanel.anySplit ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    enabled: ctrlPanel.anySplit
-                    onClicked: root.mergeAllSplits()
-                }
+                label: root.splitsSubVisible ? "Splits  ◂" : "Splits  ▸"
+                accent: root.seal
+                onActivated: root.splitsSubVisible = !root.splitsSubVisible
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
@@ -376,6 +261,13 @@ PanelWindow {
                     label: "Bluetooth"
                     active: root.modBluetooth
                     onActivated: root.modBluetooth = !root.modBluetooth
+                }
+                Tile {
+                    width: (col.width - 8) / 2
+                    label: "Network"
+                    active: root.modNetwork
+                    enabled: root.networkMode !== "wifi"   // can't hide while on WiFi
+                    onActivated: root.modNetwork = !root.modNetwork
                 }
             }
 
@@ -475,6 +367,96 @@ PanelWindow {
                 }
             }
 
+        }
+    }
+
+    // ── SPLITS sub-panel (fly-out right of the ControlPanel) ──
+    Rectangle {
+        id: splitCard
+        visible: root.controlVisible && root.splitsSubVisible
+        width: 180
+        height: splitCol.implicitHeight + 24
+        radius: 6
+        color: root.bg
+        border.color: root.sep
+        border.width: 1
+        // open to the right of the card, or to the left if there's no room
+        x: (card.x + card.width + ctrlPanel.gap + width <= parent.width - 6)
+           ? card.x + card.width + ctrlPanel.gap
+           : card.x - ctrlPanel.gap - width
+        y: card.y
+        opacity: ctrlPanel.reveal
+
+        MouseArea { anchors.fill: parent; onClicked: {} }
+
+        Column {
+            id: splitCol
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 8
+            Text {
+                text: "SPLITS"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Tile { width: parent.width; label: "Split all";      accent: root.seal;   onActivated: { if (root.fnSplitAll) root.fnSplitAll() } }
+            Tile { width: parent.width; label: "Merge all";                            onActivated: { if (root.fnMergeAll) root.fnMergeAll() } }
+            Tile { width: parent.width; label: "Default layout"; accent: root.indigo; onActivated: { if (root.fnDefaultLayout) root.fnDefaultLayout() } }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+            Text {
+                text: "GAP ANIM"
+                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Row {
+                id: animRow
+                width: parent.width
+                spacing: 4
+                readonly property var opts: [
+                    { label: "Stream", mode: 1 },
+                    { label: "Surge",  mode: 2 },
+                    { label: "Bolt",   mode: 3, cycle: true }   // click cycles Bolt → Bolt 2 → off
+                ]
+                Repeater {
+                    model: animRow.opts
+                    delegate: Rectangle {
+                        id: animTile
+                        required property var modelData
+                        readonly property bool on:      modelData.cycle ? (root.barAnim === 3 || root.barAnim === 4)
+                                                                         : (root.barAnim === modelData.mode)
+                        readonly property bool hovered: animMa.containsMouse
+                        width: (animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length
+                        height: 25; radius: 4
+                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
+                                  : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
+                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        border.color: (on || hovered) ? root.seal : root.sep
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: !animTile.modelData.cycle ? animTile.modelData.label
+                                  : root.barAnim === 4 ? "Bolt 2" : "Bolt"
+                            color: (animTile.on || animTile.hovered) ? root.seal : root.ink
+                            font.family: root.mono; font.pixelSize: 11
+                            font.weight: animTile.on ? Font.Medium : Font.Normal
+                        }
+                        MouseArea {
+                            id: animMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (animTile.modelData.cycle) {
+                                    var n = root.barAnim                       // Bolt → Bolt 2 → off
+                                    root.barAnim = (n === 3 ? 4 : (n === 4 ? 0 : 3))
+                                } else {
+                                    root.barAnim = (root.barAnim === animTile.modelData.mode ? 0 : animTile.modelData.mode)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -170,7 +170,7 @@ Item {
                         ctx.beginPath(); ctx.arc(mid, cy, 4 + fl * 10, 0, Math.PI * 2); ctx.fill()
                     }
 
-                } else {
+                } else if (root.mode === 3) {
                     // ══ BOLT: current waves charge the field, then discharge as an arc ══
                     var Tb    = 2800
                     var local = now / Tb + g * 0.37          // per-gap offset → cycles stagger
@@ -243,6 +243,95 @@ Item {
                         for (var j = 1; j <= 3; j++) {
                             ctx.lineTo(fx + j * (gw * 0.07),
                                        fy + (hash(seed + 90 + j) - 0.5) * 2 * amp - j * 1.2)
+                        }
+                        ctx.globalAlpha = 0.5 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8; ctx.stroke()
+                    }
+                } else if (root.mode === 4) {
+                    // ══ CHARGE & STRIKE (Bolt 2): orbs charge at both edges, fire a bolt that lingers ══
+                    var T4     = 3600
+                    var lo4    = now / T4 + g * 0.3
+                    var ph4    = lo4 - Math.floor(lo4)
+                    var sd4    = Math.floor(lo4) * 131.7 + g * 53.3
+                    var chEnd  = 0.5
+                    var chg    = Math.min(1, ph4 / chEnd)                  // 0..1 ball charge
+                    var firing = ph4 >= chEnd
+                    var fw     = firing ? (ph4 - chEnd) / (1 - chEnd) : 0  // 0..1 strike + linger
+                    var inset  = Math.min(gw * 0.12, 14)
+                    var lx     = x1 + inset
+                    var rx     = x2 - inset
+
+                    // ── charge balls at both edges — only in wider gaps; in narrow pill gaps
+                    // two glow balls fill the whole slot as a blob, so there we show bolt only ──
+                    var wide  = gw >= 70
+                    var flash = firing ? Math.pow(1 - fw, 2.0) : 0
+                    if (wide) {
+                        var ballR = 2.5 + Math.pow(chg, 1.3) * 5.5
+                        var edges = [ lx, rx ]
+                        for (var bI = 0; bI < 2; bI++) {
+                            var bx = edges[bI]
+                            var bg = ctx.createRadialGradient(bx, cy, 0, bx, cy, ballR * 2.2)
+                            bg.addColorStop(0.0, rgba(0.60 * chg + 0.40 * flash))
+                            bg.addColorStop(0.5, rgba(0.16 * chg))
+                            bg.addColorStop(1.0, rgba(0.0))
+                            ctx.globalAlpha = 1.0; ctx.fillStyle = bg
+                            ctx.beginPath(); ctx.arc(bx, cy, ballR * 2.2, 0, Math.PI * 2); ctx.fill()
+                            ctx.globalAlpha = 0.75 * chg + 0.25 * flash; ctx.fillStyle = "#ffffff"
+                            ctx.beginPath(); ctx.arc(bx, cy, ballR * 0.55 + flash * 2.0, 0, Math.PI * 2); ctx.fill()
+                        }
+
+                        // ── charging tension: small lightning arcs crawl around each charge ball
+                        // (plasma-globe), intensifying with charge — local, no awkward "meeting" ──
+                        if (!firing && chg > 0.2) {
+                            var crk  = 0.55 + 0.45 * Math.sin(now / 40)
+                            var nArc = 2 + Math.round(chg * 2)               // more arcs as it charges
+                            ctx.lineJoin = "round"
+                            var pc = [ lx, rx ]
+                            for (var pb = 0; pb < 2; pb++) {
+                                var pcx = pc[pb]
+                                var rad = 2.5 + Math.pow(chg, 1.3) * 5.5     // ≈ ball radius
+                                for (var ar = 0; ar < nArc; ar++) {
+                                    var aseed = sd4 + pb * 50 + ar * 9 + Math.floor(now / 55)   // re-jag ~18×/s
+                                    var ang0  = hash(aseed) * Math.PI * 2
+                                    var len   = rad * (1.0 + 0.7 * chg)
+                                    ctx.beginPath(); ctx.moveTo(pcx, cy)
+                                    for (var sg = 1; sg <= 3; sg++) {
+                                        var tt  = sg / 3
+                                        var jit = (hash(aseed + sg) - 0.5) * 4
+                                        var ex  = pcx + Math.cos(ang0) * len * tt + Math.cos(ang0 + 1.57) * jit
+                                        var ey  = cy  + (Math.sin(ang0) * len * tt + Math.sin(ang0 + 1.57) * jit) * 0.6
+                                        ctx.lineTo(ex, ey)
+                                    }
+                                    ctx.globalAlpha = 0.30 * chg * crk; ctx.strokeStyle = seal;      ctx.lineWidth = 1.4; ctx.stroke()
+                                    ctx.globalAlpha = 0.80 * chg * crk; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.7; ctx.stroke()
+                                }
+                            }
+                        }
+                    }
+
+                    // ── the strike: jagged bolt between the balls, lingering (slow fade) ──
+                    if (firing) {
+                        var life = (fw < 0.45) ? 1.0 : Math.max(0, 1 - (fw - 0.45) / 0.55)
+                        var aB   = life * (0.78 + 0.22 * Math.sin(now / 38))   // linger + crackle
+                        var segs = Math.max(5, Math.min(16, Math.round(gw / 22)))
+                        var amp  = Math.min(height * 0.30, 5.5)
+                        ctx.lineJoin = "round"
+                        ctx.beginPath(); ctx.moveTo(lx, cy)
+                        for (var i = 1; i <= segs; i++) {
+                            var jx = lx + (i / segs) * (rx - lx)
+                            var jy = (i === segs) ? cy : cy + (hash(sd4 + i) - 0.5) * 2 * amp
+                            ctx.lineTo(jx, jy)
+                        }
+                        ctx.globalAlpha = 0.40 * aB; ctx.strokeStyle = seal;      ctx.lineWidth = 3.6; ctx.stroke()
+                        ctx.globalAlpha = 0.95 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.3; ctx.stroke()
+
+                        // a short fork
+                        var fm  = Math.floor(segs * 0.5)
+                        var fjx = lx + (fm / segs) * (rx - lx)
+                        var fjy = cy + (hash(sd4 + fm) - 0.5) * 2 * amp
+                        ctx.beginPath(); ctx.moveTo(fjx, fjy)
+                        for (var k = 1; k <= 3; k++) {
+                            ctx.lineTo(fjx + k * ((rx - lx) * 0.06),
+                                       fjy + (hash(sd4 + 90 + k) - 0.5) * 2 * amp - k * 1.2)
                         }
                         ctx.globalAlpha = 0.5 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8; ctx.stroke()
                     }
