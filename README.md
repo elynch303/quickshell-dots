@@ -141,6 +141,8 @@ Default: left-click opens the widget panel. Exceptions:
 | Tray (bar) | toggle tray panel | — | — | — |
 | Tray icon | activate | context menu | hide icon | — |
 
+**Double-click** an empty bar area → unlock &amp; drag widget-groups to reorder (`Esc` / click the dimmed backdrop to lock).
+
 </details>
 
 ##### Keybindings — theme / wallpaper picker on the Omarchy hotkeys (optional)
