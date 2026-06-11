@@ -41,6 +41,15 @@ PanelWindow {
     // slot port — lived only in the now-inactive Bar.qml)
     IdleInhibitor { window: barSlot; enabled: barSlot.root.idleInhibited }
 
+    // if unlock ends mid-drag (ESC / ipc lock / click backdrop), kill the drag so the
+    // ghost doesn't stay frozen + the source widget doesn't stay dimmed
+    Connections {
+        target: barSlot.root
+        function onBarUnlockedChanged() {
+            if (!barSlot.root.barUnlocked && barSlot.dragging) barSlot.cancelDrag()
+        }
+    }
+
     readonly property color accent: barSlot.root.seal
 
     // ── dim backdrop while unlocked (edit mode); click empty → lock ──
@@ -112,6 +121,13 @@ PanelWindow {
         else { ghostX = ghostHomeX; ghostY = ghostHomeY; snapTimer.restart() }   // snap back
     }
     Timer { id: snapTimer; interval: 240; onTriggered: barSlot.dragging = false }
+    // abort a drag with no swap (ESC / ipc lock / backdrop-click while dragging, or a
+    // compositor grab-cancel) → clear the ghost immediately so it can't freeze on screen
+    function cancelDrag() {
+        snapTimer.stop()
+        dragActive = false; dragging = false; dragItem = null
+        dropModel = null; dropIndex = -1
+    }
 
     // ── order persistence (survives restart) ──
     readonly property string orderCachePath: Quickshell.env("HOME") + "/.cache/quickshell_barorder"
@@ -374,6 +390,7 @@ PanelWindow {
                         barSlot.moveDrag(w.x, w.y)
                     }
                     onReleased: barSlot.endDrag()
+                    onCanceled: barSlot.cancelDrag()
                 }
                 // drop-target highlight (the group under the cursor, not the source)
                 Rectangle {
