@@ -72,20 +72,22 @@ optmiss=()
 for b in "${opt[@]}"; do command -v "$b" >/dev/null 2>&1 || optmiss+=("$b"); done
 ((${#optmiss[@]})) && warn "Optional tools missing (some widgets disabled): ${optmiss[*]}"
 fontmiss=()
-fc-list | grep -qi "JetBrainsMono Nerd"  || fontmiss+=("JetBrainsMono Nerd Font")
-fc-list | grep -qi "Material Symbols"    || fontmiss+=("Material Symbols Rounded")
+# capture once: `fc-list | grep -q` can SIGPIPE-fail under `set -o pipefail`
+fonts="$(fc-list)"
+[[ "$fonts" == *"JetBrainsMono Nerd"* ]] || fontmiss+=("JetBrainsMono Nerd Font")
+[[ "$fonts" == *"Material Symbols"*  ]] || fontmiss+=("Material Symbols Rounded")
 if ((${#fontmiss[@]})); then
   warn "Missing fonts: ${fontmiss[*]}"
   warn "The bar needs these to display icons correctly."
   if [[ -z "$WANT_VERSION" ]]; then
-    read -p "Install missing fonts? [Y/n] " ans </dev/tty || true
+    read -p "Install missing fonts? [Y/n] " ans </dev/tty || ans=""   # no tty → empty, not unset (set -u)
     case "${ans,,}" in n|no) err "Fonts required — aborting."; exit 1 ;; esac
   fi
-  if ! fc-list | grep -qi "JetBrainsMono Nerd"; then
+  if [[ "$fonts" != *"JetBrainsMono Nerd"* ]]; then
     info "Installing ttf-jetbrains-mono-nerd..."
     sudo pacman -S --noconfirm ttf-jetbrains-mono-nerd
   fi
-  if ! fc-list | grep -qi "Material Symbols"; then
+  if [[ "$fonts" != *"Material Symbols"* ]]; then
     info "Installing ttf-material-symbols-variable..."
     sudo pacman -S --noconfirm ttf-material-symbols-variable
   fi
