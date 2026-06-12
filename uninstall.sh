@@ -39,6 +39,19 @@ if compgen -G "$unitdir/claude-usage*" >/dev/null 2>&1 || compgen -G "$bindir/cl
   info "Removed Claude usage backend (script, timer, cache; nothing left running)"
 fi
 
+# 1c. remove the shell self-updater, if installed (idempotent).
+qsbindir="$HOME/.config/quickshell/bin"
+if compgen -G "$unitdir/qs-shell-update-check.*" >/dev/null 2>&1 || [[ -e "$qsbindir/qs-shell-check-update.sh" ]]; then
+  systemctl --user disable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
+  systemctl --user stop qs-shell-update-check.service >/dev/null 2>&1 || true
+  rm -f "$unitdir"/qs-shell-update-check.service "$unitdir"/qs-shell-update-check.timer
+  rm -f "$qsbindir"/qs-shell-check-update.sh "$qsbindir"/qs-shell-apply-update.sh
+  rm -rf "$HOME/.cache/qs-shell" "$HOME/.local/share/quickshell-dots"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  systemctl --user reset-failed 'qs-shell-update-check*' >/dev/null 2>&1 || true
+  info "Removed shell self-updater (scripts, timer, cache, updater clone)"
+fi
+
 # 2. remove the post-boot hook (if the user installed it)
 boot="$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
 [[ -f "$boot" ]] && { rm -f "$boot"; info "Removed post-boot hook"; }

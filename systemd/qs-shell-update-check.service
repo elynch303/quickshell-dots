@@ -1,0 +1,10 @@
+[Unit]
+Description=QS-Shell update check
+# Note: network-online.target has no provider in the user manager, so waiting on
+# it would be a no-op. The check is offline-tolerant by design (a failed fetch
+# keeps the last known state) — that is the real safeguard.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/quickshell/bin/qs-shell-check-update.sh
+Nice=19

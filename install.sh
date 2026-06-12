@@ -58,6 +58,37 @@ install_claude_backend() {
   info "Claude usage backend installed (exact 5h + 7d via Claude Code's own token, 0 tokens)"
 }
 
+# ── shell self-updater (the in-bar update badge + apply) ────────
+# Installs the check/apply scripts + systemd timer, and keeps a persistent FULL
+# clone the updater pulls from (the install clone below is --depth 1, too shallow
+# for a correct changelog / behind count). Any failure here only warns; it never
+# aborts the bar install.
+install_shell_updater() {
+  local src="$1"                                   # repo root (temp clone) for the files
+  local bindst="$HOME/.config/quickshell/bin"
+  local unitdst="$HOME/.config/systemd/user"
+  local repodir="$HOME/.local/share/quickshell-dots"
+
+  if [[ -d "$repodir/.git" ]]; then
+    git -C "$repodir" fetch --quiet origin || true
+  else
+    mkdir -p "$(dirname "$repodir")"
+    git clone --quiet "$REPO_URL" "$repodir" || { err "Updater clone failed — skipping self-updater"; return 1; }
+  fi
+
+  mkdir -p "$bindst" "$unitdst"
+  install -m 755 "$src/scripts/qs-shell-check-update.sh" "$bindst/qs-shell-check-update.sh"
+  install -m 755 "$src/scripts/qs-shell-apply-update.sh" "$bindst/qs-shell-apply-update.sh"
+  install -m 644 "$src/systemd/qs-shell-update-check.service" "$unitdst/qs-shell-update-check.service"
+  install -m 644 "$src/systemd/qs-shell-update-check.timer"   "$unitdst/qs-shell-update-check.timer"
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
+  "$bindst/qs-shell-check-update.sh" >/dev/null 2>&1 || true   # prime the state now
+
+  info "Shell self-updater installed (badge appears when this repo has updates)"
+}
+
 # ── 1. dependencies ─────────────────────────────────────────────
 need=(quickshell git jq curl)
 opt=(pamixer brightnessctl powerprofilesctl bluetoothctl iwctl makoctl hypridle)
@@ -142,6 +173,9 @@ pkill -f "quickshell -p $DEST" 2>/dev/null || true
 sleep 0.3
 setsid quickshell -p "$DEST" >/dev/null 2>&1 &
 info "Bar started — try it out."
+
+# ── 6b. shell self-updater (never blocks the bar install) ───────
+install_shell_updater "$tmp/repo" || warn "Self-updater setup incomplete — the bar is fine; the update badge just won't appear."
 
 # ── 7. autostart hint ────────────────────────────────────────────
 info "Autostart at login via Omarchy post-boot hook:"
