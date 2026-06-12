@@ -28,10 +28,14 @@ ShellRoot {
     WorkspacePanel { root: theme }
     ControlPanel { root: theme }
     TrayMenu { root: theme }
-    ImageCarouselPanel       { root: theme }
-    ImageCarouselHearthstone { root: theme }
-    ImageCarouselCarousel    { root: theme }
-    MediaBrowserPanel        { root: theme }
-    MediaBrowserHearthstone  { root: theme }
-    MediaBrowserCarousel     { root: theme }
+    // Picker variants: only the selected pickerStyle is instantiated — the other
+    // four full-screen PanelWindows never exist until the style is switched.
+    // (each panel already early-returns when its style isn't active; LazyLoader
+    //  removes the dormant window + bindings entirely.)
+    LazyLoader { active: theme.pickerStyle === "tanzaku" || theme.pickerStyle === "";  ImageCarouselPanel       { root: theme } }
+    LazyLoader { active: theme.pickerStyle === "hearthstone";                           ImageCarouselHearthstone { root: theme } }
+    LazyLoader { active: theme.pickerStyle === "carousel";                              ImageCarouselCarousel    { root: theme } }
+    LazyLoader { active: theme.pickerStyle === "tanzaku" || theme.pickerStyle === "";  MediaBrowserPanel        { root: theme } }
+    LazyLoader { active: theme.pickerStyle === "hearthstone";                           MediaBrowserHearthstone  { root: theme } }
+    LazyLoader { active: theme.pickerStyle === "carousel";                              MediaBrowserCarousel     { root: theme } }
 }
