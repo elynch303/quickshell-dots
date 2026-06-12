@@ -3,6 +3,9 @@ Description=AUR security blacklist refresh timer
 
 [Timer]
 OnBootSec=5min
+# also fire shortly after the timer itself is (re)started — without this a
+# daemon-reload/re-enable mid-session leaves the timer "elapsed" with no NEXT
+OnActiveSec=5min
 OnUnitActiveSec=7d
 Persistent=true
 RandomizedDelaySec=1h

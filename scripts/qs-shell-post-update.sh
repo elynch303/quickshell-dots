@@ -45,6 +45,15 @@ fi
 # ── keep the updater itself current (check + apply + this hook) ─
 put "$repo/scripts/qs-shell-check-update.sh" "$qsbin/qs-shell-check-update.sh" 755 || rc=1
 put "$repo/scripts/qs-shell-apply-update.sh" "$qsbin/qs-shell-apply-update.sh" 755 || rc=1
+put "$repo/systemd/qs-shell-update-check.service" "$units/qs-shell-update-check.service" 644 || rc=1
+put "$repo/systemd/qs-shell-update-check.timer"   "$units/qs-shell-update-check.timer"   644 || rc=1
+
+# Re-arm both timers so refreshed unit files take effect now. Plain
+# enable --now is a no-op on an already-active timer, and a daemon-reload
+# alone can leave a monotonic timer "elapsed" with no next trigger.
+systemctl --user daemon-reload >/dev/null 2>&1 || true
+systemctl --user enable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
+systemctl --user try-restart qs-shell-update-check.timer qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
 
 # ── opt-in components: refresh only if the user installed them ──
 if [ -x "$bin/claude-usage" ]; then
