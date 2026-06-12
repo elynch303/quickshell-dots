@@ -1,0 +1,9 @@
+[Unit]
+Description=AUR security blacklist refresh
+# Offline-tolerant by design: a failed fetch keeps the last validated list
+# (fail-closed), so there is no dependency on network-online.target.
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/qs-aur-blacklist-fetch.sh
+Nice=19

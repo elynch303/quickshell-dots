@@ -38,6 +38,16 @@ PanelWindow {
         onClicked: root.archVisible = false
     }
 
+    // A degraded verdict can be a transient (blacklist file mid-update at scan
+    // time) — retry once each time the panel opens instead of letting it stick
+    // until the next refresh.
+    Connections {
+        target: root
+        function onArchVisibleChanged() {
+            if (root.archVisible && root.archGateDegraded) root.archGateRescan()
+        }
+    }
+
     // pkg -> gate verdict, rebuilt once per gate run (avoids O(n²) per-row scans)
     readonly property var gateMap: {
         var m = ({})
@@ -135,6 +145,12 @@ PanelWindow {
                     visible: root.archGateDegraded
                     text: "⚠ protection limited"
                     color: root.seal
+                    font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                }
+                Text {
+                    visible: root.archGateListDate !== "" && root.archGateBlacklist > 0
+                    text: "list " + root.archGateListDate
+                    color: root.sumi
                     font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                 }
             }

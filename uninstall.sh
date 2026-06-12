@@ -53,9 +53,17 @@ if compgen -G "$unitdir/qs-shell-update-check.*" >/dev/null 2>&1 || [[ -e "$qsbi
   info "Removed shell self-updater (scripts, timer, cache, updater clone)"
 fi
 
-# 1d. remove the ArchUpdater security gate script
-[[ -f "$bindir/qs-arch-security-gate.sh" ]] && \
-  { rm -f "$bindir/qs-arch-security-gate.sh"; info "Removed ArchUpdater security gate"; }
+# 1d. remove the ArchUpdater security gate (script, fetch timer, list)
+if [[ -f "$bindir/qs-arch-security-gate.sh" || -f "$bindir/qs-aur-blacklist-fetch.sh" ]]; then
+  systemctl --user disable --now qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
+  systemctl --user stop qs-aur-blacklist-fetch.service >/dev/null 2>&1 || true
+  rm -f "$unitdir"/qs-aur-blacklist-fetch.service "$unitdir"/qs-aur-blacklist-fetch.timer
+  rm -f "$bindir"/qs-arch-security-gate.sh "$bindir"/qs-aur-blacklist-fetch.sh
+  rm -f "$HOME/.local/share/qs-aur-blacklist.txt"
+  systemctl --user daemon-reload >/dev/null 2>&1 || true
+  systemctl --user reset-failed 'qs-aur-blacklist-fetch*' >/dev/null 2>&1 || true
+  info "Removed ArchUpdater security gate (script, fetch timer, list)"
+fi
 
 # 2. remove the post-boot hook (if the user installed it)
 boot="$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"

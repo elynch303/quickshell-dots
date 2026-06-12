@@ -1,0 +1,11 @@
+[Unit]
+Description=AUR security blacklist refresh timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=7d
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

@@ -413,6 +413,12 @@ Item {
     property int    archGateFail: 0
     property int    archGateBlacklist: 0
     property bool   archGateDegraded: false
+    property string archGateListDate: ""   // mtime of the freshest blacklist source
+
+    // Manual retry, e.g. on panel open: a degraded verdict can be a transient
+    // (blacklist file mid-update at scan time) and must not stick until the
+    // next refresh.
+    function archGateRescan() { archGate.rerun() }
 
     Process {
         id: archGate
@@ -454,6 +460,7 @@ Item {
                         sawMeta = true
                         theme.archGateBlacklist = o.blacklist || 0
                         if (o.degraded) theme.archGateDegraded = true
+                        if (o.list_date) theme.archGateListDate = o.list_date
                         continue
                     }
                     results.push(o)

@@ -158,12 +158,22 @@ echo "$choice" > "$DEST/.qsrise"
 info "Installed '${c_b}$choice${c_0}' → $DEST"
 
 # ── 4b. ArchUpdater security gate (pre-install package verdicts) ─
-# Pure bash, no extra deps. Without it the updater panel fail-closes to
+# Pure bash, no extra deps. The weekly fetch timer keeps the known-infected
+# list current; without any list the updater panel fail-closes to
 # "protection limited" instead of claiming packages are clean.
 if [[ -f "$tmp/repo/scripts/qs-arch-security-gate.sh" ]]; then
   mkdir -p "$HOME/.local/bin"
   install -m 755 "$tmp/repo/scripts/qs-arch-security-gate.sh" "$HOME/.local/bin/qs-arch-security-gate.sh"
-  info "ArchUpdater security gate installed"
+  if [[ -f "$tmp/repo/scripts/qs-aur-blacklist-fetch.sh" ]]; then
+    install -m 755 "$tmp/repo/scripts/qs-aur-blacklist-fetch.sh" "$HOME/.local/bin/qs-aur-blacklist-fetch.sh"
+    mkdir -p "$HOME/.config/systemd/user"
+    install -m 644 "$tmp/repo/systemd/qs-aur-blacklist-fetch.service" "$HOME/.config/systemd/user/qs-aur-blacklist-fetch.service"
+    install -m 644 "$tmp/repo/systemd/qs-aur-blacklist-fetch.timer"   "$HOME/.config/systemd/user/qs-aur-blacklist-fetch.timer"
+    systemctl --user daemon-reload
+    systemctl --user enable --now qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
+    "$HOME/.local/bin/qs-aur-blacklist-fetch.sh" >/dev/null 2>&1 || true   # prime the list now
+  fi
+  info "ArchUpdater security gate installed (weekly blacklist refresh)"
 fi
 
 # ── 5. theme hook (live color updates on Omarchy theme switch) ──
