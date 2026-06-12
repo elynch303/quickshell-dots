@@ -37,6 +37,11 @@ if ! flock -n 9; then
   exit 0
 fi
 
+# Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
+# loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
+# is mid-run, so no live stage can be hit.
+rm -rf "$(dirname "$DEST")"/.qs-stage.* 2>/dev/null || true
+
 # State contract: never delete the state file; "up to date" is behind:0 (atomic).
 clear_state() {
   local t
