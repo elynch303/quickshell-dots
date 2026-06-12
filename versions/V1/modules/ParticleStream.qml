@@ -5,7 +5,7 @@ Item {
     required property var   theme
     required property Item  layout   // island: exposes pillRuns, runRightEdge(), runLeftEdge()
     property bool active: false
-    property int  mode:   1          // 1=stream, 2=surge, 3=bolt
+    property int  mode:   1          // 1=stream, 2=surge, 3=bolt, 4=bolt2 (spark gap), 5=stream2 (transfer), 6=surge2 (collider)
 
     opacity: active ? 1.0 : 0.0
     Behavior on opacity { NumberAnimation { duration: 500; easing.type: Easing.InOutCubic } }
@@ -247,93 +247,204 @@ Item {
                         ctx.globalAlpha = 0.5 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8; ctx.stroke()
                     }
                 } else if (root.mode === 4) {
-                    // ══ CHARGE & STRIKE (Bolt 2): orbs charge at both edges, fire a bolt that lingers ══
-                    var T4     = 3600
-                    var lo4    = now / T4 + g * 0.3
-                    var ph4    = lo4 - Math.floor(lo4)
-                    var sd4    = Math.floor(lo4) * 131.7 + g * 53.3
-                    var chEnd  = 0.5
-                    var chg    = Math.min(1, ph4 / chEnd)                  // 0..1 ball charge
-                    var firing = ph4 >= chEnd
-                    var fw     = firing ? (ph4 - chEnd) / (1 - chEnd) : 0  // 0..1 strike + linger
-                    var inset  = Math.min(gw * 0.12, 14)
-                    var lx     = x1 + inset
-                    var rx     = x2 - inset
+                    // ══ SPARK GAP (Bolt2): the pill edges are electrodes ══
+                    // Tiny arcs crackle sporadically at the edges — barely-there
+                    // life, no rails, no orbs. Every several seconds the gap
+                    // breaks down and ONE full bolt arcs across as the payoff,
+                    // flickering twice before it dies.
+                    var aS  = Math.min(height * 0.30, 5.5)
 
-                    // ── charge balls at both edges — only in wider gaps; in narrow pill gaps
-                    // two glow balls fill the whole slot as a blob, so there we show bolt only ──
-                    var wide  = gw >= 70
-                    var flash = firing ? Math.pow(1 - fw, 2.0) : 0
-                    if (wide) {
-                        var ballR = 2.5 + Math.pow(chg, 1.3) * 5.5
-                        var edges = [ lx, rx ]
-                        for (var bI = 0; bI < 2; bI++) {
-                            var bx = edges[bI]
-                            var bg = ctx.createRadialGradient(bx, cy, 0, bx, cy, ballR * 2.2)
-                            bg.addColorStop(0.0, rgba(0.60 * chg + 0.40 * flash))
-                            bg.addColorStop(0.5, rgba(0.16 * chg))
-                            bg.addColorStop(1.0, rgba(0.0))
-                            ctx.globalAlpha = 1.0; ctx.fillStyle = bg
-                            ctx.beginPath(); ctx.arc(bx, cy, ballR * 2.2, 0, Math.PI * 2); ctx.fill()
-                            ctx.globalAlpha = 0.75 * chg + 0.25 * flash; ctx.fillStyle = "#ffffff"
-                            ctx.beginPath(); ctx.arc(bx, cy, ballR * 0.55 + flash * 2.0, 0, Math.PI * 2); ctx.fill()
+                    // ── micro sparks: short-lived arcs at random edge spots ──
+                    // time is sliced into slots; each slot rolls a few spark
+                    // candidates per gap (deterministic — no state kept)
+                    var slot = Math.floor(now / 300)
+                    var sIn  = (now % 300) / 300            // 0..1 inside the slot
+                    for (var sk = 0; sk < 2; sk++) {
+                        var sps = slot * 77.7 + g * 13.3 + sk * 311.1
+                        if (hash(sps) > 0.32) continue        // most slots stay quiet
+                        var life = 1 - sIn                    // quick fade within the slot
+                        if (life <= 0) continue
+                        var left = hash(sps + 1) < 0.5
+                        var ex0  = left ? x1 : x2
+                        var dir  = left ? 1 : -1
+                        var ey0  = cy + (hash(sps + 2) - 0.5) * height * 0.45
+                        var sln  = 4 + hash(sps + 3) * 6      // 4..10 px reach
+                        ctx.lineJoin = "round"
+                        ctx.beginPath(); ctx.moveTo(ex0, ey0)
+                        for (var sj = 1; sj <= 3; sj++) {
+                            ctx.lineTo(ex0 + dir * sln * (sj / 3),
+                                       ey0 + (hash(sps + 4 + sj) - 0.5) * 4)
                         }
-
-                        // ── charging tension: small lightning arcs crawl around each charge ball
-                        // (plasma-globe), intensifying with charge — local, no awkward "meeting" ──
-                        if (!firing && chg > 0.2) {
-                            var crk  = 0.55 + 0.45 * Math.sin(now / 40)
-                            var nArc = 2 + Math.round(chg * 2)               // more arcs as it charges
-                            ctx.lineJoin = "round"
-                            var pc = [ lx, rx ]
-                            for (var pb = 0; pb < 2; pb++) {
-                                var pcx = pc[pb]
-                                var rad = 2.5 + Math.pow(chg, 1.3) * 5.5     // ≈ ball radius
-                                for (var ar = 0; ar < nArc; ar++) {
-                                    var aseed = sd4 + pb * 50 + ar * 9 + Math.floor(now / 55)   // re-jag ~18×/s
-                                    var ang0  = hash(aseed) * Math.PI * 2
-                                    var len   = rad * (1.0 + 0.7 * chg)
-                                    ctx.beginPath(); ctx.moveTo(pcx, cy)
-                                    for (var sg = 1; sg <= 3; sg++) {
-                                        var tt  = sg / 3
-                                        var jit = (hash(aseed + sg) - 0.5) * 4
-                                        var ex  = pcx + Math.cos(ang0) * len * tt + Math.cos(ang0 + 1.57) * jit
-                                        var ey  = cy  + (Math.sin(ang0) * len * tt + Math.sin(ang0 + 1.57) * jit) * 0.6
-                                        ctx.lineTo(ex, ey)
-                                    }
-                                    ctx.globalAlpha = 0.30 * chg * crk; ctx.strokeStyle = seal;      ctx.lineWidth = 1.4; ctx.stroke()
-                                    ctx.globalAlpha = 0.80 * chg * crk; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.7; ctx.stroke()
-                                }
-                            }
-                        }
+                        var fl4 = 0.6 + 0.4 * Math.sin(now / 23 + sps)
+                        ctx.globalAlpha = 0.30 * life * fl4; ctx.strokeStyle = seal;      ctx.lineWidth = 1.6; ctx.stroke()
+                        ctx.globalAlpha = 0.75 * life * fl4; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.7; ctx.stroke()
+                        // tiny hot point on the electrode
+                        ctx.globalAlpha = 0.55 * life
+                        ctx.fillStyle   = "#ffffff"
+                        ctx.beginPath(); ctx.arc(ex0, ey0, 0.9, 0, Math.PI * 2); ctx.fill()
                     }
 
-                    // ── the strike: jagged bolt between the balls, lingering (slow fade) ──
-                    if (firing) {
-                        var life = (fw < 0.45) ? 1.0 : Math.max(0, 1 - (fw - 0.45) / 0.55)
-                        var aB   = life * (0.78 + 0.22 * Math.sin(now / 38))   // linger + crackle
-                        var segs = Math.max(5, Math.min(16, Math.round(gw / 22)))
-                        var amp  = Math.min(height * 0.30, 5.5)
-                        ctx.lineJoin = "round"
-                        ctx.beginPath(); ctx.moveTo(lx, cy)
-                        for (var i = 1; i <= segs; i++) {
-                            var jx = lx + (i / segs) * (rx - lx)
-                            var jy = (i === segs) ? cy : cy + (hash(sd4 + i) - 0.5) * 2 * amp
-                            ctx.lineTo(jx, jy)
-                        }
-                        ctx.globalAlpha = 0.40 * aB; ctx.strokeStyle = seal;      ctx.lineWidth = 3.6; ctx.stroke()
-                        ctx.globalAlpha = 0.95 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.3; ctx.stroke()
+                    // ── breakdown: one full arc bridges the gap, then darkness ──
+                    var T4  = 4000
+                    var lo4 = now / T4 + g * 0.37
+                    var ph4 = lo4 - Math.floor(lo4)
+                    var sd4 = Math.floor(lo4) * 131.7 + g * 53.3
+                    var st4 = 0.10 + hash(sd4 + 99) * 0.75    // irregular breakdown moment
+                    var s4  = (ph4 - st4) * T4                // ms since breakdown
+                    if (s4 >= 0 && s4 < 340) {
+                        // double-flicker envelope: strike, dip, weaker restrike, die
+                        var b4 = 0
+                        if      (s4 <  90) b4 = 1.0
+                        else if (s4 < 150) b4 = 0.25
+                        else if (s4 < 230) b4 = 0.7
+                        else               b4 = 0.7 * (1 - (s4 - 230) / 110)
+                        b4 *= 0.82 + 0.18 * Math.sin(now / 21)
 
-                        // a short fork
-                        var fm  = Math.floor(segs * 0.5)
-                        var fjx = lx + (fm / segs) * (rx - lx)
-                        var fjy = cy + (hash(sd4 + fm) - 0.5) * 2 * amp
-                        ctx.beginPath(); ctx.moveTo(fjx, fjy)
-                        for (var k = 1; k <= 3; k++) {
-                            ctx.lineTo(fjx + k * ((rx - lx) * 0.06),
-                                       fjy + (hash(sd4 + 90 + k) - 0.5) * 2 * amp - k * 1.2)
+                        var segs = Math.max(4, Math.min(16, Math.round(gw / 22)))
+                        ctx.lineJoin = "round"
+                        ctx.beginPath(); ctx.moveTo(x1, cy)
+                        for (var i = 1; i <= segs; i++) {
+                            ctx.lineTo(x1 + (i / segs) * gw,
+                                       (i === segs) ? cy : cy + (hash(sd4 + i) - 0.5) * 2 * aS)
                         }
-                        ctx.globalAlpha = 0.5 * aB; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8; ctx.stroke()
+                        ctx.globalAlpha = 0.42 * b4; ctx.strokeStyle = seal;      ctx.lineWidth = 3.4; ctx.stroke()
+                        ctx.globalAlpha = 0.95 * b4; ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.2; ctx.stroke()
+
+                        // electrode blooms while the arc burns
+                        var ebr = 6 + b4 * 3
+                        var eps = [ x1, x2 ]
+                        for (var eb = 0; eb < 2; eb++) {
+                            var eg4 = ctx.createRadialGradient(eps[eb], cy, 0, eps[eb], cy, ebr)
+                            eg4.addColorStop(0.0, rgba(0.50 * b4))
+                            eg4.addColorStop(1.0, rgba(0.0))
+                            ctx.globalAlpha = 1.0; ctx.fillStyle = eg4
+                            ctx.beginPath(); ctx.arc(eps[eb], cy, ebr, 0, Math.PI * 2); ctx.fill()
+                        }
+                    }
+                } else if (root.mode === 5) {
+                    // ══ TRANSFER (Stream2): the pills exchange energy, drop by drop ══
+                    // A droplet of light grows on the left pill edge, detaches,
+                    // glides across and is absorbed by the right edge with a
+                    // tiny flash. Edge-anchored like Spark Gap; flow stays
+                    // left → right like Stream. Between drops: nothing.
+                    var T5  = 3200
+                    var lo5 = now / T5 + g * 0.41
+                    var ph5 = lo5 - Math.floor(lo5)
+                    var sd5 = Math.floor(lo5) * 131.7 + g * 53.3
+                    var st5 = hash(sd5 + 9) * 0.22            // irregular start
+                    var p5  = (ph5 - st5) / 0.74              // the whole hand-over
+                    if (p5 >= 0 && p5 <= 1) {
+                        var R5 = 2.4                           // droplet core radius
+                        var dx5, sc5 = 1.0
+                        if (p5 < 0.40) {
+                            // growing on the left edge, swelling out of the pill
+                            dx5 = x1
+                            sc5 = p5 / 0.40
+                        } else if (p5 < 0.85) {
+                            // detached: glide over, eased — slow exit, fast arrival
+                            var u5 = (p5 - 0.40) / 0.45
+                            u5  = u5 * u5 * (3 - 2 * u5)       // smoothstep
+                            dx5 = x1 + u5 * gw
+                        } else {
+                            dx5 = -1                            // absorbed — flash phase below
+                        }
+
+                        if (dx5 >= 0) {
+                            // short fading trail while gliding
+                            if (p5 >= 0.40 && dx5 > x1 + 4) {
+                                var tt5 = ctx.createLinearGradient(dx5 - 14, 0, dx5, 0)
+                                tt5.addColorStop(0.0, rgba(0.0))
+                                tt5.addColorStop(1.0, rgba(0.35))
+                                ctx.globalAlpha = 1.0; ctx.strokeStyle = tt5; ctx.lineWidth = 1.4
+                                ctx.beginPath(); ctx.moveTo(Math.max(x1, dx5 - 14), cy)
+                                ctx.lineTo(dx5, cy); ctx.stroke()
+                            }
+                            // the droplet: seal bloom + white core, breathing slightly
+                            var br5 = 0.92 + 0.08 * Math.sin(now / 130)
+                            var bg5 = ctx.createRadialGradient(dx5, cy, 0, dx5, cy, R5 * 2.6 * sc5 * br5)
+                            bg5.addColorStop(0.0, rgba(0.55 * sc5))
+                            bg5.addColorStop(1.0, rgba(0.0))
+                            ctx.globalAlpha = 1.0; ctx.fillStyle = bg5
+                            ctx.beginPath(); ctx.arc(dx5, cy, R5 * 2.6 * sc5 * br5, 0, Math.PI * 2); ctx.fill()
+                            ctx.globalAlpha = 0.92 * sc5; ctx.fillStyle = "#ffffff"
+                            ctx.beginPath(); ctx.arc(dx5, cy, R5 * 0.7 * sc5, 0, Math.PI * 2); ctx.fill()
+                        } else {
+                            // absorbed: quick flash on the right edge, swallowed by the pill
+                            var fb5 = 1 - (p5 - 0.85) / 0.15
+                            var fg5 = ctx.createRadialGradient(x2, cy, 0, x2, cy, 8)
+                            fg5.addColorStop(0.0, rgba(0.60 * fb5))
+                            fg5.addColorStop(1.0, rgba(0.0))
+                            ctx.globalAlpha = 1.0; ctx.fillStyle = fg5
+                            ctx.beginPath(); ctx.arc(x2, cy, 8, 0, Math.PI * 2); ctx.fill()
+                            ctx.globalAlpha = 0.9 * fb5; ctx.fillStyle = "#ffffff"
+                            ctx.beginPath(); ctx.arc(x2, cy, 1.2 * fb5, 0, Math.PI * 2); ctx.fill()
+                        }
+                    }
+                } else if (root.mode === 6) {
+                    // ══ COLLIDER (Surge2): two particles smash mid-gap ══
+                    // Surge's converge-DNA, but with punch: two bright points
+                    // accelerate from the pill edges, collide in the middle —
+                    // impact flash, debris sparks fly off and burn out. Then
+                    // darkness until the next shot.
+                    var T6  = 3800
+                    var lo6 = now / T6 + g * 0.31
+                    var ph6 = lo6 - Math.floor(lo6)
+                    var sd6 = Math.floor(lo6) * 131.7 + g * 53.3
+                    var st6 = hash(sd6 + 9) * 0.5              // irregular shot moment
+                    var s6  = (ph6 - st6) * T6                 // ms since launch
+                    if (s6 >= 0 && s6 < 1180) {
+                        var mid6 = (x1 + x2) / 2
+                        var IN6  = 580                          // in-flight time
+                        if (s6 < IN6) {
+                            // approach: accelerating heads with motion-blur trails
+                            var u6  = (s6 / IN6); u6 = u6 * u6
+                            var xs6 = [ x1 + u6 * (mid6 - x1), x2 - u6 * (x2 - mid6) ]
+                            for (var c6 = 0; c6 < 2; c6++) {
+                                var hx6 = xs6[c6]
+                                var bk6 = (c6 === 0 ? -1 : 1) * (8 + u6 * 14)   // trail length grows with speed
+                                var tg6 = ctx.createLinearGradient(hx6 + bk6, 0, hx6, 0)
+                                tg6.addColorStop(0.0, rgba(0.0))
+                                tg6.addColorStop(1.0, rgba(0.45))
+                                ctx.globalAlpha = 1.0; ctx.strokeStyle = tg6; ctx.lineWidth = 1.6
+                                ctx.beginPath(); ctx.moveTo(hx6 + bk6, cy); ctx.lineTo(hx6, cy); ctx.stroke()
+                                var hg6 = ctx.createRadialGradient(hx6, cy, 0, hx6, cy, 4.5)
+                                hg6.addColorStop(0.0, rgba(0.50))
+                                hg6.addColorStop(1.0, rgba(0.0))
+                                ctx.fillStyle = hg6
+                                ctx.beginPath(); ctx.arc(hx6, cy, 4.5, 0, Math.PI * 2); ctx.fill()
+                                ctx.globalAlpha = 0.95; ctx.fillStyle = "#ffffff"
+                                ctx.beginPath(); ctx.arc(hx6, cy, 1.5, 0, Math.PI * 2); ctx.fill()
+                            }
+                        } else {
+                            // impact: flash + debris sparks flying out, burning up
+                            var t6  = (s6 - IN6) / 600          // 0..1 through the aftermath
+                            var fl6 = Math.pow(1 - t6, 1.6)
+                            var fr6 = 5 + t6 * 9                // bloom expands as it dies
+                            var ig6 = ctx.createRadialGradient(mid6, cy, 0, mid6, cy, fr6)
+                            ig6.addColorStop(0.0, rgba(0.60 * fl6))
+                            ig6.addColorStop(1.0, rgba(0.0))
+                            ctx.globalAlpha = 1.0; ctx.fillStyle = ig6
+                            ctx.beginPath(); ctx.arc(mid6, cy, fr6, 0, Math.PI * 2); ctx.fill()
+                            if (t6 < 0.25) {
+                                ctx.globalAlpha = 0.95 * (1 - t6 / 0.25); ctx.fillStyle = "#ffffff"
+                                ctx.beginPath(); ctx.arc(mid6, cy, 1.8, 0, Math.PI * 2); ctx.fill()
+                            }
+                            // debris: short spark shards, decelerating outward
+                            var ez6 = 1 - Math.pow(1 - t6, 2)   // ease-out travel
+                            ctx.lineJoin = "round"
+                            for (var k6 = 0; k6 < 5; k6++) {
+                                var an6 = (hash(sd6 + 30 + k6) - 0.5) * 2.4
+                                         + (k6 % 2 === 0 ? 0 : Math.PI)        // both directions
+                                var dd6 = (8 + hash(sd6 + 40 + k6) * 14) * ez6
+                                var sxa = mid6 + Math.cos(an6) * dd6
+                                var sya = cy   + Math.sin(an6) * dd6 * 0.55    // squashed into the bar
+                                var sxb = sxa + Math.cos(an6) * 3.5
+                                var syb = sya + Math.sin(an6) * 3.5 * 0.55
+                                ctx.globalAlpha = 0.75 * fl6
+                                ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 0.8
+                                ctx.beginPath(); ctx.moveTo(sxa, sya); ctx.lineTo(sxb, syb); ctx.stroke()
+                            }
+                        }
                     }
                 }
 

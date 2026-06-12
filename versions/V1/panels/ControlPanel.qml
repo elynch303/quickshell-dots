@@ -411,18 +411,18 @@ PanelWindow {
                 id: animRow
                 width: parent.width
                 spacing: 4
+                // every tile cycles base → "<label> 2" (alt mode) → off
                 readonly property var opts: [
-                    { label: "Stream", mode: 1 },
-                    { label: "Surge",  mode: 2 },
-                    { label: "Bolt",   mode: 3, cycle: true }   // click cycles Bolt → Bolt 2 → off
+                    { label: "Stream", mode: 1, alt: 5 },
+                    { label: "Surge",  mode: 2, alt: 6 },
+                    { label: "Bolt",   mode: 3, alt: 4 }
                 ]
                 Repeater {
                     model: animRow.opts
                     delegate: Rectangle {
                         id: animTile
                         required property var modelData
-                        readonly property bool on:      modelData.cycle ? (root.barAnim === 3 || root.barAnim === 4)
-                                                                         : (root.barAnim === modelData.mode)
+                        readonly property bool on:      root.barAnim === modelData.mode || root.barAnim === modelData.alt
                         readonly property bool hovered: animMa.containsMouse
                         width: (animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length
                         height: 25; radius: 4
@@ -434,8 +434,8 @@ PanelWindow {
                         Behavior on color { ColorAnimation { duration: 120 } }
                         Text {
                             anchors.centerIn: parent
-                            text: !animTile.modelData.cycle ? animTile.modelData.label
-                                  : root.barAnim === 4 ? "Bolt 2" : "Bolt"
+                            text: root.barAnim === animTile.modelData.alt ? animTile.modelData.label + "2"
+                                                                          : animTile.modelData.label
                             color: (animTile.on || animTile.hovered) ? root.seal : root.ink
                             font.family: root.mono; font.pixelSize: 11
                             font.weight: animTile.on ? Font.Medium : Font.Normal
@@ -446,12 +446,10 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (animTile.modelData.cycle) {
-                                    var n = root.barAnim                       // Bolt → Bolt 2 → off
-                                    root.barAnim = (n === 3 ? 4 : (n === 4 ? 0 : 3))
-                                } else {
-                                    root.barAnim = (root.barAnim === animTile.modelData.mode ? 0 : animTile.modelData.mode)
-                                }
+                                var n = root.barAnim                           // base → alt → off
+                                root.barAnim = (n === animTile.modelData.mode ? animTile.modelData.alt
+                                              : n === animTile.modelData.alt  ? 0
+                                              : animTile.modelData.mode)
                             }
                         }
                     }

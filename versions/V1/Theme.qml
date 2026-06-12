@@ -144,7 +144,7 @@ Item {
     property bool splitMon:    false
     property bool splitNet:    false
     property bool splitMprisL: false
-    property int barAnim: 0   // 0=off, 1=stream, 2=surge, 3=bolt
+    property int barAnim: 0   // 0=off, 1=stream, 2=surge, 3=bolt, 4=bolt2, 5=stream2, 6=surge2
 
     // ── Bar layout / unlock (drag&drop reorder). barUnlocked is transient. ──
     property bool barUnlocked: false
@@ -208,7 +208,7 @@ Item {
                     theme.splitMon       = parts[1] === "1"
                     theme.splitMprisL    = parts[2] === "1"
                     theme.splitNet       = parts[3] === "1"
-                    var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 4) ? ba : 0
+                    var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 6) ? ba : 0
                     theme.useThemeAccent = parts.length >= 6 && parts[5] === "1"
                 }
                 theme._splitsLoaded = true
