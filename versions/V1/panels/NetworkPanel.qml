@@ -48,7 +48,7 @@ PanelWindow {
     }
 
     function scan() {
-        if (scanning || wifiBlocked) return
+        if (scanning || wifiBlocked || root.useNM) return   // NM: no iwctl scan
         scanning = true
         scanProc.running = false
         scanProc.running = true
@@ -241,7 +241,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 16
-                visible: netPanel.hasWifi && !netPanel.wifiBlocked
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked && !root.useNM
                 Text {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "AVAILABLE NETWORKS"
@@ -263,7 +263,7 @@ PanelWindow {
                 height: Math.min(netList.implicitHeight, 180)
                 contentHeight: netList.implicitHeight
                 clip: true
-                visible: netPanel.hasWifi && !netPanel.wifiBlocked
+                visible: netPanel.hasWifi && !netPanel.wifiBlocked && !root.useNM
                 boundsBehavior: Flickable.StopAtBounds
 
                 Column {
@@ -346,6 +346,36 @@ PanelWindow {
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
                         font.family: root.mono; font.pixelSize: 11
                     }
+                }
+            }
+
+            // NetworkManager (Omarchy 4.0): the iwctl scan/connect don't apply here →
+            // show an nmtui shortcut instead of an empty list
+            Rectangle {
+                width: parent.width
+                height: 52; radius: 6
+                visible: root.useNM && netPanel.hasWifi
+                color: nmMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
+                                          : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                border.color: nmMa.containsMouse ? root.seal : root.sep; border.width: 1
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Column {
+                    anchors.centerIn: parent; spacing: 3; width: parent.width - 24
+                    Text {
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                        text: "Managed by NetworkManager"
+                        color: root.ink; font.family: root.mono; font.pixelSize: 11
+                    }
+                    Text {
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter
+                        text: "click to open nmtui"
+                        color: root.seal; font.family: root.mono; font.pixelSize: 10
+                    }
+                }
+                MouseArea {
+                    id: nmMa
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: { root.networkVisible = false; wifiRunner.running = false; wifiRunner.running = true }
                 }
             }
 

@@ -226,6 +226,14 @@ Item {
     property bool modWeather:    true
     property bool modNetwork:    true
     property string networkMode: "none"   // mirrored from NetworkWidget: wifi/ethernet/none
+    // NetworkManager active (Omarchy 4.0) → the panel's iwctl scan/connect won't work,
+    // so it shows an "open nmtui" button instead of an empty list
+    property bool useNM: false
+    Process {
+        command: ["bash", "-c", "systemctl is-active --quiet NetworkManager && echo 1 || echo 0"]
+        running: true
+        stdout: StdioCollector { onStreamFinished: theme.useNM = this.text.trim() === "1" }
+    }
 
     // ── wifi/bluetooth settings launchers (Omarchy way, via uwsm-app) ──
     // iwd (Omarchy 3.8.x) → impala/bluetui through omarchy-launch-*; if NetworkManager
