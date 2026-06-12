@@ -240,12 +240,12 @@ Item {
     // is the active backend (Omarchy 4.0) → nmtui instead.
     readonly property string launchWifiCmd: "if systemctl is-active --quiet NetworkManager 2>/dev/null; then omarchy-launch-or-focus-tui nmtui; else omarchy-launch-wifi; fi"
     readonly property string launchBtCmd:   "omarchy-launch-bluetooth"
-    property bool modPower:      true
-    property bool modBluetooth:  true
+    property bool modPower:      false   // default off (toggle in ControlPanel)
+    property bool modBluetooth:  false   // default off (toggle in ControlPanel)
     property bool modBattery:    true
     property bool modBrightness: true
     property bool modMedia:      true
-    property bool modClaude:     true
+    property bool modClaude:     false   // default off (toggle in ControlPanel)
 
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
     // ControlPanel uses this to hide the Brightness toggle on desktops without one.
