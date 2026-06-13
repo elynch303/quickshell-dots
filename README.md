@@ -31,12 +31,13 @@
 | Image pickers ✨ | theme · wallpaper · screenshots · videos — 3 selectable styles: Tanzaku · Hearthstone · Carousel (cached thumbnails + instant reopen) |
 | Self-update ✨ | in-bar badge when a new version ships → one-click update &amp; restart |
 | Package updates ✨ | system + AUR counter with a pre-install security check against the known-infected AUR list (auto-refreshed weekly) |
-| Workspaces | switch · overview · persist 10 / 5 / active-only ✨ |
+| Workspaces | switch · overview · persist 10 / 5 / active-only ✨ · dots / numbers / magic styles ✨ |
 | Weather | current conditions · °C / °F (imperial/metric) toggle ✨ |
 | Clock | time · calendar · 24h / 12h toggle ✨ |
 | Mpris | media controls |
 | System monitors | CPU · RAM · battery (health · cycles · size · draw ✨) · net · bt |
-| Control center | quick toggles · power · widget toggles ✨ · workspace mode ✨ · picker style ✨ |
+| Control center | quick toggles · power · Bar Functions fly-out ✨ (widget · workspace · style) |
+| Bar style ✨ | border &amp; box-shadow toggles (independent) · pill radius 12 / 6 · bar on top or bottom · theme-aware border tone |
 | Split groups ✨ | positional pill splits + gap animations (Stream · Surge · Bolt · Bolt 2) |
 | Keybind IPC ✨ | `qs -c bar ipc call picker theme\|wallpaper\|screenshots\|videos` |
 | Per-widget panels | click widget → popup |
