@@ -136,19 +136,22 @@ Item {
                     width:  isFocused ? 26 : 22
                     height: 20
                     radius: root.styleRadiusSmall ? 5 : height / 2
-                    color: isFocused  ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.22)
-                         : isOccupied ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.14)
-                                      : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.05)
+                    color: isFocused  ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.30)
+                         : isOccupied ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
+                                      : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.04)
                     Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                     Behavior on color { ColorAnimation { duration: 200 } }
                     Text {
                         anchors.centerIn: parent
                         text: wsId
-                        color: (isFocused || isOccupied) ? root.seal
-                                                         : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.4)
+                        // focused = the only BRIGHT digit (lightened seal + bold + bigger);
+                        // others dimmed so the active workspace is unmistakable
+                        color: isFocused  ? Qt.lighter(root.seal, 1.3)
+                             : isOccupied ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.5)
+                                          : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.28)
                         font.family: root.mono
-                        font.pixelSize: 12
-                        font.weight: isFocused ? Font.Medium : Font.Normal
+                        font.pixelSize: isFocused ? 13 : 12
+                        font.weight: isFocused ? Font.Bold : Font.Normal
                     }
                 }
 
