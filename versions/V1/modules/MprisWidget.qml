@@ -59,12 +59,15 @@ Item {
     }
     onPlayingChanged: { if (!playing) dropAnim.restart() }
 
-    implicitWidth: active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)
+    visible: implicitWidth > 0.5
+    implicitWidth: root.modMpris ? (active ? (row.implicitWidth + 18) : (idleNote.implicitWidth + 16)) : 0
     implicitHeight: 28
+    opacity: root.modMpris ? 1 : 0
 
     Behavior on implicitWidth {
         NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
     }
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter

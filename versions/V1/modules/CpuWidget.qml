@@ -6,8 +6,12 @@ Item {
     id: rootMod
     required property var root
 
-    implicitWidth: row.implicitWidth + 18
+    visible: implicitWidth > 0.5
+    implicitWidth: root.modCpu ? row.implicitWidth + 18 : 0
     implicitHeight: 28
+    opacity: root.modCpu ? 1 : 0
+    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+    Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     property int percent: 0
     property var history: []

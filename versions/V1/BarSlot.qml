@@ -223,8 +223,12 @@ PanelWindow {
     Component {
         id: compStatus                                   // G3: arch · tray · notif
         Item {
-            implicitWidth: Math.round(statusRow.implicitWidth) + 18
+            visible: implicitWidth > 0.5
+            implicitWidth: barSlot.root.modStatus ? Math.round(statusRow.implicitWidth) + 18 : 0
             implicitHeight: 28
+            opacity: barSlot.root.modStatus ? 1 : 0
+            Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.implicitWidth; height: barSlot.root.pillH; radius: barSlot.root.pillRadius
@@ -302,8 +306,12 @@ PanelWindow {
     Component {
         id: compQuick                                    // G10: idle-inhib · media · theme
         Item {
-            implicitWidth: Math.round(qcRow.implicitWidth) + 16
+            visible: implicitWidth > 0.5
+            implicitWidth: barSlot.root.modQuick ? Math.round(qcRow.implicitWidth) + 16 : 0
             implicitHeight: 28
+            opacity: barSlot.root.modQuick ? 1 : 0
+            Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.implicitWidth; height: barSlot.root.pillH; radius: barSlot.root.pillRadius
@@ -554,12 +562,15 @@ PanelWindow {
             // boundary: cut out the WHOLE empty whitespace so the pill hugs the content
             // center boundaries — if the center is empty (its widget disabled) AND both
             // sides are split, merge into ONE cut so no thin center pill is left over
+            // right edge for boundary cuts: if the right region is empty, cut all the
+            // way to the island edge so no thin pill is left at the right margin
+            var rEnd = rightRowItem.width < 1 ? island.width : rightRowItem.x - 4
             if (boundarySplits[0] && boundarySplits[1] && centerRowItem.width < 1) {
-                var lm = leftRowItem.x + leftRowItem.width + 4, rm = rightRowItem.x - 4
-                if (rm > lm) cuts.push([lm, rm])
+                var lm = leftRowItem.x + leftRowItem.width + 4
+                if (rEnd > lm) cuts.push([lm, rEnd])
             } else {
                 if (boundarySplits[0]) { var l1 = leftRowItem.x + leftRowItem.width + 4, r1 = centerRowItem.x - 4; if (r1 > l1) cuts.push([l1, r1]) }
-                if (boundarySplits[1]) { var l2 = centerRowItem.x + centerRowItem.width + 4, r2 = rightRowItem.x - 4; if (r2 > l2) cuts.push([l2, r2]) }
+                if (boundarySplits[1]) { var l2 = centerRowItem.x + centerRowItem.width + 4; if (rEnd > l2) cuts.push([l2, rEnd]) }
             }
             cuts.sort(function (a, b) { return a[0] - b[0] })
             var runs = [], start = 0

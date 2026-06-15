@@ -285,6 +285,8 @@ Item {
     property bool modBattery:    true
     property bool modBrightness: true
     property bool modMedia:      true
+    property bool modQuick:      true    // G10 group pill (idle-inhibitor · media · theme)
+    property bool modMpris:      true    // G9 now-playing / mpris pill
     property bool modClaude:     false   // default off (toggle in ControlPanel)
 
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
@@ -314,6 +316,11 @@ Item {
     onModPowerChanged:      if (_widgetsLoaded) saveWidgets()
     onModBluetoothChanged:  if (_widgetsLoaded) saveWidgets()
     onModNetworkChanged:    if (_widgetsLoaded) saveWidgets()
+    onModStatusChanged:     if (_widgetsLoaded) saveWidgets()
+    onModQuickChanged:      if (_widgetsLoaded) saveWidgets()
+    onModCpuChanged:        if (_widgetsLoaded) saveWidgets()
+    onModVolumeChanged:     if (_widgetsLoaded) saveWidgets()
+    onModMprisChanged:      if (_widgetsLoaded) saveWidgets()
     onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
     onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
     onWeatherImperialChanged: if (_widgetsLoaded) saveWidgets()
@@ -340,7 +347,12 @@ Item {
                  + (styleHeightMin   ? "1" : "0") + " "
                  + workspaceStyle + " "
                  + barPosition + " "
-                 + (styleBorder      ? "1" : "0")         // +10 (new; old caches → derived from styleShadow)
+                 + (styleBorder      ? "1" : "0") + " "   // +10 (new; old caches → derived from styleShadow)
+                 + (modStatus ? "1" : "0") + " "          // +11 group pill: status (arch/tray/notif)
+                 + (modQuick  ? "1" : "0") + " "          // +12 group pill: quick (idle/media/theme)
+                 + (modCpu    ? "1" : "0") + " "          // +13
+                 + (modVolume ? "1" : "0") + " "          // +14
+                 + (modMpris  ? "1" : "0")                // +15 now-playing / mpris
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -405,6 +417,13 @@ Item {
                     // Default-true → parse "!== 0" so a corrupted token keeps borders ON.
                     if (parts.length > wsField + 10) theme.styleBorder = parts[wsField + 10] !== "0"
                     else if (parts.length > wsField + 5) theme.styleBorder = !theme.styleShadow
+                    // +11..+15 widget-group toggles (default ON → only an explicit "0"
+                    // hides; old caches lack these fields → groups stay visible)
+                    if (parts.length > wsField + 11) theme.modStatus = parts[wsField + 11] !== "0"
+                    if (parts.length > wsField + 12) theme.modQuick  = parts[wsField + 12] !== "0"
+                    if (parts.length > wsField + 13) theme.modCpu    = parts[wsField + 13] !== "0"
+                    if (parts.length > wsField + 14) theme.modVolume = parts[wsField + 14] !== "0"
+                    if (parts.length > wsField + 15) theme.modMpris  = parts[wsField + 15] !== "0"
                 }
                 theme._widgetsLoaded = true
             }

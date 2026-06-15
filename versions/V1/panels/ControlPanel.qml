@@ -413,6 +413,11 @@ PanelWindow {
                 Tile { width: (wwCol.width - 8) / 2; label: "Power Prof."; active: root.modPower;     onActivated: root.modPower = !root.modPower }
                 Tile { width: (wwCol.width - 8) / 2; label: "Bluetooth";   active: root.modBluetooth; onActivated: root.modBluetooth = !root.modBluetooth }
                 Tile { width: (wwCol.width - 8) / 2; label: "Network";     active: root.modNetwork; enabled: root.networkMode !== "wifi"; onActivated: root.modNetwork = !root.modNetwork }
+                Tile { width: (wwCol.width - 8) / 2; label: "Quick tools"; active: root.modQuick;   onActivated: root.modQuick = !root.modQuick }
+                Tile { width: (wwCol.width - 8) / 2; label: "Status";      active: root.modStatus;  onActivated: root.modStatus = !root.modStatus }
+                Tile { width: (wwCol.width - 8) / 2; label: "CPU";         active: root.modCpu;     onActivated: root.modCpu = !root.modCpu }
+                Tile { width: (wwCol.width - 8) / 2; label: "Volume";      active: root.modVolume;  onActivated: root.modVolume = !root.modVolume }
+                Tile { width: (wwCol.width - 8) / 2; label: "Now playing"; active: root.modMpris;   onActivated: root.modMpris = !root.modMpris }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
