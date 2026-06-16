@@ -172,6 +172,114 @@ Item {
     property bool   aiUsageVisible: false
     property string aiTool: "claude"   // "claude" or "codex" — icon shown in the bar
 
+    // ── AI usage data (single source of truth) ───────────────────
+    // The bar pill (ClaudeWidget) and the AiUsagePanel both render from these —
+    // the cache parsing lives ONLY here so the two views can never drift apart.
+    // Token strings are bare "X.XXM / Y.YM"; the pill tooltip appends " tokens".
+    property bool   aiClHas: false
+    property bool   aiClFresh: false
+    property int    aiClPct5h: 0
+    property int    aiClPct7d: 0
+    property bool   aiClBlocked: false
+    property string aiClTokens: ""
+    property string aiClRate: ""
+    property int    aiClReset5hTs: 0
+
+    property bool   aiCxHas: false
+    property bool   aiCxFresh: false
+    property int    aiCxPct5h: 0
+    property int    aiCxPct7d: 0
+    property string aiCxPlan: ""
+    property string aiCxTokens: ""
+    property string aiCxRate: ""
+    property int    aiCxReset5hTs: 0
+    property int    aiCxReset7dTs: 0
+    property int    aiCxToday: 0
+
+    function aiFmtReset(ts) {
+        var now = Date.now() / 1000
+        if (!(ts > now)) return ""
+        var mins = Math.round((ts - now) / 60)
+        if (mins < 60) return mins + "m"
+        var h = Math.floor(mins / 60), m = mins % 60
+        if (h < 24) return h + "h " + m + "m"
+        var d = Math.floor(h / 24); return d + "d " + (h % 24) + "h"
+    }
+
+    Process {
+        id: aiReadClaude
+        command: ["bash", "-c",
+            "f=\"$HOME/.cache/claude-usage.json\"; stat -c %Y \"$f\" 2>/dev/null; cat \"$f\" 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var raw = this.text, nl = raw.indexOf("\n")
+                var mtime = nl > 0 ? (parseInt(raw.substring(0, nl)) || 0) : 0
+                var ageOk = mtime > 0 && (Date.now() / 1000 - mtime) < 900
+                try {
+                    var d = JSON.parse((nl > 0 ? raw.substring(nl + 1) : "").trim())
+                    theme.aiClHas = true
+                    theme.aiClFresh = ageOk && d._source !== "stale"
+                    theme.aiClPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
+                    theme.aiClPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
+                    theme.aiClBlocked = d.status === "rejected" || d.status === "blocked"
+                    theme.aiClReset5hTs = parseInt(d["5h-reset"]) || 0
+                    var used = (d["_tokens_used"] || 0), lim = (d["_window_limit"] || 0)
+                    theme.aiClTokens = used ? (used / 1e6).toFixed(2) + "M / " + (lim / 1e6).toFixed(1) + "M" : ""
+                    var rateH = Math.round((d["_rate_per_hour"] || 0) / 1000)
+                    theme.aiClRate = rateH > 0 ? rateH + "k tok/h" : ""
+                } catch (e) {
+                    theme.aiClHas = false; theme.aiClFresh = false
+                    theme.aiClPct5h = 0; theme.aiClPct7d = 0
+                    theme.aiClBlocked = false; theme.aiClTokens = ""; theme.aiClRate = ""
+                    theme.aiClReset5hTs = 0
+                }
+            }
+        }
+    }
+
+    Process {
+        id: aiReadCodex
+        command: ["bash", "-c",
+            "f=\"$HOME/.cache/codex-usage.json\"; stat -c %Y \"$f\" 2>/dev/null; cat \"$f\" 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var raw = this.text, nl = raw.indexOf("\n")
+                var mtime = nl > 0 ? (parseInt(raw.substring(0, nl)) || 0) : 0
+                var ageOk = mtime > 0 && (Date.now() / 1000 - mtime) < 900
+                try {
+                    var d = JSON.parse((nl > 0 ? raw.substring(nl + 1) : "").trim())
+                    theme.aiCxHas = true
+                    theme.aiCxFresh = ageOk && d._source !== "stale"
+                    theme.aiCxPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
+                    theme.aiCxPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
+                    theme.aiCxReset5hTs = parseInt(d["5h-reset"]) || 0
+                    theme.aiCxReset7dTs = parseInt(d["7d-reset"]) || 0
+                    theme.aiCxPlan = d._plan || ""
+                    var cxUsed = (d["_tokens_used"] || 0), cxLim = (d["_window_limit"] || 0)
+                    theme.aiCxTokens = cxUsed ? (cxUsed / 1e6).toFixed(2) + "M / " + (cxLim / 1e6).toFixed(1) + "M" : ""
+                    var cxRateH = Math.round((d["_rate_per_hour"] || 0) / 1000)
+                    theme.aiCxRate = cxRateH > 0 ? cxRateH + "k tok/h" : ""
+                    theme.aiCxToday = parseInt(d._today_tokens) || 0
+                } catch (e) {
+                    theme.aiCxHas = false; theme.aiCxFresh = false
+                    theme.aiCxPct5h = 0; theme.aiCxPct7d = 0
+                    theme.aiCxPlan = ""; theme.aiCxTokens = ""; theme.aiCxRate = ""; theme.aiCxToday = 0
+                    theme.aiCxReset5hTs = 0; theme.aiCxReset7dTs = 0
+                }
+            }
+        }
+    }
+
+    Timer {
+        // 30s normally; 5s while the AI panel is open (responsive when looked at)
+        interval: theme.aiUsageVisible ? 5000 : 30000
+        running: true; repeat: true; triggeredOnStart: true
+        onTriggered: {
+            aiReadClaude.running = false; aiReadClaude.running = true
+            aiReadCodex.running = false;  aiReadCodex.running = true
+        }
+    }
+
     // ── Memory panel state ──
     property bool memVisible: false
 

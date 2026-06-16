@@ -14,29 +14,30 @@ Item {
     // ── which tool the bar pill displays ──
     readonly property bool isCodex: root.aiTool === "codex"
 
-    // ── Claude state ──
-    property bool   clActive: false
-    property bool   clFresh:  false
-    property int    clPct5h:  0
-    property int    clPct7d:  0
-    property bool   clBlocked: false
-    property string clTokens: ""
-    property string clRate:   ""
-    property int    clReset5hTs: 0
-    property bool   clHas: false
+    // ── Claude: process detection is local (drives the pill's visibility); all
+    //    usage data comes from root.ai* — the single shared parse in Theme.qml that
+    //    AiUsagePanel renders from too, so the two views can't drift apart. ──
+    property bool clActive: false
+    readonly property bool   clFresh:     root.aiClFresh
+    readonly property int    clPct5h:     root.aiClPct5h
+    readonly property int    clPct7d:     root.aiClPct7d
+    readonly property bool   clBlocked:   root.aiClBlocked
+    readonly property string clTokens:    root.aiClTokens
+    readonly property string clRate:      root.aiClRate
+    readonly property int    clReset5hTs: root.aiClReset5hTs
+    readonly property bool   clHas:       root.aiClHas
 
-    // ── Codex state ──
-    property bool   cxActive: false
-    property bool   cxFresh:  false
-    property int    cxPct5h:  0
-    property int    cxPct7d:  0    // weekly
-    property string cxPlan:   ""
-    property string cxTokens: ""
-    property string cxRate:   ""
-    property int    cxTodayTok: 0
-    property int    cxReset5hTs: 0
-    property int    cxReset7dTs: 0
-    property bool   cxHas: false
+    // ── Codex ──
+    property bool cxActive: false
+    readonly property bool   cxFresh:     root.aiCxFresh
+    readonly property int    cxPct5h:     root.aiCxPct5h
+    readonly property int    cxPct7d:     root.aiCxPct7d    // weekly
+    readonly property string cxPlan:      root.aiCxPlan
+    readonly property string cxTokens:    root.aiCxTokens
+    readonly property string cxRate:      root.aiCxRate
+    readonly property int    cxReset5hTs: root.aiCxReset5hTs
+    readonly property int    cxReset7dTs: root.aiCxReset7dTs
+    readonly property bool   cxHas:       root.aiCxHas
 
     // ── per-tool signal (active OR fresh non-zero usage) ──
     readonly property bool clSignal: clActive || (clPct5h > 0 && clFresh)
@@ -53,33 +54,23 @@ Item {
     // reachable (to open the panel + switch) even if the selected tool is idle
     readonly property bool shown: (clSignal || cxSignal) && root.modClaude
 
-    function fmtReset(ts) {
-        var now = Date.now() / 1000
-        if (!(ts > now)) return ""
-        var mins = Math.round((ts - now) / 60)
-        if (mins < 60) return mins + "m"
-        var h = Math.floor(mins / 60), m = mins % 60
-        if (h < 24) return h + "h " + m + "m"
-        var d = Math.floor(h / 24); return d + "d " + (h % 24) + "h"
-    }
-
     readonly property string tooltipText: {
         var lines = []
         if (clHas || clActive) {
             lines.push("Claude Code")
-            var cr = fmtReset(clReset5hTs)
+            var cr = root.aiFmtReset(clReset5hTs)
             lines.push("5h: " + clPct5h + "%" + (cr ? "  (reset in " + cr + ")" : ""))
             if (clPct7d > 0) lines.push("7d: " + clPct7d + "%")
-            if (clTokens)    lines.push(clTokens + (clRate ? "  · " + clRate : ""))
+            if (clTokens)    lines.push(clTokens + " tokens" + (clRate ? "  · " + clRate : ""))
         }
         if (cxHas || cxActive) {
             if (lines.length) lines.push("")
             lines.push("OpenAI Codex" + (cxPlan ? "  (" + cxPlan + ")" : ""))
-            var x5 = fmtReset(cxReset5hTs)
+            var x5 = root.aiFmtReset(cxReset5hTs)
             lines.push("5h: " + cxPct5h + "%" + (x5 ? "  (reset in " + x5 + ")" : ""))
-            var x7 = fmtReset(cxReset7dTs)
+            var x7 = root.aiFmtReset(cxReset7dTs)
             lines.push("7d: " + cxPct7d + "%" + (x7 ? "  (reset in " + x7 + ")" : ""))
-            if (cxTokens) lines.push(cxTokens + (cxRate ? "  · " + cxRate : ""))
+            if (cxTokens) lines.push(cxTokens + " tokens" + (cxRate ? "  · " + cxRate : ""))
         }
         return lines.length ? lines.join("\n") : "AI usage"
     }
@@ -231,84 +222,6 @@ Item {
             font.family: root.mono
             font.pixelSize: 12
             Behavior on color { ColorAnimation { duration: 200 } }
-        }
-    }
-
-    // ── Claude data polling ──
-    Process {
-        id: readClaude
-        command: ["bash", "-c",
-            "f=\"$HOME/.cache/claude-usage.json\"; stat -c %Y \"$f\" 2>/dev/null; cat \"$f\" 2>/dev/null"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var raw = this.text
-                var nl  = raw.indexOf("\n")
-                var mtime = nl > 0 ? (parseInt(raw.substring(0, nl)) || 0) : 0
-                var jsonStr = nl > 0 ? raw.substring(nl + 1) : ""
-                var ageOk = mtime > 0 && (Date.now() / 1000 - mtime) < 900
-                try {
-                    var d = JSON.parse(jsonStr.trim())
-                    rootMod.clHas   = true
-                    rootMod.clFresh = ageOk && d._source !== "stale"
-                    rootMod.clPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
-                    rootMod.clPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
-                    rootMod.clBlocked = d.status === "rejected" || d.status === "blocked"
-                    rootMod.clReset5hTs = parseInt(d["5h-reset"]) || 0
-
-                    var tokUsed  = ((d["_tokens_used"]  || 0) / 1e6).toFixed(2) + "M"
-                    var tokLimit = ((d["_window_limit"] || 0) / 1e6).toFixed(1) + "M"
-                    var rateH    = Math.round((d["_rate_per_hour"] || 0) / 1000)
-                    rootMod.clTokens = (d["_tokens_used"] ? tokUsed + " / " + tokLimit + " tokens" : "")
-                    rootMod.clRate   = rateH > 0 ? rateH + "k tok/h" : ""
-                } catch (e) {
-                    rootMod.clHas = false; rootMod.clFresh = false
-                    rootMod.clPct5h = 0; rootMod.clPct7d = 0
-                    rootMod.clTokens = ""; rootMod.clRate = ""
-                }
-            }
-        }
-    }
-
-    // ── Codex data polling ──
-    Process {
-        id: readCodex
-        command: ["bash", "-c",
-            "f=\"$HOME/.cache/codex-usage.json\"; stat -c %Y \"$f\" 2>/dev/null; cat \"$f\" 2>/dev/null"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var raw = this.text
-                var nl  = raw.indexOf("\n")
-                var mtime = nl > 0 ? (parseInt(raw.substring(0, nl)) || 0) : 0
-                var jsonStr = nl > 0 ? raw.substring(nl + 1) : ""
-                var ageOk = mtime > 0 && (Date.now() / 1000 - mtime) < 900
-                try {
-                    var d = JSON.parse(jsonStr.trim())
-                    rootMod.cxHas   = true
-                    rootMod.cxFresh = ageOk && d._source !== "stale"
-                    rootMod.cxPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
-                    rootMod.cxPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
-                    rootMod.cxReset5hTs = parseInt(d["5h-reset"]) || 0
-                    rootMod.cxReset7dTs = parseInt(d["7d-reset"]) || 0
-                    rootMod.cxPlan = d._plan || ""
-                    var cxUsed = (d["_tokens_used"] || 0), cxLim = (d["_window_limit"] || 0)
-                    rootMod.cxTokens = cxUsed ? (cxUsed / 1e6).toFixed(2) + "M / " + (cxLim / 1e6).toFixed(1) + "M tokens" : ""
-                    var cxRateH = Math.round((d["_rate_per_hour"] || 0) / 1000)
-                    rootMod.cxRate = cxRateH > 0 ? cxRateH + "k tok/h" : ""
-                    rootMod.cxTodayTok = parseInt(d._today_tokens) || 0
-                } catch (e) {
-                    rootMod.cxHas = false; rootMod.cxFresh = false
-                    rootMod.cxPct5h = 0; rootMod.cxPct7d = 0
-                    rootMod.cxPlan = ""; rootMod.cxTokens = ""; rootMod.cxRate = ""; rootMod.cxTodayTok = 0
-                }
-            }
-        }
-    }
-
-    Timer {
-        interval: 30000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: {
-            readClaude.running = false; readClaude.running = true
-            readCodex.running = false;  readCodex.running = true
         }
     }
 
