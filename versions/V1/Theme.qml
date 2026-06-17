@@ -629,7 +629,9 @@ Item {
     property int    archGateFail: 0
     property int    archGateBlacklist: 0
     property bool   archGateDegraded: false
-    property string archGateListDate: ""   // mtime of the freshest blacklist source
+    property string archGateListDate: ""   // freshest blacklist date (meta updated_at, else mtime)
+    property bool   archGateStale: false         // protection list older than the gate's stale window
+    property bool   archGateMirrorsAgree: false  // both feed mirrors produced an identical list
 
     // Manual retry, e.g. on panel open: a degraded verdict can be a transient
     // (blacklist file mid-update at scan time) and must not stick until the
@@ -648,18 +650,20 @@ Item {
             theme.archGateResults = []
             theme.archGateOk = 0; theme.archGateWarn = 0; theme.archGateFail = 0
             theme.archGateBlacklist = 0; theme.archGateDegraded = false
-            if (!theme.archUpdates || theme.archUpdates.length === 0) {
-                theme.archGateState = "clean"; return
-            }
-            theme.archGateState = "scanning"
+            theme.archGateStale = false; theme.archGateMirrorsAgree = false
+            // Run the gate even with 0 updates — it still emits the meta line, so the
+            // panel can always show the blacklist size / protection status.
+            theme.archGateState = (theme.archUpdates && theme.archUpdates.length > 0)
+                ? "scanning" : "clean"
             running = true
         }
         command: ["bash", Quickshell.env("HOME") + "/.local/bin/qs-arch-security-gate.sh"]
         stdinEnabled: true
         onStarted: {
             // Feed "pkg|repo|old|new" — exactly the gate's stdin format.
-            for (var i = 0; i < theme.archUpdates.length; i++) {
-                var u = theme.archUpdates[i]
+            var ups = theme.archUpdates || []
+            for (var i = 0; i < ups.length; i++) {
+                var u = ups[i]
                 var repo = (u.source === "aur") ? "aur" : "system"
                 write(u.name + "|" + repo + "|" + (u.oldVer || "") + "|" + (u.newVer || "") + "\n")
             }
@@ -677,6 +681,8 @@ Item {
                         theme.archGateBlacklist = o.blacklist || 0
                         if (o.degraded) theme.archGateDegraded = true
                         if (o.list_date) theme.archGateListDate = o.list_date
+                        if (o.stale) theme.archGateStale = true
+                        theme.archGateMirrorsAgree = (o.mirrors_agree === true)
                         continue
                     }
                     results.push(o)
@@ -689,7 +695,7 @@ Item {
                 // Fail-CLOSED: if the gate didn't fully respond (no meta line, or a
                 // package has no verdict — gate missing/crashed/partial), do NOT
                 // claim "clean". An empty/short answer means "unverified", not "safe".
-                if (!sawMeta || results.length !== theme.archUpdates.length)
+                if (!sawMeta || results.length !== (theme.archUpdates || []).length)
                     theme.archGateDegraded = true
                 theme.archGateState =
                     fail > 0 ? "blocked"
