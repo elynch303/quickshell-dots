@@ -646,7 +646,14 @@ Item {
         // watching the tick would scan the PREVIOUS list. Watch archUpdates.
         property var watched: theme.archUpdates
         onWatchedChanged: rerun()
+        // A rerun restarts even a live scan (running=false→true). That kill makes
+        // onExited see a nonzero (terminated) exit; flag it so onExited does NOT
+        // mistake the deliberate kill for a crash and force degraded — that false
+        // degraded could land AFTER a clean scan and stick ("protection limited" +
+        // no "mirrors ✓" despite a healthy feed).
+        property bool killing: false
         function rerun() {
+            if (running) killing = true
             running = false   // restart even if a previous scan is still running
             theme.archGateResults = []
             theme.archGateOk = 0; theme.archGateWarn = 0; theme.archGateFail = 0
@@ -706,8 +713,9 @@ Item {
             }
         }
         onExited: (exitCode) => {
-            // Gate exited nonzero (missing script, crash) and produced no findings
-            // => force degraded so the panel never shows a false all-clear.
+            if (killing) { killing = false; return }   // we restarted it on purpose, not a crash
+            // Gate exited nonzero (missing script, crash) => force degraded so the
+            // panel never shows a false all-clear.
             if (exitCode !== 0) {
                 theme.archGateDegraded = true
                 if (theme.archGateFail === 0 && theme.archGateWarn === 0)

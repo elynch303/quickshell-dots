@@ -154,60 +154,50 @@ PanelWindow {
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            // ── one status line: counts + protection, COLORED segments joined by "·",
-            //    shown even at 0 updates. The blacklist segment opens its source. ──
-            Row {
-                id: statusRow
+            // ── one status line: counts + protection, "·"-separated, colored.
+            //    A single RichText Text (NOT a Repeater) so it re-renders reliably
+            //    whenever the gate state changes — a Repeater over a JS-array model
+            //    failed to update segments when the array changed in place. The
+            //    blacklist part is a link that opens the local list. ──
+            Text {
+                id: statusLine
                 width: parent.width
-                spacing: 0
-                visible: segs.length > 0
-                readonly property var segs: {
-                    var s = []
-                    if (root.archUpdates.length > 0) {
-                        s.push({ t: "✓ " + root.archGateOk + " OK", c: root.green, link: false })
-                        if (root.archGateWarn > 0) s.push({ t: "⚠ " + root.archGateWarn + " review", c: root.inkDeep, link: false })
-                        if (root.archGateFail > 0) s.push({ t: "✗ " + root.archGateFail + " blocked", c: root.seal, link: false })
+                visible: text.length > 0
+                textFormat: Text.RichText
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                font.family: root.mono; font.pixelSize: 10
+                linkColor: root.ink
+                text: {
+                    function hx(c) {
+                        function h(v) { var x = Math.round(v * 255).toString(16); return x.length < 2 ? "0" + x : x }
+                        return "#" + h(c.r) + h(c.g) + h(c.b)
                     }
-                    if (root.archGateDegraded) s.push({ t: "⚠ protection limited", c: root.seal, link: false })
-                    if (root.archGateStale) s.push({ t: "⚠ source stale", c: root.seal, link: false })
-                    if (root.archGateMirrorsAgree && !root.archGateDegraded) s.push({ t: "mirrors ✓", c: root.green, link: false })
-                    if (root.archGateMirrorMismatch) s.push({ t: "⚠ mirror mismatch", c: root.seal, link: false })
+                    function seg(t, c) { return '<font color="' + hx(c) + '">' + t + '</font>' }
+                    var p = []
+                    if (root.archUpdates.length > 0) {
+                        p.push(seg("✓ " + root.archGateOk + " OK", root.green))
+                        if (root.archGateWarn > 0) p.push(seg("⚠ " + root.archGateWarn + " review", root.inkDeep))
+                        if (root.archGateFail > 0) p.push(seg("✗ " + root.archGateFail + " blocked", root.seal))
+                    }
+                    if (root.archGateDegraded) p.push(seg("⚠ protection limited", root.seal))
+                    if (root.archGateStale) p.push(seg("⚠ source stale", root.seal))
+                    if (root.archGateMirrorsAgree && !root.archGateDegraded) p.push(seg("mirrors ✓", root.green))
+                    if (root.archGateMirrorMismatch) p.push(seg("⚠ mirror mismatch", root.seal))
                     if (root.archGateBlacklist > 0) {
                         var b = "blacklist " + root.archGateBlacklist
                         if (root.archGateListDate !== "") b += " · " + root.archGateListDate
-                        s.push({ t: b, c: root.ink, link: true })
+                        p.push('<a href="bl">' + seg(b, root.ink) + '</a>')   // only this part is clickable
                     }
-                    return s
+                    return p.join(' <font color="' + hx(root.sumi) + '">·</font> ')
                 }
-                Repeater {
-                    model: statusRow.segs
-                    delegate: Row {
-                        required property var modelData
-                        required property int index
-                        spacing: 0
-                        Text {
-                            visible: index > 0
-                            text: " · "
-                            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4)
-                            font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
-                        }
-                        Text {
-                            text: modelData.t
-                            color: (modelData.link && segMa.containsMouse) ? root.seal : modelData.c
-                            font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
-                            font.underline: modelData.link && segMa.containsMouse
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            MouseArea {
-                                id: segMa
-                                anchors.fill: parent
-                                enabled: !!modelData.link
-                                hoverEnabled: true
-                                cursorShape: modelData.link ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: if (modelData.link) Quickshell.execDetached(["bash", "-c",
-                                    "omarchy-launch-floating-terminal-with-presentation 'less ~/.local/share/qs-aur-blacklist.txt'"])
-                            }
-                        }
-                    }
+                onLinkActivated: Quickshell.execDetached(["bash", "-c",
+                    "omarchy-launch-floating-terminal-with-presentation 'less ~/.local/share/qs-aur-blacklist.txt'"])
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton   // cursor only — the Text handles the link click
+                    hoverEnabled: true
+                    cursorShape: statusLine.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
                 }
             }
 
