@@ -199,6 +199,12 @@ versions/V1/
 
 </details>
 
+## Credits
+
+Parts of this project are adapted from [Omarchy Shell](https://github.com/basecamp/omarchy/tree/omarchy-shell) and modified to integrate with Quickshell Rise. This includes the **Carousel picker** and selected widget functionality.
+
+The **Tanzaku** and **Hearthstone** pickers are original implementations created specifically for this project.
+
 ## License
 
 [MIT](LICENSE) © 2026 HANCORE-linux
