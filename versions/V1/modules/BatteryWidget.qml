@@ -18,7 +18,7 @@ Item {
     readonly property int devState: dev ? dev.state : UPowerDeviceState.Unknown
     readonly property bool charging: devState === UPowerDeviceState.Charging
     readonly property bool full:     devState === UPowerDeviceState.FullyCharged
-    readonly property bool low:      !charging && !full && percent <= 20
+    readonly property bool low:      hasBattery && !charging && !full && percent <= 20
 
     // live time estimates from UPower (seconds); 0 when unknown / not applicable
     readonly property real timeToEmpty: dev ? dev.timeToEmpty : 0
@@ -89,7 +89,7 @@ Item {
             property real pulse: 1.0
             opacity: rootMod.low ? pulse : 1.0
             SequentialAnimation {
-                running: rootMod.low
+                running: rootMod.visible && rootMod.low   // defensive: never animate while hidden / batteryless
                 loops: Animation.Infinite
                 NumberAnimation { target: batt; property: "pulse"; from: 1.0; to: 0.3; duration: 1100; easing.type: Easing.InOutSine }
                 NumberAnimation { target: batt; property: "pulse"; from: 0.3; to: 1.0; duration: 1100; easing.type: Easing.InOutSine }
