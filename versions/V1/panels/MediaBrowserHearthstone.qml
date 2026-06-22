@@ -190,14 +190,15 @@ PanelWindow {
     Process {
         id: deleteProc
         command: []
-        onExited: {
+        onExited: function(code) {       // rescan only on success; on trash failure keep the file + warn (no silent rm)
+            if (code !== 0) { console.warn("MediaBrowser: trash failed (gio/trash-put unavailable) — file KEPT, not deleted"); return }
             scanProc.command = panel.liveScanCmd()
             scanProc.running = false; scanProc.running = true
         }
     }
     function deleteFocused() {
         if (!sel || !sel.filePath) return
-        deleteProc.command = ["bash", "-c", "f=" + shq(sel.filePath) + "; gio trash -- \"$f\" 2>/dev/null || trash-put -- \"$f\" 2>/dev/null || rm -f -- \"$f\""]
+        deleteProc.command = ["bash", "-c", "f=" + shq(sel.filePath) + "; gio trash -- \"$f\" 2>/dev/null || trash-put -- \"$f\" 2>/dev/null"]
         deleteProc.running = false; deleteProc.running = true
         confirmDelete = false
     }

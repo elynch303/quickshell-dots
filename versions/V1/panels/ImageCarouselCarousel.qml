@@ -249,7 +249,7 @@ PanelWindow {
         }
     }
     Text {
-        visible: root.imagePickerVisible && panel.active && panel.ready && panel.imageArray.length === 0
+        visible: root.imagePickerVisible && panel.active && panel.ready && Model.matchCount(panel.imageArray, panel.filterText) === 0
         anchors.centerIn: parent
         horizontalAlignment: Text.AlignHCenter
         text: "No matches: " + panel.filterText + "\n\nBackspace to edit, or Esc to clear"

@@ -79,7 +79,10 @@ Item {
     }
 
     Timer {
-        interval: 1000; running: true; repeat: true; triggeredOnStart: true
+        // poll fast only while recording (live elapsed); slow when idle — just detects an
+        // externally-started recording within ~2s. Cuts the always-on 1s idle poll (F7-class).
+        interval: rootMod.recording ? 1000 : 2000
+        running: true; repeat: true; triggeredOnStart: true
         onTriggered: { recProc.running = false; recProc.running = true }
     }
 

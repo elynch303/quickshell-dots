@@ -218,6 +218,10 @@ Item {
     property int    aiCxReset7dTs: 0
     property int    aiCxToday: 0
 
+    // F15: clamp an external 0..1 utilization to a 0–100 int (a negative/over-range value would
+    // otherwise produce wrong text and negative/overwide usage bars)
+    function aiPct(v) { return Math.max(0, Math.min(100, Math.round((parseFloat(v) || 0) * 100))) }
+
     function aiFmtReset(ts) {
         var now = Date.now() / 1000
         if (!(ts > now)) return ""
@@ -241,8 +245,8 @@ Item {
                     var d = JSON.parse((nl > 0 ? raw.substring(nl + 1) : "").trim())
                     theme.aiClHas = true
                     theme.aiClFresh = ageOk && d._source !== "stale"
-                    theme.aiClPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
-                    theme.aiClPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
+                    theme.aiClPct5h = theme.aiPct(d["5h-utilization"])
+                    theme.aiClPct7d = theme.aiPct(d["7d-utilization"])
                     theme.aiClBlocked = d.status === "rejected" || d.status === "blocked"
                     theme.aiClReset5hTs = parseInt(d["5h-reset"]) || 0
                     var used = (d["_tokens_used"] || 0), lim = (d["_window_limit"] || 0)
@@ -272,8 +276,8 @@ Item {
                     var d = JSON.parse((nl > 0 ? raw.substring(nl + 1) : "").trim())
                     theme.aiCxHas = true
                     theme.aiCxFresh = ageOk && d._source !== "stale"
-                    theme.aiCxPct5h = Math.round((parseFloat(d["5h-utilization"]) || 0) * 100)
-                    theme.aiCxPct7d = Math.round((parseFloat(d["7d-utilization"]) || 0) * 100)
+                    theme.aiCxPct5h = theme.aiPct(d["5h-utilization"])
+                    theme.aiCxPct7d = theme.aiPct(d["7d-utilization"])
                     theme.aiCxReset5hTs = parseInt(d["5h-reset"]) || 0
                     theme.aiCxReset7dTs = parseInt(d["7d-reset"]) || 0
                     theme.aiCxPlan = d._plan || ""
@@ -688,6 +692,7 @@ Item {
             // panel can always show the blacklist size / protection status.
             theme.archGateState = (theme.archUpdates && theme.archUpdates.length > 0)
                 ? "scanning" : "clean"
+            stdinEnabled = true   // re-arm stdin each run — onStarted sets it false to send EOF; without this the 2nd+ run reads disabled stdin and hangs in 'scanning'
             running = true
         }
         command: ["bash", Quickshell.env("HOME") + "/.local/bin/qs-arch-security-gate.sh"]

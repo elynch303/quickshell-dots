@@ -232,12 +232,13 @@ PanelWindow {
     Process {
         id: dataProc
         command: ["bash", "-c",
-            "read _ u1 n1 s1 i1 w1 r1 s s < /proc/stat && " +
+            "read _ u1 n1 s1 i1 w1 q1 sq1 st1 _ < /proc/stat && " +
             "sleep 0.5 && " +
-            "read _ u2 n2 s2 i2 w2 r2 s s < /proc/stat && " +
-            "du=$((u2+n2+s2-u1-n1-s1)) && " +
-            "di=$((i2-i1)) && dt=$((du+di)) && " +
-            "echo CPU $((dt>0?100*du/dt:0))%; " +
+            "read _ u2 n2 s2 i2 w2 q2 sq2 st2 _ < /proc/stat && " +
+            "di=$(( (i2+w2)-(i1+w1) )) && " +
+            "dn=$(( (u2+n2+s2+q2+sq2+st2)-(u1+n1+s1+q1+sq1+st1) )) && " +
+            "dt=$((di+dn)) && " +
+            "echo CPU $((dt>0?100*dn/dt:0))%; " +
             "if command -v nvidia-smi &>/dev/null; then " +
             "  nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | " +
             "  awk -F', ' '{printf \"GPU %s %s %s %s\\n\", $1, $2, $3, $4}'; " +

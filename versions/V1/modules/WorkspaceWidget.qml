@@ -25,8 +25,8 @@ Item {
         if (root.workspaceMode === "active") {
             var ids = {}
             var ws = Hyprland.workspaces.values
-            for (var i = 0; i < ws.length; i++) ids[ws[i].id] = true
-            if (Hyprland.focusedWorkspace) ids[Hyprland.focusedWorkspace.id] = true
+            for (var i = 0; i < ws.length; i++) if (ws[i].id > 0) ids[ws[i].id] = true   // F13: skip special (negative-id) workspaces
+            if (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id > 0) ids[Hyprland.focusedWorkspace.id] = true
             return Object.keys(ids).map(Number).sort(function(a, b) { return a - b })
         }
         var n = root.workspaceMode === "5" ? 5 : 10

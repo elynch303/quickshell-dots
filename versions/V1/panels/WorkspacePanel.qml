@@ -83,6 +83,7 @@ PanelWindow {
 
                     delegate: Rectangle {
                         required property var modelData
+                        visible: modelData.id > 0   // F13: hide special (negative-id) workspaces from the normal list
                         readonly property bool isActive: Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === modelData.id
                         width: col.width
                         height: 30; radius: root.tileRadius

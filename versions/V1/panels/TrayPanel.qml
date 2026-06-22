@@ -44,7 +44,7 @@ PanelWindow {
         border.width: root.pillBorderW
         PillShadow { theme: root }
 
-        x: Math.max(6, root.trayBarX)
+        x: Math.round(Math.max(6, Math.min(root.trayBarX, parent.width - width - 6)))
         y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
         focus: root.trayVisible
 

@@ -142,7 +142,11 @@ PanelWindow {
     }
 
     Timer {
-        interval: 1500; running: true; repeat: true; triggeredOnStart: true
+        // F7: fast poll only while the panel is open (live list); slow when closed — the badge
+        // still updates (via the binding), but at idle this cuts makoctl spawns ~70%.
+        // (Event-driven via mako's DBus signal would be the next step.)
+        interval: notifPanel.visible ? 1500 : 5000
+        running: true; repeat: true; triggeredOnStart: true
         onTriggered: { historyProc.running = false; historyProc.running = true }
     }
 
@@ -167,7 +171,7 @@ PanelWindow {
         border.width: root.pillBorderW
         PillShadow { theme: root }
 
-        x: Math.max(6, root.notifBarX)
+        x: Math.round(Math.max(6, Math.min(root.notifBarX, parent.width - width - 6)))
         y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
         opacity: notifPanel.reveal
         focus: root.notifVisible

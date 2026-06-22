@@ -151,9 +151,20 @@ PanelWindow {
     function applyOrder(str) {
         var parts = str.split("|")
         if (parts.length !== 3) return
-        applyTo(leftModel,   parts[0].split(","))
-        applyTo(centerModel, parts[1].split(","))
-        applyTo(rightModel,  parts[2].split(","))
+        var l = parts[0].split(","), c = parts[1].split(","), r = parts[2].split(",")
+        // F12: only apply a cache that is a valid permutation of all registry ids (correct region
+        // sizes, every id known, no duplicate, none missing) — a corrupt cache would otherwise
+        // duplicate one widget and silently drop another. On reject, keep the default order.
+        if (l.length !== leftModel.count || c.length !== centerModel.count || r.length !== rightModel.count) return
+        var all = l.concat(c, r), seen = {}
+        for (var i = 0; i < all.length; i++) {
+            if (!registry[all[i]] || seen[all[i]]) return
+            seen[all[i]] = true
+        }
+        if (Object.keys(seen).length !== Object.keys(registry).length) return
+        applyTo(leftModel,   l)
+        applyTo(centerModel, c)
+        applyTo(rightModel,  r)
     }
     function saveOrder() {
         orderSaveProc.command = ["bash", "-c",
@@ -194,6 +205,7 @@ PanelWindow {
             island.leftSplits     = [false, false, false, false, false, false]
             island.rightSplits    = [false, false, false, false, false, false]
             island.boundarySplits = [false, false]
+            barSlot.root.barAnim  = 0   // merge clears all splits → also clear the gap anim, so a previously-chosen mode doesn't reappear on the next split
         }
         barSlot.root.fnDefaultLayout = function () {
             barSlot.root.fnMergeAll()

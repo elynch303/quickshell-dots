@@ -29,6 +29,13 @@ function itemMatches(images, index, filterText) {
   return nameForPath(path).toLowerCase().indexOf(needle) !== -1
       || labelForPath(path).toLowerCase().indexOf(needle) !== -1
 }
+function matchCount(images, filterText) {
+  if (!Array.isArray(images)) return 0
+  if (!String(filterText || "")) return images.length
+  var c = 0
+  for (var i = 0; i < images.length; i++) if (itemMatches(images, i, filterText)) c++
+  return c
+}
 function firstMatchingIndex(images, filterText) {
   for (var i = 0; i < images.length; i++) if (itemMatches(images, i, filterText)) return i
   return -1

@@ -68,9 +68,15 @@ Item {
             id: toggleBtn
             implicitWidth: 22
             implicitHeight: 28
-            visible: totalCount > root.trayPinned.length
+            visible: hiddenCount > 0
 
-            readonly property int hiddenCount: Math.max(0, totalCount - root.trayPinned.length)
+            // count CURRENTLY-EXISTING tray items that are not pinned (= hidden behind this
+            // button), iterating SystemTray.items so stale pinned IDs can't inflate the count
+            readonly property int hiddenCount: {
+                var n = 0, vals = SystemTray.items.values
+                for (var i = 0; i < vals.length; i++) if (root.trayPinned.indexOf(vals[i].id) < 0) n++
+                return n
+            }
             readonly property int totalCount:  SystemTray.items.values.length
             readonly property string tooltipText: totalCount + (totalCount === 1 ? " app" : " apps")
                                                   + (hiddenCount > 0 ? " · " + hiddenCount + " hidden" : "")

@@ -13,10 +13,15 @@ Item {
     property bool weatherLoaded: false
     property bool weatherUnavailable: false
 
+    // honor the global imperial toggle in the widget tooltip too (the panel already converts);
+    // the fetch stores temp in °C, so convert here when imperial is set
+    readonly property string weatherTempStr: root.weatherImperial
+        ? (Math.round((parseFloat(weatherTemp) || 0) * 9 / 5 + 32) + "°F")
+        : (weatherTemp + "°C")
     readonly property string tooltipText: weatherUnavailable
         ? "Weather offline"
         : (weatherLoaded
-            ? (weatherPlace ? weatherPlace + " · " : "") + weatherTemp + "°C" + (weatherDesc ? " / " + weatherDesc : "")
+            ? (weatherPlace ? weatherPlace + " · " : "") + weatherTempStr + (weatherDesc ? " / " + weatherDesc : "")
             : "Weather…")
 
     implicitWidth: ico.implicitWidth
