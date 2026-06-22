@@ -76,11 +76,11 @@ PanelWindow {
             Rectangle {
                 width: parent.width; height: 24; radius: root.tileRadius
                 visible: trayMenu.menuStack.length > 1
-                color: backMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
-                Text {
+                color: backMa.containsMouse ? root.fillHover : "transparent"
+                UiText {
                     anchors.left: parent.left; anchors.leftMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "‹  back"; color: root.sumi
+                    text: "‹  back"; color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11
                 }
                 MouseArea {
@@ -118,11 +118,11 @@ PanelWindow {
                         anchors.fill: parent
                         radius: root.tileRadius
                         color: (entryMa.containsMouse && entry.modelData.enabled)
-                            ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.16) : "transparent"
+                            ? root.fillActive : "transparent"
                         Behavior on color { ColorAnimation { duration: 100 } }
 
                         // check / radio indicator
-                        Text {
+                        UiText {
                             id: check
                             anchors.left: parent.left; anchors.leftMargin: 6
                             anchors.verticalCenter: parent.verticalCenter
@@ -143,7 +143,7 @@ PanelWindow {
                             fillMode: Image.PreserveAspectFit; smooth: true
                         }
 
-                        Text {
+                        UiText {
                             anchors.left: entryIcon.right; anchors.leftMargin: 6
                             anchors.right: arrow.left; anchors.rightMargin: 4
                             anchors.verticalCenter: parent.verticalCenter
@@ -155,12 +155,12 @@ PanelWindow {
                         }
 
                         // submenu arrow
-                        Text {
+                        UiText {
                             id: arrow
                             anchors.right: parent.right; anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
                             visible: entry.modelData.hasChildren
-                            text: "›"; color: root.sumi
+                            text: "›"; color: root.sumiHi
                             font.family: root.mono; font.pixelSize: 13
                         }
 

@@ -50,9 +50,6 @@ Item {
     implicitHeight: 28
     visible: hasBattery
 
-    Behavior on implicitWidth {
-        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-    }
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter
@@ -70,10 +67,10 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "BAT"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -193,7 +190,7 @@ Item {
             }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
             color: {

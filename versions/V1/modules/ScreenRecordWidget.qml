@@ -14,7 +14,6 @@ Item {
     clip: true
     implicitHeight: 28
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     readonly property string elapsedStr: {
         var h = Math.floor(elapsed / 3600)
@@ -31,12 +30,11 @@ Item {
         spacing: 5
 
         // pulsing record dot
-        Text {
+        IconText {
             id: dot
             anchors.verticalCenter: parent.verticalCenter
             text: "\uE061"   // fiber_manual_record
             color: root.seal
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 13
 
             SequentialAnimation on opacity {
@@ -50,7 +48,7 @@ Item {
         }
 
         // timer
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.elapsedStr
             color: root.seal

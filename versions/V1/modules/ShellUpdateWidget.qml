@@ -20,7 +20,6 @@ Item {
     implicitWidth: updateAvailable ? 20 : 0
     implicitHeight: 28
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     readonly property string tooltipText: {
         if (!updateAvailable) return ""
@@ -62,11 +61,10 @@ Item {
             rootMod.root.shellUpdateVisible = false
     }
 
-    Text {
+    IconText {
         anchors.centerIn: parent
         text: "\uE5D5"   // refresh (distinct from omarchy's  sync sitting next to it)
         color: root.seal
-        font.family: "Material Symbols Rounded"
         font.pixelSize: 14
     }
 

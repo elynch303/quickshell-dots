@@ -12,15 +12,13 @@ Item {
     implicitWidth: updateAvailable ? 20 : 0
     implicitHeight: 28
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     readonly property string tooltipText: "Omarchy update available"
 
-    Text {
+    IconText {
         anchors.centerIn: parent
         text: "\uE627"   // sync
         color: root.seal
-        font.family: "Material Symbols Rounded"
         font.pixelSize: 14
     }
 

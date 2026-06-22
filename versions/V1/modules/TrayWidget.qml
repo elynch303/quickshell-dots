@@ -77,11 +77,10 @@ Item {
 
             TooltipMixin { id: tip; root: rootMod.root; owner: toggleBtn; text: toggleBtn.tooltipText }
 
-            Text {
+            IconText {
                 id: moreIcon
                 anchors.centerIn: parent
                 text: "\uE5D3"   // more_horiz
-                font.family: "Material Symbols Rounded"
                 font.pixelSize: 16
                 color: toggleMa.containsMouse
                     ? root.ink

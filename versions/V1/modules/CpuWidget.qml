@@ -10,7 +10,6 @@ Item {
     implicitWidth: root.modCpu ? row.implicitWidth + 18 : 0
     implicitHeight: 28
     opacity: root.modCpu ? 1 : 0
-    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     property int percent: 0
@@ -34,10 +33,10 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "CPU"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -111,7 +110,7 @@ Item {
             }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: String(Math.min(99, rootMod.percent)).padStart(2, '0') + "%"
             color: root.seal

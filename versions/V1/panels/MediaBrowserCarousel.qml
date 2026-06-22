@@ -8,7 +8,7 @@ import "ImagePickerModel.js" as Model
 
 // Carousel variant of the screenshot/video browser — skewed slices, one expands
 // in the centre (16:9, perfect for landscape media). Crisp Shape slices, shared
-// thumbnail + scan cache, delete/copy, video play glyph, no scrim.
+// thumbnail + scan cache, delete/copy, no scrim.
 // Active only while root.pickerStyle === "carousel".
 PanelWindow {
     id: panel
@@ -402,16 +402,6 @@ PanelWindow {
                         color: Qt.rgba(panel.dimColor.r, panel.dimColor.g, panel.dimColor.b, slice.selected ? 0 : 0.42)
                         Behavior on color { ColorAnimation { duration: 200 } }
                     }
-                }
-
-                // play glyph (videos) — on the expanded slice
-                Text {
-                    visible: panel.isVideos && slice.selected
-                    anchors.centerIn: parent
-                    text: ""   // play_arrow
-                    font.family: "Material Symbols Rounded"; font.pixelSize: 56
-                    color: Qt.rgba(1, 1, 1, 0.9)
-                    style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.5)
                 }
 
                 Shape {

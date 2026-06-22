@@ -125,7 +125,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Updates"
@@ -135,7 +135,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
@@ -160,10 +160,11 @@ PanelWindow {
             //    failed to update segments when the array changed in place. The
             //    blacklist part is a link that opens the local list. ──
             Text {
-                id: statusLine
+                id: statusLine   // RichText, native-rendered
                 width: parent.width
                 visible: text.length > 0
                 textFormat: Text.RichText
+                renderType: Text.NativeRendering
                 wrapMode: Text.NoWrap
                 elide: Text.ElideRight
                 font.family: root.mono; font.pixelSize: 10
@@ -203,7 +204,7 @@ PanelWindow {
 
             // ── escalation: a FAIL means the INSTALLED copy is on the list, i.e.
             // possibly already compromised — --ignore only freezes that version ──
-            Text {
+            UiText {
                 visible: root.archGateFail > 0
                 width: parent.width
                 text: "⚠ installed copy may be compromised — run the infection checker"
@@ -216,19 +217,19 @@ PanelWindow {
             Row {
                 width: parent.width
                 spacing: 4
-                Text {
+                UiText {
                     width: parent.width * 0.4
                     text: "Package"
                     color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
                     font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     width: parent.width * 0.3
                     text: "Installed"
                     color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
                     font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     width: parent.width * 0.3
                     text: "Available"
                     color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
@@ -278,7 +279,7 @@ PanelWindow {
                                 width: parent.width
                                 height: 22
                                 spacing: 4
-                                Text {
+                                UiText {
                                     width: 14
                                     // neutral · until the gate has actually vouched —
                                     // unknown/scanning must NOT look like a green pass
@@ -287,21 +288,21 @@ PanelWindow {
                                     font.family: root.mono; font.pixelSize: 11
                                     horizontalAlignment: Text.AlignHCenter
                                 }
-                                Text {
+                                UiText {
                                     width: parent.width * 0.4 - 18
                                     text: modelData.name
                                     color: vBlocked ? root.seal : srcColor
                                     font.family: root.mono; font.pixelSize: 11
                                     elide: Text.ElideRight
                                 }
-                                Text {
+                                UiText {
                                     width: parent.width * 0.3
                                     text: modelData.oldVer
                                     color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
                                     font.family: root.mono; font.pixelSize: 11
                                     elide: Text.ElideRight
                                 }
-                                Text {
+                                UiText {
                                     width: parent.width * 0.3
                                     text: modelData.newVer
                                     color: srcColor
@@ -311,7 +312,7 @@ PanelWindow {
                                 }
                             }
 
-                            Text {
+                            UiText {
                                 visible: showReason
                                 anchors.top: rowTop.bottom
                                 x: 18
@@ -331,7 +332,7 @@ PanelWindow {
                         }
                     }
 
-                    Text {
+                    UiText {
                         width: parent.width
                         visible: root.archUpdates.length === 0
                         text: "No updates available"
@@ -354,10 +355,11 @@ PanelWindow {
                 Rectangle {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
-                    color: refreshMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.sep
-                    border.color: refreshMa.containsMouse ? root.seal : "transparent"
+                    color: refreshMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: refreshMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "Refresh"
                         color: refreshMa.containsMouse ? root.seal : root.ink
@@ -377,10 +379,10 @@ PanelWindow {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
                     opacity: archPanel.canUpdate ? 1.0 : 0.45
-                    color: (updateMa.containsMouse && archPanel.canUpdate) ? Qt.lighter(root.seal, 1.15) : root.seal
+                    color: (updateMa.containsMouse && archPanel.canUpdate) ? root.fillPrimaryHover : root.seal
                     border.color: "transparent"
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: archPanel.repoOkPackages === 0
                             ? "No repo updates"
@@ -422,10 +424,11 @@ PanelWindow {
                     visible: archPanel.aurReviewPackages > 0
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
-                    color: reviewMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.sep
-                    border.color: reviewMa.containsMouse ? root.seal : "transparent"
+                    color: reviewMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: reviewMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "Review " + archPanel.aurReviewPackages + " AUR"
                         color: reviewMa.containsMouse ? root.seal : root.ink

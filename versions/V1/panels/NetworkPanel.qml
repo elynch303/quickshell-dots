@@ -168,13 +168,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Network"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -188,7 +188,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 30
-                Text {
+                UiText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     text: {
@@ -202,7 +202,7 @@ PanelWindow {
                 Rectangle {
                     anchors.bottom: parent.bottom
                     width: parent.width; height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * (netPanel.mode === "wifi" ? netPanel.signal / 100 : (netPanel.mode === "ethernet" ? 1 : 0))
                         height: parent.height; radius: 4; color: root.seal
@@ -218,13 +218,13 @@ PanelWindow {
                 Row {
                     width: parent.width
                     visible: netPanel.mode === "wifi"
-                    Text { text: "SSID"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.ssid; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
+                    UiText { text: "SSID"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.ssid; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
                 }
                 Row {
                     width: parent.width
-                    Text { text: "Type"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text {
+                    UiText { text: "Type"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText {
                         text: netPanel.mode === "wifi" ? "Wi-Fi" : (netPanel.mode === "ethernet" ? "Ethernet" : "—")
                         color: root.ink; font.family: root.mono; font.pixelSize: 11
                     }
@@ -232,26 +232,26 @@ PanelWindow {
                 Row {
                     width: parent.width
                     visible: netPanel.iface !== ""
-                    Text { text: "Interface"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.iface; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Interface"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.iface; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: netPanel.ipAddr !== ""
-                    Text { text: "IP"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.ipAddr; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "IP"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.ipAddr; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: netPanel.mode === "wifi" && netPanel.freq !== ""
-                    Text { text: "Frequency"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.freq; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Frequency"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.freq; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: netPanel.linkSpeed !== ""
-                    Text { text: "Link speed"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.linkSpeed; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Link speed"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.linkSpeed; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
             }
 
@@ -265,11 +265,11 @@ PanelWindow {
                     width: parent.width
                     height: 24
 
-                    Text {
+                    UiText {
                         anchors.left: parent.left
                         anchors.verticalCenter: parent.verticalCenter
                         text: "SPEED TEST"
-                        color: root.sumi
+                        color: root.sumiHi
                         font.family: root.mono
                         font.pixelSize: 10
                         font.letterSpacing: 1
@@ -282,14 +282,12 @@ PanelWindow {
                         width: 54
                         height: 22
                         radius: root.tileRadius
-                        color: speedTestMa.containsMouse
-                             ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        color: speedTestMa.containsMouse ? root.fillHover : root.fillIdle
                         border.color: speedTestMa.containsMouse ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: speedTest.running ? "stop" : "start"
                             color: speedTestMa.enabled ? root.seal : root.sumi
@@ -310,24 +308,24 @@ PanelWindow {
 
                 Row {
                     width: parent.width
-                    Text { text: "Edge"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: netPanel.edgeText(); color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
+                    UiText { text: "Edge"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: netPanel.edgeText(); color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
                 }
                 Item {
                     width: parent.width; height: 16
-                    Text {
+                    UiText {
                         id: pingLabel
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                        text: "Ping"; color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                        text: "Ping"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
                         width: parent.width * 0.4
                     }
-                    Text {
+                    UiText {
                         anchors.left: pingLabel.right; anchors.right: pingCheck.left; anchors.rightMargin: 6
                         anchors.verticalCenter: parent.verticalCenter
                         text: speedTest.phase === "latency" ? "Testing…" : (netPanel.speedRunOk ? netPanel.formatPing(speedTest.pingMs) : "—")
                         color: root.ink; font.family: root.mono; font.pixelSize: 11; elide: Text.ElideRight
                     }
-                    Text {
+                    UiText {
                         id: pingCheck
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         text: "✓"; visible: speedTest.pingMs > 0 && netPanel.speedRunOk
@@ -336,20 +334,20 @@ PanelWindow {
                 }
                 Item {
                     width: parent.width; height: 16
-                    Text {
+                    UiText {
                         id: dlLabel
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                        text: "Download"; color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                        text: "Download"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
                         width: parent.width * 0.4
                     }
-                    Text {
+                    UiText {
                         anchors.left: dlLabel.right; anchors.right: dlCheck.left; anchors.rightMargin: 6
                         anchors.verticalCenter: parent.verticalCenter
                         text: speedTest.phase === "download" ? "Testing…" : (netPanel.speedRunOk ? netPanel.formatMbps(speedTest.downloadMbps) : "—")
                         color: (speedTest.downloadMbps > 0 && netPanel.speedRunOk) ? root.seal : root.ink
                         font.family: root.mono; font.pixelSize: 11; elide: Text.ElideRight
                     }
-                    Text {
+                    UiText {
                         id: dlCheck
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         text: "✓"; visible: speedTest.downloadMbps > 0 && netPanel.speedRunOk
@@ -358,20 +356,20 @@ PanelWindow {
                 }
                 Item {
                     width: parent.width; height: 16
-                    Text {
+                    UiText {
                         id: ulLabel
                         anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                        text: "Upload"; color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                        text: "Upload"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
                         width: parent.width * 0.4
                     }
-                    Text {
+                    UiText {
                         anchors.left: ulLabel.right; anchors.right: ulCheck.left; anchors.rightMargin: 6
                         anchors.verticalCenter: parent.verticalCenter
                         text: speedTest.phase === "upload" ? "Testing…" : (netPanel.speedRunOk ? netPanel.formatMbps(speedTest.uploadMbps) : "—")
                         color: (speedTest.uploadMbps > 0 && netPanel.speedRunOk) ? root.indigo : root.ink
                         font.family: root.mono; font.pixelSize: 11; elide: Text.ElideRight
                     }
-                    Text {
+                    UiText {
                         id: ulCheck
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         text: "✓"; visible: speedTest.uploadMbps > 0 && netPanel.speedRunOk
@@ -386,7 +384,7 @@ PanelWindow {
                     clip: true
                     Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                    Text {
+                    UiText {
                         id: speedFooter
                         width: parent.width
                         visible: speedTest.phase === "success" && netPanel.lastTestStamp !== ""
@@ -406,7 +404,7 @@ PanelWindow {
                 width: parent.width
                 height: 24
                 visible: netPanel.hasWifi
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Wi-Fi"
                     color: root.ink; font.family: root.mono; font.pixelSize: 11
@@ -414,12 +412,13 @@ PanelWindow {
                 Rectangle {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     width: 50; height: 22; radius: 11
-                    color: !netPanel.wifiBlocked ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    color: !netPanel.wifiBlocked ? root.fillActive
+                                                 : wifiToggleMa.containsMouse ? root.fillHover
+                                                 : root.fillIdle
                     border.color: (wifiToggleMa.containsMouse || !netPanel.wifiBlocked) ? root.seal : root.sep
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: netPanel.wifiBlocked ? "OFF" : "ON"
                         color: !netPanel.wifiBlocked ? root.seal : root.sumi
@@ -439,15 +438,15 @@ PanelWindow {
                 width: parent.width
                 height: 16
                 visible: netPanel.hasWifi && !netPanel.wifiBlocked && !root.useNM
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "AVAILABLE NETWORKS"
-                    color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                    color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: netPanel.scanning ? "scanning…" : "rescan"
-                    color: rescanMa.containsMouse ? Qt.lighter(root.seal, 1.25) : root.seal
+                    color: rescanMa.containsMouse ? root.fillPrimaryHover : root.seal
                     font.family: root.mono; font.pixelSize: 10
                     Behavior on color { ColorAnimation { duration: 120 } }
                     MouseArea { id: rescanMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: netPanel.scan() }
@@ -474,24 +473,23 @@ PanelWindow {
                             required property var modelData
                             width: netList.width
                             height: 30; radius: root.tileRadius
-                            color: nma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                   : modelData.conn ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                                   : "transparent"
-                            border.color: (nma.containsMouse || modelData.conn) ? root.seal : "transparent"
-                            border.width: (nma.containsMouse || modelData.conn) ? 1 : 0
+                            color: modelData.conn ? root.fillActive
+                                   : nma.containsMouse ? root.fillHover : root.fillIdle
+                            border.color: (nma.containsMouse || modelData.conn) ? root.seal : root.sep
+                            border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
 
                             Row {
                                 anchors.left: parent.left; anchors.leftMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: 6
-                                Text {
+                                IconText {
                                     text: modelData.sec === "open" ? "\uE898" : "\uE897"
-                                    font.family: "Material Symbols Rounded"; font.pixelSize: 12
-                                    color: root.sumi
+                                    font.pixelSize: 12
+                                    color: root.sumiHi
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
-                                Text {
+                                UiText {
                                     text: modelData.ssid
                                     color: (nma.containsMouse || modelData.conn) ? root.seal : root.ink
                                     font.family: root.mono; font.pixelSize: 11
@@ -499,7 +497,7 @@ PanelWindow {
                                     width: modelData.conn ? 116 : 170; elide: Text.ElideRight
                                     anchors.verticalCenter: parent.verticalCenter
                                 }
-                                Text {
+                                UiText {
                                     visible: modelData.conn
                                     text: "· Connected"
                                     color: root.seal
@@ -536,7 +534,7 @@ PanelWindow {
                         }
                     }
 
-                    Text {
+                    UiText {
                         visible: !netPanel.scanning && netPanel.networks.length === 0
                         width: netList.width; horizontalAlignment: Text.AlignHCenter
                         text: "No networks found"
@@ -552,18 +550,17 @@ PanelWindow {
                 width: parent.width
                 height: 52; radius: 6
                 visible: root.useNM && netPanel.hasWifi
-                color: nmMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
-                                          : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                color: nmMa.containsMouse ? root.fillHover : root.fillIdle
                 border.color: nmMa.containsMouse ? root.seal : root.sep; border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
                 Column {
                     anchors.centerIn: parent; spacing: 3; width: parent.width - 24
-                    Text {
+                    UiText {
                         width: parent.width; horizontalAlignment: Text.AlignHCenter
                         text: "Managed by NetworkManager"
                         color: root.ink; font.family: root.mono; font.pixelSize: 11
                     }
-                    Text {
+                    UiText {
                         width: parent.width; horizontalAlignment: Text.AlignHCenter
                         text: "click to open nmtui"
                         color: root.seal; font.family: root.mono; font.pixelSize: 10
@@ -581,10 +578,13 @@ PanelWindow {
             // ── button ──
             Rectangle {
                 width: parent.width
-                height: 28; radius: root.tileRadius; color: root.seal
-                Text { anchors.centerIn: parent; text: "Network settings"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
+                height: 28; radius: root.tileRadius
+                color: netSetMa.containsMouse ? root.fillPrimaryHover : root.seal
+                Behavior on color { ColorAnimation { duration: 120 } }
+                UiText { anchors.centerIn: parent; text: "Network settings"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
                 MouseArea {
-                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    id: netSetMa
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                     onClicked: { root.networkVisible = false; wifiRunner.running = false; wifiRunner.running = true }
                 }
             }

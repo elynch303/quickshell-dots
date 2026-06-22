@@ -8,9 +8,10 @@ Item {
     implicitWidth: 22
     implicitHeight: 28
 
-    Text {
+    UiText {
         anchors.centerIn: parent
         text: String.fromCodePoint(0xF0194)
+        renderType: Text.QtRendering
         font.family: root.mono; font.pixelSize: 14
         color: root.imagePickerVisible
             ? root.seal

@@ -68,7 +68,7 @@ PanelWindow {
                 implicitHeight: 18
                 height: 18
                 anchors.horizontalCenter: parent.horizontalCenter
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: "✕"
                     color: closeMa.containsMouse ? root.seal : root.sumi
@@ -100,7 +100,7 @@ PanelWindow {
                     Rectangle {
                         anchors.fill: parent
                         radius: root.tileRadius
-                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : "transparent"
+                        color: ma.containsMouse ? root.fillActive : "transparent"
                         border.color: ma.containsMouse ? root.seal : "transparent"
                         border.width: ma.containsMouse ? 1 : 0
                         Behavior on color { ColorAnimation { duration: 120 } }

@@ -14,10 +14,11 @@ Item {
     readonly property bool on: root.idleInhibited
     readonly property string tooltipText: on ? "Idle inhibited: ON" : "Idle inhibited: OFF"
 
-    Text {
+    UiText {
         anchors.centerIn: parent
         // 󰛨 U+F06E8 = activated / 󰛩 U+F06E9 = deactivated
         text: rootMod.on ? String.fromCodePoint(0xF06E8) : String.fromCodePoint(0xF06E9)
+        renderType: Text.QtRendering
         font.family: root.mono
         font.pixelSize: 14
         color: rootMod.on

@@ -63,13 +63,13 @@ PanelWindow {
         property bool dim: false
         width: parent ? parent.width : 0
         height: 16
-        Text {
+        UiText {
             id: rowLbl
             anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-            text: label; color: aiPanel.root.sumi
+            text: label; color: aiPanel.root.sumiHi
             font.family: aiPanel.root.mono; font.pixelSize: 11; font.letterSpacing: 1
         }
-        Text {
+        UiText {
             id: rowVal
             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
             text: pct + "%"
@@ -96,12 +96,12 @@ PanelWindow {
         property string k: ""
         property string v: ""
         width: parent ? parent.width : 0
-        Text {
-            text: k; color: aiPanel.root.sumi
+        UiText {
+            text: k; color: aiPanel.root.sumiHi
             font.family: aiPanel.root.mono; font.pixelSize: 11
             width: parent.width * 0.45
         }
-        Text {
+        UiText {
             text: v; color: aiPanel.root.ink
             font.family: aiPanel.root.mono; font.pixelSize: 11
             width: parent.width * 0.55; horizontalAlignment: Text.AlignRight
@@ -142,7 +142,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "AI USAGE"
@@ -152,7 +152,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
@@ -178,17 +178,18 @@ PanelWindow {
                     model: [ { id: "claude", label: "Claude" }, { id: "codex", label: "Codex" } ]
                     Rectangle {
                         required property var modelData
-                        width: (parent.width - 6) / 2
+                        width: root.evenW((parent.width - 6) / 2)
                         height: 28; radius: root.tileRadius
                         readonly property bool active: root.aiTool === modelData.id
-                        color: active ? root.seal
-                              : segMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                              : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                        color: active ? root.fillActive
+                              : segMa.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: (active || segMa.containsMouse) ? root.seal : root.sep
+                        border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: modelData.label
-                            color: parent.active ? root.paper : root.ink
+                            color: (parent.active || segMa.containsMouse) ? root.seal : root.ink
                             font.family: root.mono; font.pixelSize: 11
                             font.weight: parent.active ? Font.Medium : Font.Normal
                         }
@@ -208,23 +209,23 @@ PanelWindow {
             // ── Claude Code ──
             Item {
                 width: parent.width; height: 16
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Claude Code"; color: root.ink
                     font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: aiPanel.clFresh ? "live" : "stale"
                     color: aiPanel.clFresh ? root.sumi : root.sealRaw
                     font.family: root.mono; font.pixelSize: 10
                 }
             }
-            Text {
+            UiText {
                 visible: !aiPanel.clHas
                 width: parent.width
                 text: "no data — run claude"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
             }
             UsageRow { visible: aiPanel.clHas; label: "5h"; pct: aiPanel.clPct5h; dim: !aiPanel.clFresh }
             UsageRow { visible: aiPanel.clHas; label: "7d"; pct: aiPanel.clPct7d; dim: !aiPanel.clFresh }
@@ -237,24 +238,24 @@ PanelWindow {
             // ── OpenAI Codex ──
             Item {
                 width: parent.width; height: 16
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "OpenAI Codex" + (aiPanel.cxPlan ? "  · " + aiPanel.cxPlan : "")
                     color: root.ink
                     font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: aiPanel.cxFresh ? "live" : "stale"
                     color: aiPanel.cxFresh ? root.sumi : root.sealRaw
                     font.family: root.mono; font.pixelSize: 10
                 }
             }
-            Text {
+            UiText {
                 visible: !aiPanel.cxHas
                 width: parent.width
                 text: "no data — run codex"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
             }
             UsageRow { visible: aiPanel.cxHas; label: "5h"; pct: aiPanel.cxPct5h; dim: !aiPanel.cxFresh }
             UsageRow { visible: aiPanel.cxHas; label: "7d"; pct: aiPanel.cxPct7d; dim: !aiPanel.cxFresh }

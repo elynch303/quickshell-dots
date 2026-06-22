@@ -11,7 +11,6 @@ Item {
     implicitHeight: 28
     opacity: root.modMemory ? 1 : 0
 
-    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     property int percent: 0
@@ -35,10 +34,10 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "MEM"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -91,7 +90,7 @@ Item {
             spacing: 0
             anchors.verticalCenter: parent.verticalCenter
 
-            Text {
+            UiText {
                 text: String(Math.round(rootMod.usedGiB)).padStart(2, '0') + "G"
                 color: root.seal
                 font.family: root.mono

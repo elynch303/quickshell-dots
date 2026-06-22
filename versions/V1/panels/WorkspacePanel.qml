@@ -59,13 +59,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Workspaces"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -86,14 +86,13 @@ PanelWindow {
                         readonly property bool isActive: Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === modelData.id
                         width: col.width
                         height: 30; radius: root.tileRadius
-                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                : isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                                : "transparent"
-                        border.color: (ma.containsMouse || isActive) ? root.seal : "transparent"
-                        border.width: (ma.containsMouse || isActive) ? 1 : 0
+                        color: isActive ? root.fillActive
+                                : ma.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: (ma.containsMouse || isActive) ? root.seal : root.sep
+                        border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
-                        Text {
+                        UiText {
                             anchors.left: parent.left; anchors.leftMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Workspace " + modelData.id
@@ -101,11 +100,11 @@ PanelWindow {
                             font.family: root.mono; font.pixelSize: 12
                             font.weight: isActive ? Font.Medium : Font.Normal
                         }
-                        Text {
+                        UiText {
                             anchors.right: parent.right; anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
                             text: modelData.toplevels && modelData.toplevels.values ? modelData.toplevels.values.length : ""
-                            color: root.sumi; font.family: root.mono; font.pixelSize: 10
+                            color: root.sumiHi; font.family: root.mono; font.pixelSize: 10
                         }
 
                         MouseArea {

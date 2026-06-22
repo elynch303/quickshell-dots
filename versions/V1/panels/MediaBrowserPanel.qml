@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Widgets
 import "ImagePickerModel.js" as Model
 
 // Tanzaku filmstrip browser for screenshots & videos. Same language as the
@@ -231,7 +232,7 @@ PanelWindow {
 
     // ── colors ──
     readonly property color scrim:   Qt.rgba(root.paper.r, root.paper.g, root.paper.b, 0.8)
-    readonly property color frameBg: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
+    readonly property color frameBg: root.frameWeak
     readonly property color uiDim:   Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
 
     // ── scrim ──
@@ -298,7 +299,7 @@ PanelWindow {
         anchors.bottomMargin: 22
         opacity: panel.reveal
         text: panel.isVideos ? "VIDEOS" : "SCREENSHOTS"
-        color: root.sumi
+        color: root.sumiHi
         font.family: root.mono; font.pixelSize: 12; font.letterSpacing: 3; font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
     }
@@ -419,7 +420,9 @@ PanelWindow {
                 onWantThumbChanged: if (wantThumb) ensureThumb()
                 Component.onCompleted: ensureThumb()
 
-                // hairline frame (rounded; image inset so corners read round)
+                // hairline frame; the photo is clipped to the rounded INNER shape
+                // (ClippingRectangle = AA shader mask) so corners round to match the
+                // frame. radius 5 = concentric (8 - 3px inset).
                 Rectangle {
                     id: frame
                     anchors.fill: parent
@@ -427,37 +430,31 @@ PanelWindow {
                     color: panel.frameBg
                     border.width: 1
                     border.color: item.focused ? root.seal : root.sep
-                    clip: true
                     Behavior on border.color { ColorAnimation { duration: 180 } }
 
-                    // image / poster — no per-item layer effect (keeps the width
-                    // animation smooth); inset gives the rounded look
-                    Image {
+                    ClippingRectangle {
                         anchors.fill: parent
                         anchors.margins: 3
-                        // always the cached 480px thumb (never the full source);
-                        // current-visibility bound → bounded memory
-                        source: (panel.ready && item.near && item.entry) ? item.thumbPath : ""
-                        fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
-                        sourceSize.width:  panel.focusedW
-                        sourceSize.height: panel.focusedH
-                    }
-                    // play glyph (videos, only on focus + peeks where it fits)
-                    Text {
-                        visible: panel.isVideos && Math.abs(item.relIdx) <= 1
-                        anchors.centerIn: parent
-                        text: ""   // play_arrow
-                        font.family: "Material Symbols Rounded"
-                        font.pixelSize: item.focused ? 40 : 20
-                        color: Qt.rgba(1, 1, 1, 0.9)
-                        style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.5)
-                    }
-                    // paper-wash dim; the preview peek lighter
-                    Rectangle {
-                        anchors.fill: parent; anchors.margins: 3
-                        color: root.paper
-                        opacity: item.focused ? 0 : (Math.abs(item.relIdx) === 1 ? 0.28 : 0.5)
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                        radius: 5
+                        color: "transparent"
+
+                        // image / poster — clipped to the rounded shape above
+                        Image {
+                            anchors.fill: parent
+                            // always the cached 480px thumb (never the full source);
+                            // current-visibility bound → bounded memory
+                            source: (panel.ready && item.near && item.entry) ? item.thumbPath : ""
+                            fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
+                            sourceSize.width:  panel.focusedW
+                            sourceSize.height: panel.focusedH
+                        }
+                        // paper-wash dim; the preview peek lighter
+                        Rectangle {
+                            anchors.fill: parent
+                            color: root.paper
+                            opacity: item.focused ? 0 : (Math.abs(item.relIdx) === 1 ? 0.28 : 0.5)
+                            Behavior on opacity { NumberAnimation { duration: 200 } }
+                        }
                     }
                 }
 

@@ -89,7 +89,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Volume"
@@ -99,7 +99,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
@@ -119,16 +119,16 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── volume bar ──
-            Text {
+            UiText {
                 text: "OUTPUT"
-                color: root.sumi
+                color: root.sumiHi
                 font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
 
             Item {
                 width: parent.width
                 height: 30
-                Text {
+                UiText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     text: volPanel.muted ? "Muted" : volPanel.volume + "%"
@@ -140,7 +140,7 @@ PanelWindow {
                 Rectangle {
                     anchors.bottom: parent.bottom
                     width: parent.width; height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * (volPanel.muted ? 0 : Math.min(volPanel.volume / 100, 1))
                         height: parent.height; radius: 4
@@ -151,9 +151,9 @@ PanelWindow {
             }
 
             // ── output device switcher ──
-            Text {
+            UiText {
                 text: "OUTPUT DEVICE"
-                color: root.sumi
+                color: root.sumiHi
                 font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Column {
@@ -168,9 +168,8 @@ PanelWindow {
                         readonly property bool hovered: devMa.containsMouse
                         width: parent.width
                         height: 26; radius: root.tileRadius
-                        color: isDef     ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                             : hovered    ? Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.12)
-                                          : Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.06)
+                        color: isDef     ? root.fillActive
+                             : hovered ? root.fillHover : root.fillIdle
                         border.color: (isDef || hovered) ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
@@ -178,13 +177,13 @@ PanelWindow {
                             anchors.fill: parent
                             anchors.leftMargin: 8; anchors.rightMargin: 8
                             spacing: 6
-                            Text {
+                            UiText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: devTile.isDef ? "●" : "○"
                                 color: devTile.isDef ? root.seal : root.sumi
                                 font.family: root.mono; font.pixelSize: 10
                             }
-                            Text {
+                            UiText {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: parent.width - 22
                                 text: devTile.modelData.desc
@@ -214,16 +213,15 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: muteMa.containsMouse
-                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                    : volPanel.muted ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                    : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                color: volPanel.muted ? root.fillActive
+                    : muteMa.containsMouse ? root.fillHover
+                    : root.fillIdle
                 border.color: (muteMa.containsMouse || volPanel.muted) ? root.seal : root.sep
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
-                    text: volPanel.muted ? "Unmute" : "Mute"
+                    text: volPanel.muted ? "Unmute volume" : "Mute volume"
                     color: (muteMa.containsMouse || volPanel.muted) ? root.seal : root.sumi
                     font.family: root.mono; font.pixelSize: 11
                 }
@@ -242,10 +240,10 @@ PanelWindow {
 
             // ── per-app mixer ──
             Rectangle { width: parent.width; height: 1; color: root.sep; visible: volPanel.apps.length > 0 }
-            Text {
+            UiText {
                 visible: volPanel.apps.length > 0
                 text: "APPS"
-                color: root.sumi
+                color: root.sumiHi
                 font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Column {
@@ -261,12 +259,12 @@ PanelWindow {
                         property int liveVol: modelData.vol
 
                         // mute glyph
-                        Text {
+                        IconText {
                             id: appMute
                             anchors.left: parent.left
                             anchors.top: parent.top
                             text: appRow.modelData.muted ? String.fromCodePoint(0xE04F) : String.fromCodePoint(0xE050)
-                            font.family: "Material Symbols Rounded"; font.pixelSize: 15
+                            font.pixelSize: 15
                             color: appRow.modelData.muted ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4) : root.seal
                             MouseArea {
                                 anchors.fill: parent; anchors.margins: -3
@@ -277,19 +275,21 @@ PanelWindow {
                                 }
                             }
                         }
-                        Text {
+                        UiText {
                             anchors.left: appMute.right; anchors.leftMargin: 6
-                            anchors.top: parent.top
+                            anchors.verticalCenter: appMute.verticalCenter
+                            anchors.verticalCenterOffset: 1
                             anchors.right: appPct.left; anchors.rightMargin: 6
                             text: appRow.modelData.name
                             color: appRow.modelData.muted ? root.sumi : root.ink
                             font.family: root.mono; font.pixelSize: 11
                             elide: Text.ElideRight
                         }
-                        Text {
+                        UiText {
                             id: appPct
                             anchors.right: parent.right
-                            anchors.top: parent.top
+                            anchors.verticalCenter: appMute.verticalCenter
+                            anchors.verticalCenterOffset: 1
                             text: appRow.liveVol + "%"
                             color: root.seal
                             font.family: root.mono; font.pixelSize: 11; font.weight: Font.Medium
@@ -301,7 +301,7 @@ PanelWindow {
                             anchors.left: parent.left; anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             height: 8; radius: 4
-                            color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                            color: root.fillActive
                             Rectangle {
                                 width: parent.width * Math.min(appRow.liveVol / 100, 1)
                                 height: parent.height; radius: 4
@@ -327,21 +327,21 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── mic section ──
-            Text {
+            UiText {
                 text: "INPUT"
-                color: root.sumi
+                color: root.sumiHi
                 font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
 
             Row {
                 width: parent.width
-                Text {
+                UiText {
                     text: "Microphone"
-                    color: root.sumi
+                    color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11
                     width: parent.width * 0.5
                 }
-                Text {
+                UiText {
                     text: volPanel.micMuted ? "Muted" : "Active"
                     color: volPanel.micMuted
                         ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.5)
@@ -355,14 +355,13 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: micMuteMa.containsMouse
-                    ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                    : volPanel.micMuted ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                    : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                color: volPanel.micMuted ? root.fillActive
+                    : micMuteMa.containsMouse ? root.fillHover
+                    : root.fillIdle
                 border.color: (micMuteMa.containsMouse || volPanel.micMuted) ? root.seal : root.sep
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: volPanel.micMuted ? "Unmute mic" : "Mute mic"
                     color: (micMuteMa.containsMouse || volPanel.micMuted) ? root.seal : root.sumi
@@ -390,9 +389,9 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: audioBtnMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                color: audioBtnMa.containsMouse ? root.fillPrimaryHover : root.seal
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: "Open audio"
                     color: root.paper

@@ -76,7 +76,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Memory"
@@ -86,7 +86,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
@@ -109,7 +109,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 30
-                Text {
+                UiText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     text: memPanel.pct + "%"
@@ -119,7 +119,7 @@ PanelWindow {
                 Rectangle {
                     anchors.bottom: parent.bottom
                     width: parent.width; height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * memPanel.pct / 100
                         height: parent.height; radius: 4
@@ -135,21 +135,21 @@ PanelWindow {
                 spacing: 4
                 Row {
                     width: parent.width
-                    Text { text: "Used"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: memPanel.usedGiB.toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
-                    Text { text: memPanel.memUsed + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: "Used"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: memPanel.usedGiB.toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: memPanel.memUsed + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
                 }
                 Row {
                     width: parent.width
-                    Text { text: "Available"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: (memPanel.memAvail / 1024).toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
-                    Text { text: memPanel.memAvail + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: "Available"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: (memPanel.memAvail / 1024).toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: memPanel.memAvail + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
                 }
                 Row {
                     width: parent.width
-                    Text { text: "Total"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: memPanel.totalGiB.toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
-                    Text { text: memPanel.memTotal + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: "Total"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: memPanel.totalGiB.toFixed(1) + " GiB"; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
+                    UiText { text: memPanel.memTotal + " MiB"; color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6); font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.3 }
                 }
             }
 
@@ -159,9 +159,9 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: btopMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                color: btopMa.containsMouse ? root.fillPrimaryHover : root.seal
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: "Open btop"
                     color: root.paper

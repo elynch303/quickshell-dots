@@ -20,16 +20,14 @@ Item {
     implicitWidth: visible ? 20 : 0
     implicitHeight: 28
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     readonly property string tooltipText: hint !== "" ? hint : (state === "recording" ? "Voxtype recording" : "Voxtype transcribing")
 
-    Text {
+    IconText {
         id: ico
         anchors.centerIn: parent
         text: rootMod.displayIcon
         color: rootMod.state === "recording" ? root.seal : root.ink
-        font.family: "Material Symbols Rounded"
         font.pixelSize: 14
 
         // pulse while recording

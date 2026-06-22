@@ -14,6 +14,7 @@ Item {
     property color ink:     "#c5c9c5"
     property color inkDeep: "#c8c093"
     property color sumi:    "#a6a69c"
+    readonly property color sumiHi:  Qt.rgba(sumi.r*0.45 + ink.r*0.55, sumi.g*0.45 + ink.g*0.55, sumi.b*0.45 + ink.b*0.55, 1.0)  // lifted section-header text
     property color indigo:  "#658594"
     property color green:   "#8a9a73"   // gate "OK" verdict
     property color sealRaw:    "#c4746e"
@@ -40,6 +41,21 @@ Item {
     readonly property color accent: seal
     readonly property color warn:   seal
     readonly property color sep:    Qt.rgba(ink.r, ink.g, ink.b, 0.18)
+
+    // ── interactive fill tokens (button/tile backgrounds) ──
+    // One source of truth so every panel uses the same hover/active/idle alpha
+    // instead of ad-hoc rgba literals scattered across the panels.
+    readonly property real  fillActiveAlpha: 0.18
+    readonly property real  fillHoverAlpha:  0.10
+    readonly property color fillActive:      Qt.rgba(seal.r, seal.g, seal.b, fillActiveAlpha) // selected/active OR ghost-action hover
+    readonly property color fillHover:        Qt.rgba(seal.r, seal.g, seal.b, fillHoverAlpha)  // light-seal hover (idle chip → this → fillActive)
+    readonly property color fillIdle:         Qt.rgba(0, 0, 0, 0.12)              // resting chip (slight darken)
+    // faint, NEUTRAL backdrop behind picker thumbnails — NOT an interactive fill.
+    // ink-tinted and much weaker than fillIdle so a thumbnail sits on a quiet frame,
+    // not on a dark interactive-looking box.
+    readonly property color frameWeak:        Qt.rgba(ink.r, ink.g, ink.b, 0.05)
+    readonly property color fillPrimaryHover: Qt.lighter(seal, 1.15)                // solid-seal button hover
+    function evenW(w) { return 2 * Math.round(w / 2) }  // even px width -> integer-centered native text (crisp)
 
     // ── pill/card border (default, non-borderless mode) ──
     // A premium "inactive window border" look: the surface tone (paper) nudged a

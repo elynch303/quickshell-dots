@@ -72,7 +72,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Power Profile"
@@ -82,7 +82,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
@@ -117,11 +117,10 @@ PanelWindow {
                     Rectangle {
                         anchors.fill: parent
                         radius: root.tileRadius
-                        color: ma.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                               : isActive ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.2)
-                               : "transparent"
-                        border.color: (ma.containsMouse || isActive) ? root.seal : "transparent"
-                        border.width: (ma.containsMouse || isActive) ? 1 : 0
+                        color: isActive ? root.fillActive
+                               : ma.containsMouse ? root.fillHover : root.fillIdle
+                        border.color: (ma.containsMouse || isActive) ? root.seal : root.sep
+                        border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
@@ -131,14 +130,15 @@ PanelWindow {
                         anchors.right: parent.right; anchors.rightMargin: 8
                         spacing: 8
 
-                        Text {
+                        UiText {
                             text: modelData.icon
+                            renderType: Text.QtRendering
                             color: (ma.containsMouse || isActive) ? root.seal : root.ink
                             font.family: root.mono
                             font.pixelSize: 14
                             anchors.verticalCenter: parent.verticalCenter
                         }
-                        Text {
+                        UiText {
                             text: modelData.label
                             color: (ma.containsMouse || isActive) ? root.seal : root.ink
                             font.family: root.mono

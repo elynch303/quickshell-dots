@@ -18,9 +18,6 @@ Item {
     visible: implicitWidth > 0.5
     opacity: shown ? 1 : 0
 
-    Behavior on implicitWidth {
-        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-    }
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
@@ -39,10 +36,10 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "BRI"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -93,7 +90,7 @@ Item {
             }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
             color: rootMod.percent >= 100

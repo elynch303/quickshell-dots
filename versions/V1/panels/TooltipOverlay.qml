@@ -51,7 +51,7 @@ PanelWindow {
         // border-less style → drop the border, drop a dark shadow (same as pills)
         PillShadow { theme: root }
 
-        Text {
+        UiText {
             id: tipLabel
             anchors.centerIn: parent
             text: root.tooltipText

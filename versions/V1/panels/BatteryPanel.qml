@@ -81,13 +81,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Battery"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -100,7 +100,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 30
-                Text {
+                UiText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     text: batPanel.percent + "%"
@@ -110,7 +110,7 @@ PanelWindow {
                 Rectangle {
                     anchors.bottom: parent.bottom
                     width: parent.width; height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * batPanel.percent / 100
                         height: parent.height; radius: 4
@@ -125,8 +125,8 @@ PanelWindow {
                 spacing: 4
                 Row {
                     width: parent.width
-                    Text { text: "Status"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text {
+                    UiText { text: "Status"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText {
                         text: batPanel.status
                         color: batPanel.charging ? root.indigo : root.ink
                         font.family: root.mono; font.pixelSize: 11
@@ -135,32 +135,32 @@ PanelWindow {
                 Row {
                     width: parent.width
                     visible: batPanel.timeText !== ""
-                    Text { text: batPanel.timeLabel; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: batPanel.timeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: batPanel.timeLabel; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.timeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: batPanel.capacity !== ""
-                    Text { text: "Health"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: batPanel.capacity; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Health"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.capacity; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: batPanel.changeRate > 0.05
-                    Text { text: "Power draw"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: batPanel.changeRate.toFixed(1) + " W"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Power draw"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.changeRate.toFixed(1) + " W"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: batPanel.sizeText !== ""
-                    Text { text: "Battery size"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: batPanel.sizeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Battery size"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.sizeText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: batPanel.cycles > 0
-                    Text { text: "Charge cycles"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: String(batPanel.cycles); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Charge cycles"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: String(batPanel.cycles); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
             }
 
@@ -169,9 +169,9 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: btopMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                color: btopMa.containsMouse ? root.fillPrimaryHover : root.seal
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text { anchors.centerIn: parent; text: "Open btop"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
+                UiText { anchors.centerIn: parent; text: "Open btop"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
                 MouseArea {
                     id: btopMa
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor

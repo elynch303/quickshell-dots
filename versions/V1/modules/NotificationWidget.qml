@@ -12,11 +12,10 @@ Item {
     implicitWidth: 26
     implicitHeight: 28
 
-    Text {
+    IconText {
         id: bellIcon
         anchors.centerIn: parent
         text: "\uE7F4"   // notifications (bell)
-        font.family: "Material Symbols Rounded"
         font.pixelSize: 16
         color: root.notifCount > 0
             ? root.ink

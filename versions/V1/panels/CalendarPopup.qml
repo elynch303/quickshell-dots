@@ -71,9 +71,8 @@ PanelWindow {
                     id: prevBtn
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     width: 24; height: 24; radius: root.tileRadius
-                    color: prevMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    color: "transparent"
+                    UiText {
                         anchors.centerIn: parent
                         text: "‹"   // ‹
                         color: prevMa.containsMouse ? root.seal : root.sumi
@@ -89,7 +88,7 @@ PanelWindow {
                 }
 
                 // month + year — click to jump back to today
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: root.calendarMonthName + "  " + root.calendarYear
                     color: monthMa.containsMouse && root.calendarMonthOffset !== 0 ? root.seal : root.ink
@@ -111,9 +110,8 @@ PanelWindow {
                     id: nextBtn
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     width: 24; height: 24; radius: root.tileRadius
-                    color: nextMa.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    color: "transparent"
+                    UiText {
                         anchors.centerIn: parent
                         text: "›"   // ›
                         color: nextMa.containsMouse ? root.seal : root.sumi
@@ -141,7 +139,7 @@ PanelWindow {
                         required property int index
                         width: parent.width / 7
                         height: 20
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: modelData
                             color: index >= 5 ? root.seal : root.inkDeep
@@ -194,7 +192,7 @@ PanelWindow {
                             visible: isSelected && !isToday
                         }
 
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: modelData.day === 0 ? "" : modelData.day
                             color: textColor

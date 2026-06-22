@@ -25,7 +25,6 @@ Item {
     implicitHeight: 28
     opacity: shown ? 1 : 0
 
-    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
@@ -44,27 +43,26 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "BT"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
         }
 
-        Text {
+        IconText {
             anchors.verticalCenter: parent.verticalCenter
             text: IconMap.icon(rootMod.iconN)
             color: rootMod.connected
                 ? root.seal
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, rootMod.btOn ? 0.7 : 0.3)
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 14
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: rootMod.connected
             text: String(rootMod.numConnected)

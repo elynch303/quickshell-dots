@@ -191,7 +191,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: notifPanel.unreadCount > 0 ? "Notifications · " + notifPanel.unreadCount : "Notifications"
@@ -201,7 +201,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
@@ -233,9 +233,7 @@ PanelWindow {
                         width: col.width
                         height: entryCol.implicitHeight + 16
                         radius: root.tileRadius
-                        color: entryMa.containsMouse
-                            ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
+                        color: entryMa.containsMouse ? root.fillHover : root.fillIdle
                         border.color: entryMa.containsMouse ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
@@ -248,16 +246,16 @@ PanelWindow {
                             anchors.rightMargin: 26   // leave room for the ✕
                             spacing: 3
 
-                            Text {
+                            UiText {
                                 text: modelData.appName || "App"
-                                color: root.sumi
+                                color: root.sumiHi
                                 font.family: root.mono
                                 font.pixelSize: 10
                                 font.letterSpacing: 0.5
                                 width: parent.width
                                 elide: Text.ElideRight
                             }
-                            Text {
+                            UiText {
                                 text: modelData.summary || ""
                                 color: root.ink
                                 font.family: root.mono
@@ -266,7 +264,7 @@ PanelWindow {
                                 elide: Text.ElideRight
                                 visible: text !== ""
                             }
-                            Text {
+                            UiText {
                                 text: modelData.body || ""
                                 color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
                                 font.family: root.mono
@@ -293,9 +291,8 @@ PanelWindow {
                             anchors.top: parent.top; anchors.right: parent.right
                             anchors.topMargin: 4; anchors.rightMargin: 4
                             width: 18; height: 18; radius: 9
-                            color: xMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Text {
+                            color: "transparent"
+                            UiText {
                                 anchors.centerIn: parent
                                 text: "✕"
                                 color: xMa.containsMouse ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
@@ -313,7 +310,7 @@ PanelWindow {
                 }
 
                 // "+N more" hint when the list is capped
-                Text {
+                UiText {
                     visible: notifPanel.pending.length > notifPanel.maxShown
                     width: col.width
                     horizontalAlignment: Text.AlignHCenter
@@ -323,7 +320,7 @@ PanelWindow {
                     font.pixelSize: 10
                 }
 
-                Text {
+                UiText {
                     visible: notifPanel.pending.length === 0
                     width: col.width
                     horizontalAlignment: Text.AlignHCenter
@@ -340,12 +337,11 @@ PanelWindow {
                 height: 28; radius: root.tileRadius
                 visible: notifPanel.pending.length > 0
                 readonly property bool hovered: clearMa.containsMouse
-                color: hovered ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                color: hovered ? root.fillHover : root.fillIdle
                 border.color: hovered ? root.seal : root.sep
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: "Clear all"
                     color: clearMa.containsMouse ? root.seal : root.sumi

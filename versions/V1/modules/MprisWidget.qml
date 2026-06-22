@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Services.Mpris
 
@@ -64,10 +65,11 @@ Item {
     implicitHeight: 28
     opacity: root.modMpris ? 1 : 0
 
+    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
     Behavior on implicitWidth {
         NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
     }
-    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter
@@ -81,12 +83,11 @@ Item {
     }
 
     // ── idle: a single music-note, clickable to open the no-song panel ──
-    Text {
+    IconText {
         id: idleNote
         anchors.centerIn: parent
         visible: !rootMod.active
         text: ""   // music_note
-        font.family: "Material Symbols Rounded"
         font.pixelSize: 15
         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
         MouseArea {
@@ -104,10 +105,9 @@ Item {
         spacing: 4
 
         // ── prev ──
-        Text {
+        IconText {
             anchors.verticalCenter: parent.verticalCenter
             text: ""
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 13
             color: (rootMod.player && rootMod.player.canGoPrevious)
                 ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
@@ -120,10 +120,9 @@ Item {
         }
 
         // ── play / pause ──
-        Text {
+        IconText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.playing ? "" : ""
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 13
             color: root.seal
             MouseArea {
@@ -133,10 +132,9 @@ Item {
         }
 
         // ── next ──
-        Text {
+        IconText {
             anchors.verticalCenter: parent.verticalCenter
             text: ""
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 13
             color: (rootMod.player && rootMod.player.canGoNext)
                 ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
@@ -148,14 +146,41 @@ Item {
             }
         }
 
+        // hidden alpha-mask source for the marquee fade — defined BEFORE the masked
+        // item so the layer.effect can resolve the id; visible:false → no Row layout.
+        Item {
+            id: marqueeFadeMask
+            width: 88; height: 28
+            visible: false
+            layer.enabled: true
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0;  color: "white" }
+                    GradientStop { position: 0.92; color: "white" }
+                    GradientStop { position: 1.0;  color: "transparent" }
+                }
+            }
+        }
+
         // ── marquee title ──
         Item {
             id: marqueeClip
             implicitWidth: 88
             width: 88
             height: 28
-            clip: true
             anchors.verticalCenter: parent.verticalCenter
+            // alpha-mask fade of the right edge: the scrolling title dissolves into
+            // the real pixels behind it (no fixed colour → no seam on the translucent
+            // pill). layer.enabled also clips to bounds like the old clip:true.
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                maskEnabled: true
+                maskSource: marqueeFadeMask
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 0.5
+            }
 
             Text {
                 id: marqueeText

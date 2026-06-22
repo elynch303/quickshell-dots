@@ -99,14 +99,13 @@ Item {
         width: 20
         height: 20
 
-        Text {
+        IconText {
             id: ic
             anchors.centerIn: parent
             text: rootMod.refreshing ? "\uE5D5" : IconMap.icon("package_2")
             color: rootMod.refreshing
                 ? Qt.rgba(root.sumi.r, root.sumi.g, root.sumi.b, 1)
                 : (rootMod.hasUpdates ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4))
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 14
         }
 

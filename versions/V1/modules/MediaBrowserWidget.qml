@@ -10,9 +10,10 @@ Item {
     implicitWidth: 22
     implicitHeight: 28
 
-    Text {
+    UiText {
         anchors.centerIn: parent
         text: String.fromCodePoint(0xF021B)   // nf-md-image_multiple
+        renderType: Text.QtRendering
         font.family: root.mono; font.pixelSize: 14
         color: root.mediaBrowserVisible
             ? root.seal

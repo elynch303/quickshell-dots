@@ -79,13 +79,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Weather"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -98,12 +98,12 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 36
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: wxPanel.temp !== "" ? wxPanel.tConv(wxPanel.temp) + "°" + (root.weatherImperial ? "F" : "C") : "—"
                     color: root.seal; font.family: root.mono; font.pixelSize: 26; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: wxPanel.desc
                     color: root.ink; font.family: root.mono; font.pixelSize: 11
@@ -118,26 +118,26 @@ PanelWindow {
                 Row {
                     width: parent.width
                     visible: wxPanel.location !== ""
-                    Text { text: "Location"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.location; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
+                    UiText { text: "Location"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: wxPanel.location; color: root.ink; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.6; elide: Text.ElideRight }
                 }
                 Row {
                     width: parent.width
                     visible: wxPanel.feels !== ""
-                    Text { text: "Feels like"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.tConv(wxPanel.feels) + "°" + (root.weatherImperial ? "F" : "C"); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Feels like"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: wxPanel.tConv(wxPanel.feels) + "°" + (root.weatherImperial ? "F" : "C"); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: wxPanel.humidity !== ""
-                    Text { text: "Humidity"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.humidity + "%"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Humidity"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: wxPanel.humidity + "%"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
                     visible: wxPanel.wind !== ""
-                    Text { text: "Wind"; color: root.sumi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    Text { text: wxPanel.wConv(wxPanel.wind); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    UiText { text: "Wind"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: wxPanel.wConv(wxPanel.wind); color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
             }
 
@@ -149,12 +149,12 @@ PanelWindow {
                 spacing: 6
                 // Refresh (primary)
                 Rectangle {
-                    width: (parent.width - parent.spacing) / 2
+                    width: root.evenW((parent.width - parent.spacing) / 2)
                     height: 28; radius: root.tileRadius
                     color: wxPanel.refreshing ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.45)
-                           : wxBtnMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                           : wxBtnMa.containsMouse ? root.fillPrimaryHover : root.seal
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: wxPanel.refreshing ? "Refreshing…" : "Refresh"
                         color: root.paper; font.family: root.mono; font.pixelSize: 11
@@ -168,13 +168,14 @@ PanelWindow {
                 }
                 // Unit toggle (secondary): shows the unit you'd switch TO
                 Rectangle {
-                    width: (parent.width - parent.spacing) / 2
+                    width: root.evenW((parent.width - parent.spacing) / 2)
                     height: 28; radius: root.tileRadius
-                    color: "transparent"
+                    color: unitMa.containsMouse ? root.fillHover : root.fillIdle
                     border.color: unitMa.containsMouse ? root.seal : root.sep
                     border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     Behavior on border.color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: root.weatherImperial ? "metric" : "imperial"
                         color: unitMa.containsMouse ? root.seal : root.ink

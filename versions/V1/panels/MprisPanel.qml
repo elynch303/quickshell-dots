@@ -183,7 +183,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "NOW PLAYING"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
@@ -192,14 +192,14 @@ PanelWindow {
                 Row {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
-                    Text {
+                    UiText {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: mprisPanel.active && mprisPanel.playerName !== ""
                         text: mprisPanel.playerName
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
                         font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
                     }
-                    Text {
+                    UiText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                         Behavior on color { ColorAnimation { duration: 120 } }
@@ -219,7 +219,7 @@ PanelWindow {
                 // album art (falls back to a music glyph)
                 Rectangle {
                     width: 52; height: 52; radius: 5
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
+                    color: root.fillActive
                     clip: true
                     Image {
                         anchors.fill: parent
@@ -228,11 +228,11 @@ PanelWindow {
                         asynchronous: true
                         visible: status === Image.Ready
                     }
-                    Text {
+                    IconText {
                         anchors.centerIn: parent
                         visible: !mprisPanel.player || mprisPanel.player.trackArtUrl === ""
                         text: ""   // music_note
-                        font.family: "Material Symbols Rounded"; font.pixelSize: 26
+                        font.pixelSize: 26
                         color: root.seal
                     }
                 }
@@ -241,20 +241,20 @@ PanelWindow {
                     width: parent.width - 62
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 3
-                    Text {
+                    UiText {
                         width: parent.width
                         text: mprisPanel.player ? (mprisPanel.player.trackTitle || "Unknown") : ""
                         color: root.ink; font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
                         elide: Text.ElideRight
                     }
-                    Text {
+                    UiText {
                         width: parent.width
                         text: mprisPanel.player ? (mprisPanel.player.trackArtist || "") : ""
-                        color: root.sumi; font.family: root.mono; font.pixelSize: 11
+                        color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
                         elide: Text.ElideRight
                         visible: text !== ""
                     }
-                    Text {
+                    UiText {
                         width: parent.width
                         text: mprisPanel.player ? (mprisPanel.player.trackAlbum || "") : ""
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
@@ -275,7 +275,7 @@ PanelWindow {
                     anchors.left: parent.left; anchors.right: parent.right
                     anchors.top: parent.top
                     height: 4; radius: 2
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         height: parent.height; radius: 2
                         color: root.seal
@@ -284,15 +284,15 @@ PanelWindow {
                         Behavior on width { NumberAnimation { duration: 450 } }
                     }
                 }
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.top: track.bottom; anchors.topMargin: 2
                     text: mprisPanel.fmtTime(mprisPanel.curPos)
-                    color: root.sumi; font.family: root.mono; font.pixelSize: 9
+                    color: root.sumiHi; font.family: root.mono; font.pixelSize: 9
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.top: track.bottom; anchors.topMargin: 2
                     text: mprisPanel.fmtTime(mprisPanel.curLen)
-                    color: root.sumi; font.family: root.mono; font.pixelSize: 9
+                    color: root.sumiHi; font.family: root.mono; font.pixelSize: 9
                 }
             }
 
@@ -347,13 +347,13 @@ PanelWindow {
                     anchors.centerIn: parent
                     spacing: 1
                     visible: !mprisPanel.active
-                    Text {
+                    UiText {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "No song playing"
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.55)
                         font.family: root.mono; font.pixelSize: 12; font.weight: Font.Medium
                     }
-                    Text {
+                    UiText {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "no active player"
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.3)
@@ -368,21 +368,24 @@ PanelWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 18
 
-                Text {
+                IconText {
                     text: ""
-                    font.family: "Material Symbols Rounded"; font.pixelSize: 20
+                    font.pixelSize: 20
+                    anchors.verticalCenter: parent.verticalCenter
                     color: (mprisPanel.player && mprisPanel.player.canGoPrevious) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (mprisPanel.player) mprisPanel.player.previous() }
                 }
-                Text {
+                IconText {
                     text: mprisPanel.playing ? "" : ""
-                    font.family: "Material Symbols Rounded"; font.pixelSize: 24
+                    font.pixelSize: 24
+                    anchors.verticalCenter: parent.verticalCenter
                     color: root.seal
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (mprisPanel.player) mprisPanel.player.togglePlaying() }
                 }
-                Text {
+                IconText {
                     text: ""
-                    font.family: "Material Symbols Rounded"; font.pixelSize: 20
+                    font.pixelSize: 20
+                    anchors.verticalCenter: parent.verticalCenter
                     color: (mprisPanel.player && mprisPanel.player.canGoNext) ? root.ink : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: if (mprisPanel.player) mprisPanel.player.next() }
                 }

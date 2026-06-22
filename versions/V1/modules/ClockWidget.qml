@@ -34,7 +34,7 @@ Item {
         onTriggered: rootMod.now = new Date()
     }
 
-    Text {
+    UiText {
         id: label
         anchors.centerIn: parent
         text: rootMod.timeStr

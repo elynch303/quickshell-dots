@@ -81,7 +81,6 @@ Item {
     implicitHeight: 28
     opacity: shown ? 1 : 0
 
-    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     // ── process detection ──
@@ -137,9 +136,10 @@ Item {
                 implicitWidth: glyphBase.implicitWidth
                 implicitHeight: glyphBase.implicitHeight
 
-                Text {
+                UiText {
                     id: glyphBase
                     text: String.fromCodePoint(0xF167A)
+                    renderType: Text.QtRendering
                     color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
                     font.family: root.mono
                     font.pixelSize: 14
@@ -152,9 +152,10 @@ Item {
                         ? Math.min(parent.height, Math.max(parent.height * rootMod.pct5hStep / 100, parent.height * 0.25))
                         : 0
                     Behavior on height { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
-                    Text {
+                    UiText {
                         anchors.bottom: parent.bottom
                         text: String.fromCodePoint(0xF167A)
+                        renderType: Text.QtRendering
                         color: root.seal
                         font.family: root.mono
                         font.pixelSize: 14
@@ -211,7 +212,7 @@ Item {
             }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.blocked
                 ? "BLK"

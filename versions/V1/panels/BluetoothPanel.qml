@@ -77,7 +77,7 @@ PanelWindow {
                 Row {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
-                    Text {
+                    UiText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "Bluetooth"
                         color: root.ink; font.family: root.mono; font.pixelSize: 13
@@ -87,13 +87,13 @@ PanelWindow {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: btPanel.btOn && btPanel.numConnected > 0
                         spacing: 3
-                        Text {
+                        IconText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: IconMap.icon("bluetooth_connected")
                             color: root.seal
-                            font.family: "Material Symbols Rounded"; font.pixelSize: 13
+                            font.pixelSize: 13
                         }
-                        Text {
+                        UiText {
                             anchors.verticalCenter: parent.verticalCenter
                             text: String(btPanel.numConnected)
                             color: root.seal
@@ -108,8 +108,8 @@ PanelWindow {
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 46; height: 20; radius: 10
-                        color: btPanel.btOn ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.20)
-                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                        color: btPanel.btOn ? root.fillActive
+                                            : root.fillIdle
                         border.color: btPanel.btOn ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 150 } }
@@ -126,7 +126,7 @@ PanelWindow {
                             onClicked: { powerProc.running = false; powerProc.running = true }
                         }
                     }
-                    Text {
+                    UiText {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                         Behavior on color { ColorAnimation { duration: 120 } }
@@ -138,7 +138,7 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── off state ──
-            Text {
+            UiText {
                 visible: !btPanel.btOn
                 width: parent.width; horizontalAlignment: Text.AlignHCenter
                 text: "Bluetooth is off"
@@ -153,13 +153,12 @@ PanelWindow {
                 width: parent.width
                 height: 28; radius: root.tileRadius
                 readonly property bool hovered: scanMa.containsMouse
-                color: btPanel.scanning ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                       : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                       : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                color: btPanel.scanning ? root.fillActive
+                       : hovered ? root.fillHover : root.fillIdle
                 border.color: (btPanel.scanning || hovered) ? root.seal : root.sep
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: btPanel.scanning ? "Scanning…" : "Scan for devices"
                     color: btPanel.scanning ? root.seal : root.ink
@@ -188,15 +187,14 @@ PanelWindow {
                         readonly property bool hovered: devMa.containsMouse
                         width: col.width
                         height: 30; radius: root.tileRadius
-                        color: modelData.connected ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
-                               : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                               : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
+                        color: modelData.connected ? root.fillActive
+                               : hovered ? root.fillHover : root.fillIdle
                         border.color: modelData.connected ? root.seal
                                       : hovered ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
-                        Text {
+                        UiText {
                             anchors.left: parent.left; anchors.leftMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
                             width: parent.width - tag.width - 24
@@ -204,7 +202,7 @@ PanelWindow {
                             color: root.ink; font.family: root.mono; font.pixelSize: 11
                             elide: Text.ElideRight
                         }
-                        Text {
+                        UiText {
                             id: tag
                             anchors.right: parent.right; anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
@@ -235,7 +233,7 @@ PanelWindow {
                         }
                     }
                 }
-                Text {
+                UiText {
                     visible: btPanel.btOn && btPanel.devices.length === 0
                     width: parent.width; horizontalAlignment: Text.AlignHCenter
                     text: btPanel.scanning ? "Searching…" : "No devices — tap Scan"
@@ -250,9 +248,9 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: btSetMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                color: btSetMa.containsMouse ? root.fillPrimaryHover : root.seal
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text { anchors.centerIn: parent; text: "Bluetooth settings"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
+                UiText { anchors.centerIn: parent; text: "Bluetooth settings"; color: root.paper; font.family: root.mono; font.pixelSize: 11 }
                 MouseArea {
                     id: btSetMa
                     anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor

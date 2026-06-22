@@ -79,7 +79,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Shell update"
@@ -89,7 +89,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: closeBtn.left
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
@@ -100,7 +100,7 @@ PanelWindow {
                     font.pixelSize: 10
                     font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     id: closeBtn
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
@@ -140,12 +140,12 @@ PanelWindow {
                             required property var modelData
                             width: commitsCol.width
                             spacing: 6
-                            Text {
+                            UiText {
                                 text: "•"
                                 color: root.seal
                                 font.family: root.mono; font.pixelSize: 11
                             }
-                            Text {
+                            UiText {
                                 width: commitsCol.width - 14
                                 text: modelData
                                 color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
@@ -155,7 +155,7 @@ PanelWindow {
                         }
                     }
 
-                    Text {
+                    UiText {
                         width: parent.width
                         visible: root.shellUpdateSummary.length === 0
                         text: "No changelog available"
@@ -168,7 +168,7 @@ PanelWindow {
             }
 
             // ── note: settings are safe ──
-            Text {
+            UiText {
                 width: parent.width
                 text: "Your layout & settings (slot order, splits) are kept."
                 color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
@@ -184,12 +184,13 @@ PanelWindow {
                 spacing: 8
 
                 Rectangle {
-                    width: (parent.width - 8) / 2
+                    width: root.evenW((parent.width - 8) / 2)
                     height: 28; radius: root.tileRadius
-                    color: laterMa.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18) : root.sep
-                    border.color: laterMa.containsMouse ? root.seal : "transparent"
+                    color: laterMa.containsMouse ? root.fillHover : root.fillIdle
+                    border.color: laterMa.containsMouse ? root.seal : root.sep
+                    border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "Later"
                         color: laterMa.containsMouse ? root.seal : root.ink
@@ -205,12 +206,12 @@ PanelWindow {
                 }
 
                 Rectangle {
-                    width: (parent.width - 8) / 2
+                    width: root.evenW((parent.width - 8) / 2)
                     height: 28; radius: root.tileRadius
-                    color: updateMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                    color: updateMa.containsMouse ? root.fillPrimaryHover : root.seal
                     border.color: "transparent"
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "Update & restart"
                         color: root.paper

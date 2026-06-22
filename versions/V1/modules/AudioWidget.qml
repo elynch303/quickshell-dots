@@ -18,7 +18,6 @@ Item {
     implicitWidth: root.modVolume ? row.implicitWidth + 18 : 0
     implicitHeight: 28
     opacity: root.modVolume ? 1 : 0
-    Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
     Rectangle {
@@ -37,12 +36,12 @@ Item {
         anchors.centerIn: parent
         spacing: 5
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "VOL"
             color: rootMod.muted
                 ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
-                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -78,7 +77,7 @@ Item {
             }
         }
 
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: String(rootMod.volume).padStart(2, '0') + "%"
             color: rootMod.muted

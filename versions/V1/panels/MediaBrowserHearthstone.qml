@@ -481,16 +481,6 @@ PanelWindow {
                         PathArc  { x: frameShape.ro; y: 0; radiusX: frameShape.ro; radiusY: frameShape.ro }
                     }
                 }
-                // play glyph (videos) — on top, centred in the cut-out
-                Text {
-                    visible: panel.isVideos
-                    anchors.centerIn: parent
-                    anchors.verticalCenterOffset: -12
-                    text: ""   // play_arrow
-                    font.family: "Material Symbols Rounded"; font.pixelSize: 46
-                    color: Qt.rgba(1, 1, 1, 0.9)
-                    style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.5)
-                }
 
                 MouseArea {
                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor

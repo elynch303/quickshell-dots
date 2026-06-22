@@ -83,8 +83,8 @@ Item {
 
                 readonly property bool isEmpty: !isFocused && !isOccupied
 
-                implicitWidth: root.workspaceStyle === "numbers" ? (isFocused ? 26 : 22)
-                             : root.workspaceStyle === "magic"   ? (isFocused ? 24 : 18)
+                implicitWidth: root.workspaceStyle === "numbers" ? 22
+                             : root.workspaceStyle === "magic"   ? (isFocused ? 20 : 18)
                              : (isFocused ? 32 : 16)
                 implicitHeight: 28
 
@@ -133,13 +133,12 @@ Item {
                 Rectangle {
                     visible: root.workspaceStyle === "numbers"
                     anchors.centerIn: parent
-                    width:  isFocused ? 26 : 22
+                    width:  20
                     height: 20
                     radius: root.styleRadiusSmall ? 5 : height / 2
                     color: isFocused  ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.30)
                          : isOccupied ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.12)
                                       : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.04)
-                    Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                     Behavior on color { ColorAnimation { duration: 200 } }
                     Text {
                         anchors.centerIn: parent
@@ -155,16 +154,22 @@ Item {
                     }
                 }
 
-                // ── MAGIC style: sparkle glyphs (static) ──
+                // ── MAGIC style: the 3 ORIGINAL sparkle glyphs (filled / hollow / dot),
+                //    all forced into ONE font (Adwaita Mono has all three) so they share
+                //    a metric → no cross-font fallback misalignment ──
                 Text {
                     visible: root.workspaceStyle === "magic"
                     anchors.centerIn: parent
-                    text: isFocused ? "✦" : isOccupied ? "✧" : "·"
+                    anchors.verticalCenterOffset: isFocused ? 0 : 1   // active lifted vs occupied/empty
+                    text: isFocused  ? String.fromCodePoint(0x2726)    // ✦ filled four-point star (active)
+                         : isOccupied ? String.fromCodePoint(0x2727)    // ✧ hollow four-point star (occupied)
+                                      : String.fromCodePoint(0x00B7)    // · middle dot (empty)
                     color: isFocused  ? root.seal
                          : isOccupied ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.7)
                                       : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.3)
-                    font.family: root.mono
-                    font.pixelSize: isFocused ? 20 : 16
+                    font.family: "Adwaita Mono"   // all 3 sparkle glyphs live here → one consistent metric
+                    font.pixelSize: isFocused ? 22 : 18
+                    renderType: Text.NativeRendering   // crisp hinted raster (default QtRendering softens small symbols)
                     Behavior on color { ColorAnimation { duration: 200 } }
                 }
 

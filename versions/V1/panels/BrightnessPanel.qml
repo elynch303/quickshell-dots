@@ -63,13 +63,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Brightness"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -83,7 +83,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 30
-                Text {
+                UiText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     text: briPanel.percent + "%"
@@ -94,7 +94,7 @@ PanelWindow {
                     id: track
                     anchors.bottom: parent.bottom
                     width: parent.width; height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * briPanel.percent / 100
                         height: parent.height; radius: 4; color: root.seal
@@ -123,13 +123,12 @@ PanelWindow {
                 spacing: 8
                 Rectangle {
                     id: btnDown
-                    width: (parent.width - 8) / 2; height: 28; radius: root.tileRadius
-                    color: _dn.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    width: root.evenW((parent.width - 8) / 2); height: 28; radius: root.tileRadius
+                    color: _dn.containsMouse ? root.fillHover : root.fillIdle
                     border.color: _dn.containsMouse ? root.seal : root.sep
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "− 5%"; color: _dn.containsMouse ? root.seal : root.sumi
                         font.family: root.mono; font.pixelSize: 11
@@ -143,13 +142,12 @@ PanelWindow {
                 }
                 Rectangle {
                     id: btnUp
-                    width: (parent.width - 8) / 2; height: 28; radius: root.tileRadius
-                    color: _up.containsMouse ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08)
+                    width: root.evenW((parent.width - 8) / 2); height: 28; radius: root.tileRadius
+                    color: _up.containsMouse ? root.fillHover : root.fillIdle
                     border.color: _up.containsMouse ? root.seal : root.sep
                     border.width: 1
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    Text {
+                    UiText {
                         anchors.centerIn: parent
                         text: "+ 5%"; color: _up.containsMouse ? root.seal : root.sumi
                         font.family: root.mono; font.pixelSize: 11

@@ -272,7 +272,7 @@ PanelWindow {
                 Item {
                     implicitWidth: dateLabel.implicitWidth
                     implicitHeight: 28
-                    Text {
+                    UiText {
                         id: dateLabel
                         anchors.centerIn: parent
                         text: {

@@ -29,7 +29,7 @@ PanelWindow {
         }
     }
     visible: reveal > 0.001
-    onRevealChanged: if (reveal < 0.01) { powerOpen = false; wsOpen = false }  // reset when closed
+    onRevealChanged: if (reveal < 0.01) { powerOpen = false; wsOpen = false; root.splitsSubVisible = false; root.wwSubVisible = false }  // reset when closed
     WlrLayershell.keyboardFocus: root.controlVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // ── reusable tile: neutral by default, highlights only on hover ──
@@ -41,8 +41,7 @@ PanelWindow {
         height: 25
         radius: root.tileRadius
         opacity: enabled ? 1.0 : 0.4          // built-in `enabled` also blocks input
-        color: (active || _ma.containsMouse) ? Qt.rgba(accent.r, accent.g, accent.b, 0.18)
-                                             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+        color: active ? Qt.rgba(accent.r, accent.g, accent.b, root.fillActiveAlpha) : _ma.containsMouse ? Qt.rgba(accent.r, accent.g, accent.b, root.fillHoverAlpha) : root.fillIdle
         border.color: (active || _ma.containsMouse) ? accent : root.sep
         border.width: 1
         Behavior on color { ColorAnimation { duration: 120 } }
@@ -94,13 +93,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "Control"
                     color: root.ink; font.family: root.mono; font.pixelSize: 13
                     font.letterSpacing: 2; font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: "✕"; color: closeMa.containsMouse ? root.seal : root.sumi; font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -111,9 +110,9 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── ACTIONS ──
-            Text {
+            UiText {
                 text: "ACTIONS"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Tile {
                 width: parent.width
@@ -135,23 +134,23 @@ PanelWindow {
                 rowSpacing: 8
                 visible: ctrlPanel.powerOpen
                 Tile {
-                    width: (col.width - 8) / 2
+                    width: root.evenW((col.width - 8) / 2)
                     label: "Lock"
                     onActivated: { root.controlVisible = false; Quickshell.execDetached(["hyprlock"]) }
                 }
                 Tile {
-                    width: (col.width - 8) / 2
+                    width: root.evenW((col.width - 8) / 2)
                     label: "Suspend"
                     onActivated: { root.controlVisible = false; Quickshell.execDetached(["systemctl", "suspend"]) }
                 }
                 Tile {
-                    width: (col.width - 8) / 2
+                    width: root.evenW((col.width - 8) / 2)
                     label: "Reboot"
                     accent: root.indigo
                     onActivated: { root.controlVisible = false; Quickshell.execDetached(["systemctl", "reboot"]) }
                 }
                 Tile {
-                    width: (col.width - 8) / 2
+                    width: root.evenW((col.width - 8) / 2)
                     label: "Shutdown"
                     accent: root.seal
                     onActivated: { root.controlVisible = false; Quickshell.execDetached(["systemctl", "poweroff"]) }
@@ -161,9 +160,9 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── BAR-COLOR: seal color source ──
-            Text {
+            UiText {
                 text: "BAR-COLOR"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Grid {
                 width: parent.width; columns: 2; columnSpacing: 8
@@ -176,14 +175,12 @@ PanelWindow {
                         required property var modelData
                         readonly property bool on:      root.useThemeAccent === modelData.accent
                         readonly property bool hovered: _cma.containsMouse
-                        width: (col.width - 8) / 2; height: 25; radius: root.tileRadius
-                        color: on     ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                             : hovered ? Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.12)
-                                       : Qt.rgba(root.ink.r,  root.ink.g,  root.ink.b,  0.06)
+                        width: root.evenW((col.width - 8) / 2); height: 25; radius: root.tileRadius
+                        color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
                         border.color: (on || hovered) ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: modelData.label
                             color: (parent.on || parent.hovered) ? root.seal : root.ink
@@ -203,13 +200,14 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── SPLITS (opens the fly-out sub-panel) ──
-            Text {
+            UiText {
                 text: "SPLITS"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Tile {
                 width: parent.width
                 label: root.splitsSubVisible ? "Splits  ◂" : "Splits  ▸"
+                active: root.splitsSubVisible
                 accent: root.seal
                 onActivated: root.splitsSubVisible = !root.splitsSubVisible
             }
@@ -217,22 +215,23 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── BAR FUNCTIONS (opens the fly-out sub-panel) ──
-            Text {
+            UiText {
                 text: "BAR FUNCTIONS"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Tile {
                 width: parent.width
                 label: root.wwSubVisible ? "Bar Functions  ◂" : "Bar Functions  ▸"
+                active: root.wwSubVisible
                 onActivated: root.wwSubVisible = !root.wwSubVisible
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── PICKER style (theme/wallpaper/screenshot/video picker visual) ──
-            Text {
+            UiText {
                 text: "PICKER-STIL"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Row {
                 id: pickerRow
@@ -243,6 +242,18 @@ PanelWindow {
                     { label: "Hearthstone", mode: "hearthstone" },
                     { label: "Carousel",    mode: "carousel"    }
                 ]
+                // Tiles are sized to their label width (mono → length × charW)
+                // plus an equal share of the leftover space, so every tile gets
+                // the same side padding. Fixed 1/3-each made the long "Hearthstone"
+                // label touch its borders while the short labels had slack.
+                TextMetrics { id: pickMetrics; font.family: root.mono; font.pixelSize: 10; text: "0" }
+                readonly property real charW: pickMetrics.advanceWidth
+                readonly property real sumTextW: {
+                    var n = 0;
+                    for (var i = 0; i < opts.length; i++) n += opts[i].label.length;
+                    return n * charW;
+                }
+                readonly property real padEach: Math.max(0, (width - spacing * (opts.length - 1) - sumTextW) / (opts.length * 2))
                 Repeater {
                     model: pickerRow.opts
                     delegate: Rectangle {
@@ -250,15 +261,13 @@ PanelWindow {
                         required property var modelData
                         readonly property bool on:      root.pickerStyle === modelData.mode
                         readonly property bool hovered: pickMa.containsMouse
-                        width: (pickerRow.width - pickerRow.spacing * (pickerRow.opts.length - 1)) / pickerRow.opts.length
+                        width: root.evenW(modelData.label.length * pickerRow.charW + pickerRow.padEach * 2)
                         height: 25; radius: root.tileRadius
-                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                  : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
                         border.color: (on || hovered) ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: pickTile.modelData.label
                             color: (pickTile.on || pickTile.hovered) ? root.seal : root.ink
@@ -304,18 +313,18 @@ PanelWindow {
             anchors.fill: parent
             anchors.margins: 12
             spacing: 8
-            Text {
+            UiText {
                 text: "SPLITS"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Tile { width: parent.width; label: "Split all";      accent: root.seal;   onActivated: { if (root.fnSplitAll) root.fnSplitAll() } }
             Tile { width: parent.width; label: "Merge all";                            onActivated: { if (root.fnMergeAll) root.fnMergeAll() } }
-            Tile { width: parent.width; label: "Default layout"; accent: root.indigo; onActivated: { if (root.fnDefaultLayout) root.fnDefaultLayout() } }
+            Tile { width: parent.width; label: "Default layout"; accent: root.seal;   onActivated: { if (root.fnDefaultLayout) root.fnDefaultLayout() } }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
-            Text {
+            UiText {
                 text: "GAP ANIM"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Row {
                 id: animRow
@@ -334,15 +343,13 @@ PanelWindow {
                         required property var modelData
                         readonly property bool on:      root.barAnim === modelData.mode || root.barAnim === modelData.alt
                         readonly property bool hovered: animMa.containsMouse
-                        width: (animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length
+                        width: root.evenW((animRow.width - animRow.spacing * (animRow.opts.length - 1)) / animRow.opts.length)
                         height: 25; radius: root.tileRadius
-                        color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                  : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                            : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                        color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
                         border.color: (on || hovered) ? root.seal : root.sep
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        UiText {
                             anchors.centerIn: parent
                             text: root.barAnim === animTile.modelData.alt ? animTile.modelData.label + " 2"
                                                                           : animTile.modelData.label
@@ -398,27 +405,27 @@ PanelWindow {
             spacing: 8
 
             // ── WIDGETS toggle grid (moved here from the main card) ──
-            Text {
+            UiText {
                 text: "WIDGETS"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Grid {
                 width: parent.width
                 columns: 2
                 columnSpacing: 8
                 rowSpacing: 8
-                Tile { width: (wwCol.width - 8) / 2; label: "Memory";      active: root.modMemory;    onActivated: root.modMemory = !root.modMemory }
-                Tile { width: (wwCol.width - 8) / 2; label: "Brightness";  visible: root.hasBacklight; active: root.modBrightness; onActivated: root.modBrightness = !root.modBrightness }
-                Tile { width: (wwCol.width - 8) / 2; label: "AI usage";    active: root.modClaude;    onActivated: root.modClaude = !root.modClaude }
-                Tile { width: (wwCol.width - 8) / 2; label: "Power Prof."; active: root.modPower;     onActivated: root.modPower = !root.modPower }
-                Tile { width: (wwCol.width - 8) / 2; label: "Bluetooth";   active: root.modBluetooth; onActivated: root.modBluetooth = !root.modBluetooth }
-                Tile { width: (wwCol.width - 8) / 2; label: "Network";     active: root.modNetwork; enabled: root.networkMode !== "wifi"; onActivated: root.modNetwork = !root.modNetwork }
-                Tile { width: (wwCol.width - 8) / 2; label: "Quick tools"; active: root.modQuick;   onActivated: root.modQuick = !root.modQuick }
-                Tile { width: (wwCol.width - 8) / 2; label: "Status";      active: root.modStatus;  onActivated: root.modStatus = !root.modStatus }
-                Tile { width: (wwCol.width - 8) / 2; label: "CPU";         active: root.modCpu;     onActivated: root.modCpu = !root.modCpu }
-                Tile { width: (wwCol.width - 8) / 2; label: "Volume";      active: root.modVolume;  onActivated: root.modVolume = !root.modVolume }
-                Tile { width: (wwCol.width - 8) / 2; label: "Now playing"; active: root.modMpris;   onActivated: root.modMpris = !root.modMpris }
-                Tile { width: (wwCol.width - 8) / 2; label: "Battery";     visible: root.hasBattery; active: true; enabled: false }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Memory";      active: root.modMemory;    onActivated: root.modMemory = !root.modMemory }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Brightness";  visible: root.hasBacklight; active: root.modBrightness; onActivated: root.modBrightness = !root.modBrightness }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "AI usage";    active: root.modClaude;    onActivated: root.modClaude = !root.modClaude }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Power Prof."; active: root.modPower;     onActivated: root.modPower = !root.modPower }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Bluetooth";   active: root.modBluetooth; onActivated: root.modBluetooth = !root.modBluetooth }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Network";     active: root.modNetwork; enabled: root.networkMode !== "wifi"; onActivated: root.modNetwork = !root.modNetwork }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Quick tools"; active: root.modQuick;   onActivated: root.modQuick = !root.modQuick }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Status";      active: root.modStatus;  onActivated: root.modStatus = !root.modStatus }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "CPU";         active: root.modCpu;     onActivated: root.modCpu = !root.modCpu }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Volume";      active: root.modVolume;  onActivated: root.modVolume = !root.modVolume }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Now playing"; active: root.modMpris;   onActivated: root.modMpris = !root.modMpris }
+                Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Battery";     visible: root.hasBattery; active: true; enabled: false }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
@@ -451,15 +458,13 @@ PanelWindow {
                             required property var modelData
                             readonly property bool on:      root.workspaceMode === modelData.mode
                             readonly property bool hovered: wsmMa.containsMouse
-                            width: (wsModeRow.width - wsModeRow.spacing * (wsModeRow.opts.length - 1)) / wsModeRow.opts.length
+                            width: root.evenW((wsModeRow.width - wsModeRow.spacing * (wsModeRow.opts.length - 1)) / wsModeRow.opts.length)
                             height: 25; radius: root.tileRadius
-                            color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                      : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                            color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
                             border.color: (on || hovered) ? root.seal : root.sep
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
-                            Text {
+                            UiText {
                                 anchors.centerIn: parent
                                 text: wsmTile.modelData.label
                                 color: (wsmTile.on || wsmTile.hovered) ? root.seal : root.ink
@@ -488,15 +493,13 @@ PanelWindow {
                             required property var modelData
                             readonly property bool on:      root.workspaceStyle === modelData.mode
                             readonly property bool hovered: wssMa.containsMouse
-                            width: (wsStyleRow.width - wsStyleRow.spacing * (wsStyleRow.opts.length - 1)) / wsStyleRow.opts.length
+                            width: root.evenW((wsStyleRow.width - wsStyleRow.spacing * (wsStyleRow.opts.length - 1)) / wsStyleRow.opts.length)
                             height: 25; radius: root.tileRadius
-                            color: on ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.18)
-                                      : hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.12)
-                                                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+                            color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
                             border.color: (on || hovered) ? root.seal : root.sep
                             border.width: 1
                             Behavior on color { ColorAnimation { duration: 120 } }
-                            Text {
+                            UiText {
                                 anchors.centerIn: parent
                                 text: wssTile.modelData.label
                                 color: (wssTile.on || wssTile.hovered) ? root.seal : root.ink
@@ -512,32 +515,32 @@ PanelWindow {
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
             // ── STYLE (bar pill style; paint-only, width-invariant) ──
-            Text {
+            UiText {
                 text: "STYLE"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Row {
                 width: parent.width; spacing: 4
                 // independent toggles: each highlights when ON, click flips it (Border+Frost+Shadow combinable)
-                Tile { width: (wwCol.width - 8) / 3; label: "Border"; active: root.styleBorder; onActivated: root.styleBorder = !root.styleBorder }
-                Tile { width: (wwCol.width - 8) / 3; label: "Frost";  active: root.styleFrost;  onActivated: root.styleFrost = !root.styleFrost }
-                Tile { width: (wwCol.width - 8) / 3; label: "Shadow"; active: root.styleShadow; onActivated: root.styleShadow = !root.styleShadow }
+                Tile { width: root.evenW((wwCol.width - 8) / 3); label: "Border"; active: root.styleBorder; onActivated: root.styleBorder = !root.styleBorder }
+                Tile { width: root.evenW((wwCol.width - 8) / 3); label: "Frost";  active: root.styleFrost;  onActivated: root.styleFrost = !root.styleFrost }
+                Tile { width: root.evenW((wwCol.width - 8) / 3); label: "Shadow"; active: root.styleShadow; onActivated: root.styleShadow = !root.styleShadow }
             }
             Row {
                 width: parent.width; spacing: 4
-                Tile { width: (wwCol.width - 4) / 2; label: "Radius 12"; active: !root.styleRadiusSmall; onActivated: root.styleRadiusSmall = false }
-                Tile { width: (wwCol.width - 4) / 2; label: "Radius 6";  active: root.styleRadiusSmall;  onActivated: root.styleRadiusSmall = true }
+                Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Radius 12"; active: !root.styleRadiusSmall; onActivated: root.styleRadiusSmall = false }
+                Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Radius 6";  active: root.styleRadiusSmall;  onActivated: root.styleRadiusSmall = true }
             }
 
             // ── POSITION (bar on top or bottom edge) ──
-            Text {
+            UiText {
                 text: "POSITION"
-                color: root.sumi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Row {
                 width: parent.width; spacing: 4
-                Tile { width: (wwCol.width - 4) / 2; label: "Top";    active: root.barPosition === "top";    onActivated: root.barPosition = "top" }
-                Tile { width: (wwCol.width - 4) / 2; label: "Bottom"; active: root.barPosition === "bottom"; onActivated: root.barPosition = "bottom" }
+                Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Top";    active: root.barPosition === "top";    onActivated: root.barPosition = "top" }
+                Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Bottom"; active: root.barPosition === "bottom"; onActivated: root.barPosition = "bottom" }
             }
         }
     }

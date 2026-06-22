@@ -74,7 +74,7 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 24
-                Text {
+                UiText {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "CPU \u00B7 GPU"
@@ -84,7 +84,7 @@ PanelWindow {
                     font.letterSpacing: 2
                     font.weight: Font.Medium
                 }
-                Text {
+                UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: "\u2715"
@@ -107,13 +107,13 @@ PanelWindow {
             Item {
                 width: parent.width
                 height: 16
-                Text {
+                UiText {
                     id: cpuLbl
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                    text: "CPU"; color: root.sumi
+                    text: "CPU"; color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11; font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     id: cpuVal
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: cpuPanel.cpuPct + "%"; color: root.seal
@@ -124,7 +124,7 @@ PanelWindow {
                     anchors.right: cpuVal.left; anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * cpuPanel.cpuPct / 100
                         height: parent.height; radius: 4
@@ -139,13 +139,13 @@ PanelWindow {
                 width: parent.width
                 height: 16
                 visible: cpuPanel.hasGpu
-                Text {
+                UiText {
                     id: gpuLbl
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                    text: "GPU"; color: root.sumi
+                    text: "GPU"; color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11; font.letterSpacing: 1
                 }
-                Text {
+                UiText {
                     id: gpuVal
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     text: cpuPanel.gpuUtil + "%"; color: root.seal
@@ -156,7 +156,7 @@ PanelWindow {
                     anchors.right: gpuVal.left; anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     height: 8; radius: 4
-                    color: Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.15)
+                    color: root.fillActive
                     Rectangle {
                         width: parent.width * cpuPanel.gpuUtil / 100
                         height: parent.height; radius: 4
@@ -169,13 +169,13 @@ PanelWindow {
             Row {
                 width: parent.width
                 visible: cpuPanel.hasGpu && cpuPanel.gpuTemp > 0
-                Text {
+                UiText {
                     text: "Temperature"
-                    color: root.sumi
+                    color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11
                     width: parent.width * 0.4
                 }
-                Text {
+                UiText {
                     text: cpuPanel.gpuTemp + "\u00B0C"
                     color: root.ink
                     font.family: root.mono; font.pixelSize: 11
@@ -186,13 +186,13 @@ PanelWindow {
             Row {
                 width: parent.width
                 visible: cpuPanel.hasGpu && cpuPanel.gpuMemTotal > 0
-                Text {
+                UiText {
                     text: "VRAM"
-                    color: root.sumi
+                    color: root.sumiHi
                     font.family: root.mono; font.pixelSize: 11
                     width: parent.width * 0.4
                 }
-                Text {
+                UiText {
                     text: cpuPanel.gpuMemUsed + " / " + cpuPanel.gpuMemTotal + " MiB"
                     color: root.ink
                     font.family: root.mono; font.pixelSize: 11
@@ -206,9 +206,9 @@ PanelWindow {
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
-                color: btopMa.containsMouse ? Qt.lighter(root.seal, 1.15) : root.seal
+                color: btopMa.containsMouse ? root.fillPrimaryHover : root.seal
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Text {
+                UiText {
                     anchors.centerIn: parent
                     text: "Open btop"
                     color: root.paper

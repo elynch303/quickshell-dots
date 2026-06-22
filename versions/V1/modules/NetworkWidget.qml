@@ -78,12 +78,12 @@ Item {
         spacing: 5
 
         // ── label ──
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: "NET"
             color: mode === "none"
                 ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.7)
-                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
+                : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 0.5
@@ -164,7 +164,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: rootMod.mode === "ethernet"
             spacing: 0
-            Text {
+            UiText {
                 width: 54; height: 11
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignRight
@@ -173,7 +173,7 @@ Item {
                 font.family: root.mono
                 font.pixelSize: 10
             }
-            Text {
+            UiText {
                 width: 54; height: 11
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: Text.AlignRight
@@ -185,21 +185,20 @@ Item {
         }
 
         // ── wifi: icon ──
-        Text {
+        IconText {
             anchors.verticalCenter: parent.verticalCenter
             visible: rootMod.mode === "wifi"
             text: IconMap.icon(rootMod.wifiIconName)
             color: root.ink
-            font.family: "Material Symbols Rounded"
             font.pixelSize: 14
         }
 
         // ── wifi: ssid ──
-        Text {
+        UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: rootMod.mode === "wifi"
             text: rootMod.ssid
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7)
+            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             font.family: root.mono
             font.pixelSize: 12
             font.letterSpacing: 1

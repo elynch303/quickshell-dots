@@ -13,7 +13,6 @@ Item {
     implicitWidth: awake ? 20 : 0
     implicitHeight: 28
 
-    Behavior on implicitWidth { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
     readonly property string tooltipText: "Idle lock disabled"
 
