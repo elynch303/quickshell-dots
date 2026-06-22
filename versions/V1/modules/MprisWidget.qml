@@ -28,7 +28,7 @@ Item {
     // bounce sequences — regular animations with explicit target, no PVS conflict
     SequentialAnimation {
         id: anim1
-        running: rootMod.playing; loops: Animation.Infinite
+        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite   // don't animate the EQ while the widget is hidden (toggle off)
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.85; duration: 220; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.18; duration: 300; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH1"; to: 0.70; duration: 260; easing.type: Easing.InOutSine }
@@ -36,7 +36,7 @@ Item {
     }
     SequentialAnimation {
         id: anim2
-        running: rootMod.playing; loops: Animation.Infinite
+        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.45; duration: 310; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.92; duration: 280; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH2"; to: 0.28; duration: 340; easing.type: Easing.InOutSine }
@@ -44,7 +44,7 @@ Item {
     }
     SequentialAnimation {
         id: anim3
-        running: rootMod.playing; loops: Animation.Infinite
+        running: rootMod.visible && rootMod.playing; loops: Animation.Infinite
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.60; duration: 380; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.12; duration: 320; easing.type: Easing.InOutSine }
         NumberAnimation { target: rootMod; property: "barH3"; to: 0.95; duration: 350; easing.type: Easing.InOutSine }
@@ -199,13 +199,14 @@ Item {
             function resetMarquee() {
                 marqueeAnim.stop()
                 marqueeText.x = 0
-                if (rootMod.playing && marqueeText.implicitWidth > marqueeClip.width)
+                if (rootMod.visible && rootMod.playing && marqueeText.implicitWidth > marqueeClip.width)
                     marqueeAnim.start()
             }
 
             Connections {
                 target: rootMod
                 function onPlayingChanged() { marqueeClip.resetMarquee() }
+                function onVisibleChanged() { marqueeClip.resetMarquee() }   // stop/restart the scroll when the widget is hidden (toggle off)
             }
 
             SequentialAnimation {
