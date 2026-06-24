@@ -195,7 +195,8 @@ PanelWindow {
         for (var k in notifPanel.dismissed) nd[k] = true
         nd[entry.key] = true
         notifPanel.dismissed = nd                // reassign → bindings update
-        if (entry.active) notifPanel.runMako("makoctl dismiss -h -n " + entry.id)
+        var id = parseInt(entry.id)              // normalize before it touches a shell
+        if (entry.active && id > 0) notifPanel.runMako("makoctl dismiss -h -n " + id)
         notifPanel.saveCache()
     }
 
@@ -205,12 +206,13 @@ PanelWindow {
         for (var i = 0; i < notifPanel.recent.length; i++) nd[notifPanel.recent[i].key] = true
         notifPanel.dismissed = nd
         notifPanel.recent = []                   // clear own history; re-merged entries stay dismissed-filtered
-        notifPanel.runMako("makoctl dismiss --all")
+        notifPanel.runMako("makoctl dismiss -h --all")   // -h: don't re-add to mako history (next poll won't re-see them)
         notifPanel.saveCache()
     }
 
     function openNotification(entry) {
-        if (entry.active) notifPanel.runMako("makoctl invoke -n " + entry.id)
+        var id = parseInt(entry.id)              // normalize before it touches a shell
+        if (entry.active && id > 0) notifPanel.runMako("makoctl invoke -n " + id)
         // history/cache-only entries are no longer active → do nothing (never `restore`)
         root.notifVisible = false
     }
