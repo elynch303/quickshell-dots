@@ -143,9 +143,9 @@ PanelWindow {
 
     Timer {
         // F7: fast poll only while the panel is open (live list); slow when closed — the badge
-        // still updates (via the binding), but at idle this cuts makoctl spawns ~70%.
+        // still updates (via the binding), but at idle this cuts makoctl spawns ~57%.
         // (Event-driven via mako's DBus signal would be the next step.)
-        interval: notifPanel.visible ? 1500 : 5000
+        interval: notifPanel.visible ? 1500 : 3500
         running: true; repeat: true; triggeredOnStart: true
         onTriggered: { historyProc.running = false; historyProc.running = true }
     }
