@@ -231,7 +231,7 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-        onEntered: if (shown) tip.show()
+        onEntered: if (shown) { root.refreshAiUsage(); tip.show() }
         onExited: { tip.hide() }
         onClicked: { tip.hide(); root.aiUsageVisible = !root.aiUsageVisible }
     }

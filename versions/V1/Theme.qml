@@ -217,12 +217,14 @@ Item {
     property int    aiCxReset5hTs: 0
     property int    aiCxReset7dTs: 0
     property int    aiCxToday: 0
+    property int    aiClockTick: 0
 
     // F15: clamp an external 0..1 utilization to a 0–100 int (a negative/over-range value would
     // otherwise produce wrong text and negative/overwide usage bars)
     function aiPct(v) { return Math.max(0, Math.min(100, Math.round((parseFloat(v) || 0) * 100))) }
 
     function aiFmtReset(ts) {
+        aiClockTick
         var now = Date.now() / 1000
         if (!(ts > now)) return ""
         var mins = Math.round((ts - now) / 60)
@@ -296,14 +298,19 @@ Item {
         }
     }
 
+    function refreshAiUsage() {
+        aiClockTick++
+        aiReadClaude.running = false; aiReadClaude.running = true
+        aiReadCodex.running = false;  aiReadCodex.running = true
+    }
+
+    onAiUsageVisibleChanged: if (aiUsageVisible) refreshAiUsage()
+
     Timer {
         // 30s normally; 5s while the AI panel is open (responsive when looked at)
         interval: theme.aiUsageVisible ? 5000 : 30000
         running: true; repeat: true; triggeredOnStart: true
-        onTriggered: {
-            aiReadClaude.running = false; aiReadClaude.running = true
-            aiReadCodex.running = false;  aiReadCodex.running = true
-        }
+        onTriggered: theme.refreshAiUsage()
     }
 
     // ── Memory panel state ──
