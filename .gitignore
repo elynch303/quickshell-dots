@@ -1,3 +1,6 @@
 
 # V2 is WIP — published only when ready
 /versions/V2/
+
+# Local qs-proj / qsrise active-version marker
+**/.qsrise
