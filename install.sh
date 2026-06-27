@@ -3,7 +3,8 @@
 # Usage:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/install.sh)
 #   bash <(curl -fsSL .../install.sh) V1          # install a specific version non-interactively
-# Autostart via Omarchy post-boot hook (opt-in): see step 7.
+#   bash <(curl -fsSL .../install.sh) V1 --autostart
+# Autostart via Omarchy post-boot hook (opt-in).
 set -euo pipefail
 
 REPO_URL="https://github.com/HANCORE-linux/quickshell-dots.git"
@@ -11,10 +12,12 @@ DEST="$HOME/.config/quickshell/bar"
 
 # args: optional version name + flags
 WANT_VERSION=""
+WANT_AUTOSTART="" # "" = leave unchanged and print hint, "yes" = install hook, "no" = remove hook
 WANT_CLAUDE=""   # "" = ask interactively, "yes"/"no" = non-interactive
 for a in "$@"; do
   case "$a" in
-    --autostart|--no-autostart) ;;
+    --autostart)          WANT_AUTOSTART="yes" ;;
+    --no-autostart)       WANT_AUTOSTART="no"  ;;
     --claude-backend)    WANT_CLAUDE="yes" ;;
     --no-claude-backend) WANT_CLAUDE="no"  ;;
     *) WANT_VERSION="$a" ;;
@@ -116,7 +119,7 @@ install_shell_updater() {
 }
 
 # ── 1. dependencies ─────────────────────────────────────────────
-need=(quickshell git jq curl)
+need=(qs git jq curl)
 opt=(pamixer brightnessctl powerprofilesctl bluetoothctl iwctl makoctl hypridle)
 miss=()
 for b in "${need[@]}"; do command -v "$b" >/dev/null 2>&1 || miss+=("$b"); done
@@ -222,15 +225,30 @@ info "Bar started — try it out."
 # ── 6b. shell self-updater (never blocks the bar install) ───────
 install_shell_updater "$tmp/repo" || warn "Self-updater setup incomplete — the bar is fine; the update badge just won't appear."
 
-# ── 7. autostart hint ────────────────────────────────────────────
-info "Autostart at login via Omarchy post-boot hook:"
+# ── 7. autostart hook / hint ─────────────────────────────────────
 RAW="https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main"
-printf "  ${c_b}curl -fsSL -o %s/quickshell-rise %s/contrib/post-boot.d/quickshell-rise${c_0}\n" \
-  "\$HOME/.config/omarchy/hooks/post-boot.d" "$RAW"
-printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
-  "\$HOME/.config/omarchy/hooks/post-boot.d"
-printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
-  "\$HOME/.config/omarchy/hooks/post-boot.d"
+autostart_dir="$HOME/.config/omarchy/hooks/post-boot.d"
+autostart_hook="$autostart_dir/quickshell-rise"
+case "$WANT_AUTOSTART" in
+  yes)
+    mkdir -p "$autostart_dir"
+    install -m 0755 "$tmp/repo/contrib/post-boot.d/quickshell-rise" "$autostart_hook"
+    info "Autostart hook installed → $autostart_hook"
+    ;;
+  no)
+    rm -f "$autostart_hook"
+    info "Autostart hook removed → $autostart_hook"
+    ;;
+  *)
+    info "Autostart at login via Omarchy post-boot hook:"
+    printf "  ${c_b}curl -fsSL -o %s/quickshell-rise %s/contrib/post-boot.d/quickshell-rise${c_0}\n" \
+      "\$HOME/.config/omarchy/hooks/post-boot.d" "$RAW"
+    printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
+      "\$HOME/.config/omarchy/hooks/post-boot.d"
+    printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
+      "\$HOME/.config/omarchy/hooks/post-boot.d"
+    ;;
+esac
 
 # ── 8. claude-usage backend (opt-in; never blocks the bar install) ──
 do_claude="$WANT_CLAUDE"

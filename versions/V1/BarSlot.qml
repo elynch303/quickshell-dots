@@ -38,13 +38,6 @@ PanelWindow {
     // grab keyboard while unlocked so ESC can exit
     WlrLayershell.keyboardFocus: barSlot.root.barUnlocked ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
-    // IPC escape hatch: `qs -c bar ipc call layout lock`  (force-exit unlock)
-    IpcHandler {
-        target: "layout"
-        function lock(): void   { barSlot.root.barUnlocked = false }
-        function unlock(): void { barSlot.root.barUnlocked = true }
-    }
-
     // keep Hyprland awake while the idle-inhibitor toggle is on (was lost in the
     // slot port — lived only in the now-inactive Bar.qml)
     IdleInhibitor { window: barSlot; enabled: barSlot.root.idleInhibited }

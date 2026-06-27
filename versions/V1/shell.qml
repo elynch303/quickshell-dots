@@ -7,6 +7,7 @@
 // complete Quickshell configuration.
 
 import Quickshell
+import Quickshell.Io
 import QtQuick
 import "panels"
 
@@ -14,6 +15,19 @@ ShellRoot {
     id: root
 
     Theme { id: theme }
+
+    // IPC handlers must live outside the per-monitor BarSlot delegate. Otherwise
+    // multi-monitor setups register the same target once per bar.
+    IpcHandler {
+        target: "layout"
+        function lock(): void   { theme.barUnlocked = false }
+        function unlock(): void { theme.barUnlocked = true }
+    }
+
+    IpcHandler {
+        target: "omarchy.system-update"
+        function refresh(): void { theme.archRefreshTick++ }
+    }
 
     // QtWayland creates a nameless 0x0 placeholder screen while no real output
     // exists; exclude it so no unusable layer surface is created. A new real

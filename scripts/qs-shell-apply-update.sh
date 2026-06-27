@@ -112,9 +112,9 @@ cp -r "$REPO/versions/$ver/." "$stage/"
 printf '%s\n' "$ver" > "$stage/.qsrise"
 
 # Stop the bar before swapping, and WAIT for it to actually exit (don't trust a
-# fixed sleep). Covers both launch styles: `qs -c bar` (daily use) and
-# `quickshell -p $DEST` (install.sh's first start) — a bar left running through
-# the swap would keep serving the old tree.
+# fixed sleep). Covers both launch styles: `qs -c bar` (current launcher) and
+# `quickshell -p $DEST` (legacy installs) — a bar left running through the swap
+# would keep serving the old tree.
 if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
   # Scope to THIS config only. A bare `pkill -x qs` also kills any other
   # quickshell instance the user runs (e.g. a second `qs -c <other>` config) —
