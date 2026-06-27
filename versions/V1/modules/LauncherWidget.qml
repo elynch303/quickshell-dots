@@ -6,10 +6,31 @@ Item {
     id: rootMod
     required property var root
 
-    implicitWidth: logo.width + 18
+    implicitWidth: logoContentWidth + logoPadding
     implicitHeight: 28
 
     readonly property string tooltipText: "Control center"
+    readonly property bool logoIconMode: root.launcherLogoMode === "icon"
+    readonly property bool hyprlandLogo: !logoIconMode && root.launcherLogoText === "hyprland"
+    readonly property bool archTextLogo: !logoIconMode && root.launcherLogoText === "arch"
+    readonly property bool omacomTextLogo: !logoIconMode && root.launcherLogoText === "omacom"
+    readonly property url logoSource: omacomTextLogo ? Qt.resolvedUrl("../assets/omacom-text.png") : hyprlandLogo ? Qt.resolvedUrl("../assets/bob3.png") : Qt.resolvedUrl("../assets/bob2.png")
+    readonly property real logoAspect: omacomTextLogo ? (550 / 112) : archTextLogo ? (86 / 17) : hyprlandLogo ? (948 / 154) : (656 / 192)
+    readonly property real logoHeight: logoIconMode ? 18 : hyprlandLogo ? 16 : omacomTextLogo ? 14 : archTextLogo ? 17 : 20
+    readonly property real logoPadding: logoIconMode ? 8 : hyprlandLogo ? 10 : omacomTextLogo ? 12 : archTextLogo ? 8 : 12
+    readonly property real archWordHeight: 13
+    readonly property real archWordLogoWidth: 15
+    readonly property real archWordLeftPad: 1
+    readonly property real archWordRightPad: 3
+    readonly property real archWordGap: 3
+    readonly property real archWordJoinGap: 3
+    readonly property real archWordArchWidth: Math.round(archWordHeight * 605 / 231)
+    readonly property real archWordLinuxWidth: Math.round(archWordHeight * 549 / 230)
+    readonly property real archWordmarkWidth: archWordLeftPad + archWordRightPad + archWordLogoWidth + archWordGap + archWordArchWidth + archWordJoinGap + archWordLinuxWidth
+    readonly property real logoImageWidth: archTextLogo ? archWordmarkWidth : Math.round(logoHeight * logoAspect)
+    readonly property real logoIconSlotWidth: 16
+    readonly property real logoContentWidth: logoIconMode ? logoIconSlotWidth : logoImageWidth
+    readonly property color archBrandTextColor: root.useThemeAccent ? root.sealRaw : root.accentHint
 
     // animated wave phase
     property real phase: 0
@@ -38,7 +59,7 @@ Item {
     Rectangle {
         id: pill
         anchors.centerIn: parent
-        width: logo.width + 18
+        width: rootMod.logoContentWidth + rootMod.logoPadding
         height: root.pillH
         radius: root.pillRadius
         color: root.pill
@@ -90,21 +111,117 @@ Item {
         }
     }
 
-    // ── bob2 logo: flat-color tint shader — exact seal color, keeps alpha ──
-    Image {
-        id: logo
+    // ── launcher logo: flat-color tint shader — exact seal color, keeps alpha ──
+    Item {
+        id: logoStack
+        visible: !rootMod.logoIconMode
         anchors.centerIn: parent
-        height: 20
-        width: Math.round(height * 656 / 192)
-        source: "../assets/bob2.png"
-        fillMode: Image.PreserveAspectFit
-        smooth: true; mipmap: true
-        layer.enabled: true
-        layer.smooth: true
-        layer.textureSize: Qt.size(Math.round(width * 3), Math.round(height * 3))   // supersample → crisp
-        layer.effect: ShaderEffect {
-            property color tintColor: root.seal
-            fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
+        width: rootMod.logoImageWidth
+        height: rootMod.logoHeight
+
+        Item {
+            id: archBrand
+            visible: rootMod.archTextLogo
+            anchors.centerIn: parent
+            width: parent.width
+            height: parent.height
+
+            UiText {
+                id: archBrandLogo
+                anchors.left: parent.left
+                anchors.leftMargin: rootMod.archWordLeftPad
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: 0.5
+                width: rootMod.archWordLogoWidth
+                horizontalAlignment: Text.AlignHCenter
+                text: ""
+                color: root.seal
+                renderType: Text.QtRendering
+                font.family: root.mono
+                font.pixelSize: 15
+            }
+
+            Image {
+                id: archBrandArch
+                anchors.left: archBrandLogo.right
+                anchors.leftMargin: rootMod.archWordGap
+                anchors.verticalCenter: parent.verticalCenter
+                width: rootMod.archWordArchWidth
+                height: rootMod.archWordHeight
+                source: Qt.resolvedUrl("../assets/arch-header-arch.png")
+                fillMode: Image.PreserveAspectFit
+                cache: false
+                smooth: true
+                mipmap: true
+                layer.enabled: visible
+                layer.smooth: true
+                layer.textureSize: Qt.size(Math.max(1, Math.round(width * 3)), Math.max(1, Math.round(height * 3)))
+                layer.effect: ShaderEffect {
+                    property color tintColor: rootMod.archBrandTextColor
+                    fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
+                }
+            }
+
+            Image {
+                anchors.left: archBrandArch.right
+                anchors.leftMargin: rootMod.archWordJoinGap
+                anchors.verticalCenter: parent.verticalCenter
+                width: rootMod.archWordLinuxWidth
+                height: rootMod.archWordHeight
+                source: Qt.resolvedUrl("../assets/arch-header-linux.png")
+                fillMode: Image.PreserveAspectFit
+                cache: false
+                smooth: true
+                mipmap: true
+                layer.enabled: visible
+                layer.smooth: true
+                layer.textureSize: Qt.size(Math.max(1, Math.round(width * 3)), Math.max(1, Math.round(height * 3)))
+                layer.effect: ShaderEffect {
+                    property color tintColor: root.seal
+                    fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
+                }
+            }
+        }
+
+        Image {
+            id: logo
+            visible: !rootMod.archTextLogo
+            anchors.centerIn: parent
+            width: parent.width
+            height: parent.height
+            source: rootMod.logoSource
+            fillMode: Image.PreserveAspectFit
+            cache: false
+            smooth: true
+            mipmap: true
+            layer.enabled: !rootMod.logoIconMode
+            layer.smooth: true
+            layer.textureSize: Qt.size(Math.max(1, Math.round(width * 3)), Math.max(1, Math.round(height * 3)))   // supersample → crisp
+            layer.effect: ShaderEffect {
+                property color tintColor: root.seal
+                fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
+            }
+        }
+    }
+
+    Item {
+        id: logoIconSlot
+        visible: rootMod.logoIconMode
+        anchors.centerIn: parent
+        width: rootMod.logoIconSlotWidth
+        height: root.pillH
+
+        UiText {
+            id: logoIcon
+            anchors.centerIn: parent
+            anchors.horizontalCenterOffset: root.launcherLogoIconXOffset(root.launcherLogoIcon)
+            anchors.verticalCenterOffset: root.launcherLogoIconYOffset(root.launcherLogoIcon)
+            text: root.launcherLogoIconGlyph(root.launcherLogoIcon)
+            color: root.seal
+            renderType: Text.QtRendering
+            font.family: root.launcherLogoIconFont(root.launcherLogoIcon)
+            font.pixelSize: root.launcherLogoIconSize(root.launcherLogoIcon)
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
     }
 

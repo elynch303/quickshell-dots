@@ -451,6 +451,9 @@ Item {
 
     // ── picker visual style (theme/wallpaper/screenshot/video pickers) ──
     property string pickerStyle: "tanzaku"   // "tanzaku", "hearthstone", "carousel"
+    property string launcherLogoMode: "text"     // "text" or "icon"
+    property string launcherLogoText: "omarchy"  // "omarchy", "hyprland", "arch", or "omacom"
+    property string launcherLogoIcon: "omarchy"  // see launcherLogoIconGlyph()
     property bool   weatherImperial: false   // false = °C / km·h, true = °F / mph
     property bool   clock12h:        false   // false = 24h, true = 12h (AM/PM)
 
@@ -472,6 +475,9 @@ Item {
     onAiToolChanged:        if (_widgetsLoaded) saveWidgets()
     onWorkspaceModeChanged: if (_widgetsLoaded) saveWidgets()
     onPickerStyleChanged:   if (_widgetsLoaded) saveWidgets()
+    onLauncherLogoModeChanged: if (_widgetsLoaded) saveWidgets()
+    onLauncherLogoTextChanged: if (_widgetsLoaded) saveWidgets()
+    onLauncherLogoIconChanged: if (_widgetsLoaded) saveWidgets()
     onWeatherImperialChanged: if (_widgetsLoaded) saveWidgets()
     onClock12hChanged:        if (_widgetsLoaded) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
@@ -504,11 +510,97 @@ Item {
                  + (modVolume ? "1" : "0") + " "          // +14
                  + (modMpris  ? "1" : "0") + " "          // +15 now-playing / mpris
                  + aiTool + " "                           // +16 AI tool shown in bar (claude/codex)
-                 + (styleFrost ? "1" : "0")               // +17 frost / lowered island opacity
+                 + (styleFrost ? "1" : "0") + " "         // +17 frost / lowered island opacity
+                 + launcherLogoMode + " "                 // +18 launcher logo mode (text/icon)
+                 + launcherLogoText + " "                 // +19 text logo id
+                 + launcherLogoIcon                       // +20 icon logo id
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
         widgetSaveProc.running = true
+    }
+
+    readonly property var launcherLogoTextOptions: ["omarchy", "hyprland", "arch", "omacom"]
+    readonly property var launcherLogoIconOptions: ["omarchy", "hyprland", "arch", "grid", "spark", "power", "dragon", "mark", "nix", "branch"]
+
+    function launcherLogoTextIndex(id) {
+        for (var i = 0; i < launcherLogoTextOptions.length; i++)
+            if (launcherLogoTextOptions[i] === id) return i
+        return 0
+    }
+    function launcherLogoIconIndex(id) {
+        for (var i = 0; i < launcherLogoIconOptions.length; i++)
+            if (launcherLogoIconOptions[i] === id) return i
+        return 0
+    }
+    function launcherLogoTextValid(id) {
+        return launcherLogoTextIndex(id) >= 0 && launcherLogoTextOptions[launcherLogoTextIndex(id)] === id
+    }
+    function launcherLogoIconValid(id) {
+        return launcherLogoIconIndex(id) >= 0 && launcherLogoIconOptions[launcherLogoIconIndex(id)] === id
+    }
+    function nextLauncherLogoText() {
+        launcherLogoText = launcherLogoTextOptions[(launcherLogoTextIndex(launcherLogoText) + 1) % launcherLogoTextOptions.length]
+    }
+    function nextLauncherLogoIcon() {
+        launcherLogoIcon = launcherLogoIconOptions[(launcherLogoIconIndex(launcherLogoIcon) + 1) % launcherLogoIconOptions.length]
+    }
+    function launcherLogoLabel(id) {
+        if (id === "omarchy") return "Omarchy"
+        if (id === "hyprland") return "Hyprland"
+        if (id === "arch") return "Arch"
+        if (id === "omacom") return "Omacom"
+        if (id === "grid") return "Grid"
+        if (id === "spark") return "Spark"
+        if (id === "power") return "Power"
+        if (id === "dragon") return "Dragon"
+        if (id === "mark") return "Mark"
+        if (id === "nix") return "Nix"
+        if (id === "branch") return "Branch"
+        return "Omarchy"
+    }
+    function launcherLogoIconGlyph(id) {
+        if (id === "omarchy") return String.fromCodePoint(0xE900)
+        if (id === "hyprland") return ""
+        if (id === "arch") return ""
+        if (id === "grid") return ""
+        if (id === "spark") return ""
+        if (id === "power") return ""
+        if (id === "dragon") return "⻯"
+        if (id === "mark") return ""
+        if (id === "nix") return ""
+        if (id === "branch") return ""
+        return String.fromCodePoint(0xE900)
+    }
+    function launcherLogoIconFont(id) {
+        return id === "omarchy" ? "omarchy" : mono
+    }
+    function launcherLogoIconSize(id) {
+        if (id === "omarchy") return 15
+        if (id === "hyprland") return 17
+        if (id === "dragon") return 16
+        return 16
+    }
+    function launcherLogoIconXOffset(id) {
+        if (id === "omarchy") return 0.5
+        if (id === "hyprland") return 1
+        if (id === "arch") return 0
+        if (id === "grid") return -1
+        if (id === "spark") return 0
+        if (id === "power") return 0
+        if (id === "dragon") return 0
+        if (id === "mark") return 0.5
+        if (id === "nix") return 0
+        if (id === "branch") return 0
+        return 0
+    }
+    function launcherLogoIconYOffset(id) {
+        if (id === "omarchy") return 0
+        if (id === "hyprland") return 0
+        if (id === "mark") return 0.5
+        if (id === "branch") return 0
+        if (id === "dragon") return 0
+        return 0
     }
 
     Process {
@@ -581,6 +673,20 @@ Item {
                         if (at === "claude" || at === "codex") theme.aiTool = at
                     }
                     if (parts.length > wsField + 17) theme.styleFrost = parts[wsField + 17] === "1"
+                    if (parts.length > wsField + 18) {
+                        var lm = parts[wsField + 18]
+                        if (lm === "text" || lm === "icon") {
+                            theme.launcherLogoMode = lm
+                            if (parts.length > wsField + 19 && theme.launcherLogoTextValid(parts[wsField + 19]))
+                                theme.launcherLogoText = parts[wsField + 19]
+                            if (parts.length > wsField + 20 && theme.launcherLogoIconValid(parts[wsField + 20]))
+                                theme.launcherLogoIcon = parts[wsField + 20]
+                        } else if (lm === "omarchy" || lm === "hyprland") {
+                            // Legacy cache field from the first text-logo picker.
+                            theme.launcherLogoMode = "text"
+                            theme.launcherLogoText = lm
+                        }
+                    }
                 }
                 theme._widgetsLoaded = true
             }

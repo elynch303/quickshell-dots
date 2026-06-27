@@ -532,6 +532,8 @@ PanelWindow {
                 Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Radius 6";  active: root.styleRadiusSmall;  onActivated: root.styleRadiusSmall = true }
             }
 
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
             // ── POSITION (bar on top or bottom edge) ──
             UiText {
                 text: "POSITION"
@@ -541,6 +543,36 @@ PanelWindow {
                 width: parent.width; spacing: 4
                 Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Top";    active: root.barPosition === "top";    onActivated: root.barPosition = "top" }
                 Tile { width: root.evenW((wwCol.width - 4) / 2); label: "Bottom"; active: root.barPosition === "bottom"; onActivated: root.barPosition = "bottom" }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
+            // ── LOGO (launcher text/icon variant) ──
+            UiText {
+                text: "LOGO"
+                color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
+            }
+            Row {
+                width: parent.width
+                spacing: 4
+                Tile {
+                    width: root.evenW((wwCol.width - 4) / 2)
+                    label: root.launcherLogoLabel(root.launcherLogoText)
+                    active: root.launcherLogoMode === "text"
+                    onActivated: {
+                        if (root.launcherLogoMode === "text") root.nextLauncherLogoText()
+                        else root.launcherLogoMode = "text"
+                    }
+                }
+                Tile {
+                    width: root.evenW((wwCol.width - 4) / 2)
+                    label: root.launcherLogoLabel(root.launcherLogoIcon)
+                    active: root.launcherLogoMode === "icon"
+                    onActivated: {
+                        if (root.launcherLogoMode === "icon") root.nextLauncherLogoIcon()
+                        else root.launcherLogoMode = "icon"
+                    }
+                }
             }
         }
     }

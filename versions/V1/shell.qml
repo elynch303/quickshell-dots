@@ -1,10 +1,10 @@
 //@ pragma UseQApplication
 //
-// V1 single-bar lifecycle fix: bind the bar to the first real Wayland output,
-// skip transient nameless/0x0 placeholder screens, and recreate the BarSlot when
-// that output disappears and returns. If the screen remains valid but the layer
-// window loses resources or closes, recreate only that window instead of
-// reloading the complete Quickshell configuration.
+// V1 bar lifecycle fix: bind one bar to each real Wayland output, skip
+// transient nameless/0x0 placeholder screens, and recreate a BarSlot when that
+// output disappears and returns. If a screen remains valid but the layer window
+// loses resources or closes, recreate only that window instead of reloading the
+// complete Quickshell configuration.
 
 import Quickshell
 import QtQuick
@@ -15,10 +15,10 @@ ShellRoot {
 
     Theme { id: theme }
 
-    // Preserve V1's current single-bar behavior. QtWayland creates a nameless
-    // 0x0 placeholder screen while no real output exists; exclude it so no
-    // unusable layer surface is created. A new real ShellScreen identity makes
-    // Variants destroy the old BarSlot and instantiate a fresh one.
+    // QtWayland creates a nameless 0x0 placeholder screen while no real output
+    // exists; exclude it so no unusable layer surface is created. A new real
+    // ShellScreen identity makes Variants destroy the old BarSlot and
+    // instantiate a fresh one.
     readonly property var barScreens: {
         var valid = []
 
@@ -26,7 +26,6 @@ ShellRoot {
             var candidate = Quickshell.screens[i]
             if (candidate.name !== "" && candidate.width > 0 && candidate.height > 0) {
                 valid.push(candidate)
-                break
             }
         }
 

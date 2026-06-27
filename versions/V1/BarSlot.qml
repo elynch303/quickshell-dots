@@ -236,7 +236,7 @@ PanelWindow {
         id: compStatus                                   // G3: arch · tray · notif
         Item {
             visible: implicitWidth > 0.5
-            implicitWidth: barSlot.root.modStatus ? Math.round(statusRow.implicitWidth) + 18 : 0
+            implicitWidth: barSlot.root.modStatus ? Math.round(statusRow.implicitWidth) + 10 : 0
             implicitHeight: 28
             opacity: barSlot.root.modStatus ? 1 : 0
             Behavior on implicitWidth { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
