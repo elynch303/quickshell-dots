@@ -561,8 +561,8 @@ Item {
     }
     function launcherLogoIconGlyph(id) {
         if (id === "omarchy") return String.fromCodePoint(0xE900)
-        if (id === "hyprland") return ""
-        if (id === "arch") return ""
+        if (id === "hyprland") return ""
+        if (id === "arch") return ""
         if (id === "grid") return ""
         if (id === "spark") return ""
         if (id === "power") return ""
@@ -577,14 +577,14 @@ Item {
     }
     function launcherLogoIconSize(id) {
         if (id === "omarchy") return 15
-        if (id === "hyprland") return 17
+        if (id === "arch") return 17
         if (id === "dragon") return 16
         return 16
     }
     function launcherLogoIconXOffset(id) {
         if (id === "omarchy") return 0.5
-        if (id === "hyprland") return 1
-        if (id === "arch") return 0
+        if (id === "hyprland") return 0
+        if (id === "arch") return 1
         if (id === "grid") return -1
         if (id === "spark") return 0
         if (id === "power") return 0
@@ -597,6 +597,7 @@ Item {
     function launcherLogoIconYOffset(id) {
         if (id === "omarchy") return 0
         if (id === "hyprland") return 0
+        if (id === "arch") return 0
         if (id === "mark") return 0.5
         if (id === "branch") return 0
         if (id === "dragon") return 0
