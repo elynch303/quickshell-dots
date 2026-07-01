@@ -226,7 +226,6 @@ Each folder under `versions/` is a complete, self-contained bar.
 ```text
 versions/V1/
 ├── shell.qml        # entry point
-├── Bar.qml          # legacy layout
 ├── BarSlot.qml      # slot-based bar
 ├── Theme.qml        # colors, state, flags
 ├── Palette.js       # reads Omarchy colors.toml
