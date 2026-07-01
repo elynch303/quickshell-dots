@@ -218,6 +218,17 @@ PanelWindow {
     readonly property color selBorder:   root.seal
     readonly property color unselBorder: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.22)
     readonly property color dimColor:    root.paper
+    readonly property color footerText:  panel.readableAccent(root.seal)
+    readonly property color footerDim:   Qt.rgba(footerText.r, footerText.g, footerText.b, 0.68)
+
+    function luma(c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b }
+    function readableAccent(c) {
+        var y = luma(c)
+        if (y < 0.30) return Qt.lighter(c, 2.05)
+        if (y < 0.42) return Qt.lighter(c, 1.55)
+        if (y > 0.82) return Qt.darker(c, 1.45)
+        return c
+    }
 
     // NO scrim — the carousel floats over the live desktop (no extra background).
     MouseArea {
@@ -418,18 +429,20 @@ PanelWindow {
         }
     }
 
-    // ── Label + hint (outlined so it reads over any wallpaper) ──
+    // ── Label + hint (contrast-stable over any wallpaper) ──
     Column {
         visible: panel.ready
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom; anchors.bottomMargin: 32
-        spacing: 6
+        width: root.evenW(Math.min(panel.expandedW + 96, Math.max(320, parent.width - 48)))
+        spacing: 5
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: panel.expandedW; text: panel.currentLabel()
-            color: root.ink
-            style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.7)
+            width: parent.width
+            text: panel.currentLabel()
+            color: panel.footerText
+            renderType: Text.NativeRendering
             font.family: root.mono; font.pixelSize: 30; font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
         }
@@ -437,20 +450,22 @@ PanelWindow {
         Text {
             visible: panel.filterText.length > 0
             anchors.horizontalCenter: parent.horizontalCenter
-            width: panel.expandedW; text: panel.filterText
-            color: root.seal; opacity: 0.95
-            style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.7)
+            width: parent.width
+            text: panel.filterText
+            color: panel.footerText; opacity: 0.95
+            renderType: Text.NativeRendering
             font.family: root.mono; font.pixelSize: 15
             horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width
             text: "← → navigate   Enter apply   Esc cancel   type to filter"
-            color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
-            style: Text.Outline; styleColor: Qt.rgba(0, 0, 0, 0.7)
+            color: panel.footerDim
+            renderType: Text.NativeRendering
             font.family: root.mono; font.pixelSize: 11
-            horizontalAlignment: Text.AlignHCenter
+            horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
         }
     }
 }
