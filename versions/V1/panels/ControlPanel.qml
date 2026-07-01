@@ -167,15 +167,12 @@ PanelWindow {
                 color: root.sumiHi; font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1
             }
             Grid {
-                width: parent.width; columns: 2; columnSpacing: 8
+                width: parent.width; columns: 2; columnSpacing: 8; rowSpacing: 8
                 Repeater {
-                    model: [
-                        { label: "Red",    accent: false },
-                        { label: "Accent", accent: true  }
-                    ]
+                    model: root.barColorOptions
                     delegate: Rectangle {
-                        required property var modelData
-                        readonly property bool on:      root.useThemeAccent === modelData.accent
+                        required property string modelData
+                        readonly property bool on:      root.barColor === modelData
                         readonly property bool hovered: _cma.containsMouse
                         width: root.evenW((col.width - 8) / 2); height: 25; radius: root.tileRadius
                         color: on ? root.fillActive : hovered ? root.fillHover : root.fillIdle
@@ -184,7 +181,7 @@ PanelWindow {
                         Behavior on color { ColorAnimation { duration: 120 } }
                         UiText {
                             anchors.centerIn: parent
-                            text: modelData.label
+                            text: root.barColorLabel(modelData)
                             color: (parent.on || parent.hovered) ? root.seal : root.ink
                             font.family: root.mono; font.pixelSize: 11
                             font.weight: parent.on ? Font.Medium : Font.Normal
@@ -193,7 +190,7 @@ PanelWindow {
                             id: _cma
                             anchors.fill: parent; hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.useThemeAccent = modelData.accent
+                            onClicked: root.barColor = modelData
                         }
                     }
                 }

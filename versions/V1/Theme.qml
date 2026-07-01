@@ -17,11 +17,31 @@ Item {
     readonly property color sumiHi:  Qt.rgba(sumi.r*0.45 + ink.r*0.55, sumi.g*0.45 + ink.g*0.55, sumi.b*0.45 + ink.b*0.55, 1.0)  // lifted section-header text
     property color indigo:  "#658594"
     property color green:   "#8a9a73"   // gate "OK" verdict
+    property color color02: "#8a9a73"   // colors.toml color2
+    property color color03: "#c8b36a"   // colors.toml color3
     property color sealRaw:    "#c4746e"
     property color accentHint: sealRaw    // filled by palette; default = same as red
-    property bool  useThemeAccent: false
+    property string barColor: "red"        // "red", "accent", "color02", "color03"
+    readonly property bool barColorIsAccent: barColor === "accent"
+    // Compatibility alias for older local code/reviews that still use the
+    // previous boolean name.
+    readonly property bool useThemeAccent: barColorIsAccent
 
-    readonly property color seal: useThemeAccent ? accentHint : sealRaw
+    readonly property color seal: barColorIsAccent ? accentHint
+                                : barColor === "color02" ? color02
+                                : barColor === "color03" ? color03
+                                : sealRaw
+    readonly property var barColorOptions: ["red", "accent", "color02", "color03"]
+    function barColorValid(id) {
+        return id === "red" || id === "accent" || id === "color02" || id === "color03"
+    }
+    function barColorLabel(id) {
+        if (id === "red") return "Red"
+        if (id === "accent") return "Accent"
+        if (id === "color02") return "Color 02"
+        if (id === "color03") return "Color 03"
+        return "Red"
+    }
 
     readonly property string mono:  "JetBrainsMono Nerd Font"
 
@@ -631,7 +651,7 @@ Item {
     onSplitNetChanged:       if (_splitsLoaded) saveSplits()
     onSplitMprisLChanged:    if (_splitsLoaded) saveSplits()
     onBarAnimChanged:        if (_splitsLoaded) saveSplits()
-    onUseThemeAccentChanged: if (_splitsLoaded) saveSplits()
+    onBarColorChanged:       if (_splitsLoaded) saveSplits()
 
     // Build the command imperatively (not as a binding): a bound `command` can
     // still hold the pre-toggle value when the Process runs, saving stale state.
@@ -641,7 +661,7 @@ Item {
                  + (splitMprisL  ? "1" : "0") + " "
                  + (splitNet     ? "1" : "0") + " "
                  + barAnim + " "
-                 + (useThemeAccent ? "1" : "0")
+                 + barColor
         splitSaveProc.command = ["bash", "-c",
             "mkdir -p \"$(dirname '" + splitsCachePath + "')\" && echo '" + line + "' > '" + splitsCachePath + "'"]
         splitSaveProc.running = false
@@ -661,7 +681,14 @@ Item {
                     theme.splitMprisL    = parts[2] === "1"
                     theme.splitNet       = parts[3] === "1"
                     var ba = parseInt(parts[4]); theme.barAnim = (ba >= 0 && ba <= 6) ? ba : 0
-                    theme.useThemeAccent = parts.length >= 6 && parts[5] === "1"
+                    if (parts.length >= 6) {
+                        var bc = parts[5]
+                        if (bc === "1") theme.barColor = "accent"
+                        else if (bc === "0") theme.barColor = "red"
+                        else if (bc === "green" || bc === "color2") theme.barColor = "color02"
+                        else if (bc === "yellow" || bc === "color3") theme.barColor = "color03"
+                        else if (theme.barColorValid(bc)) theme.barColor = bc
+                    }
                 }
                 theme._splitsLoaded = true
             }
@@ -810,6 +837,25 @@ Item {
     }
     function nextLauncherLogoIcon() {
         launcherLogoIcon = launcherLogoIconOptions[(launcherLogoIconIndex(launcherLogoIcon) + 1) % launcherLogoIconOptions.length]
+    }
+    function launcherConfigValue(config, a, b, c) {
+        if (!config) return undefined
+        if (config[a] !== undefined) return config[a]
+        if (b && config[b] !== undefined) return config[b]
+        if (c && config[c] !== undefined) return config[c]
+        return undefined
+    }
+    function applyLauncherConfig(config) {
+        if (!config) return
+
+        var launcher = config.launcher || config.logo || config
+        var mode = launcherConfigValue(launcher, "launcherLogoMode", "logoMode", "mode")
+        var text = launcherConfigValue(launcher, "launcherLogoText", "textLogo", "text")
+        var icon = launcherConfigValue(launcher, "launcherLogoIcon", "iconLogo", "icon")
+
+        if (mode === "text" || mode === "icon") launcherLogoMode = mode
+        if (text !== undefined && launcherLogoTextValid(text)) launcherLogoText = text
+        if (icon !== undefined && launcherLogoIconValid(icon)) launcherLogoIcon = icon
     }
     function launcherLogoLabel(id) {
         if (id === "omarchy") return "Omarchy"
@@ -1226,6 +1272,12 @@ Item {
             if (!p || !p.colors) return;
             Palette.apply(theme, Palette.mapKeys(p.colors));
             theme.lastAppliedName = p.name || "";
+        }
+        function applyLauncher(payload: string): void {
+            let p;
+            try { p = JSON.parse(payload); }
+            catch (e) { console.warn("theme.applyLauncher: bad payload —", e); return; }
+            theme.applyLauncherConfig(p);
         }
         function reload(): void {
             paletteReader.running = false;

@@ -9,6 +9,8 @@ const WANTED = {
     color7:     "inkDeep",
     color8:     "sumi",
     color1:     "sealRaw",
+    color2:     "color02",
+    color3:     "color03",
     color4:     "indigo",
     accent:     "accentHint",
 };
@@ -48,5 +50,7 @@ function apply(theme, palette) {
     if (palette.sumi)    theme.sumi    = palette.sumi;
     if (palette.indigo)      theme.indigo      = palette.indigo;
     if (palette.sealRaw)     theme.sealRaw     = palette.sealRaw;
+    if (palette.color02)     theme.color02     = palette.color02;
+    if (palette.color03)     theme.color03     = palette.color03;
     if (palette.accentHint)  theme.accentHint  = palette.accentHint;
 }

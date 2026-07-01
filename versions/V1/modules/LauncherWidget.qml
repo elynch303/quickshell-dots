@@ -30,7 +30,7 @@ Item {
     readonly property real logoImageWidth: archTextLogo ? archWordmarkWidth : Math.round(logoHeight * logoAspect)
     readonly property real logoIconSlotWidth: 16
     readonly property real logoContentWidth: logoIconMode ? logoIconSlotWidth : logoImageWidth
-    readonly property color archBrandTextColor: root.useThemeAccent ? root.sealRaw : root.accentHint
+    readonly property color archBrandTextColor: root.barColorIsAccent ? root.sealRaw : root.accentHint
 
     // animated wave phase
     property real phase: 0
