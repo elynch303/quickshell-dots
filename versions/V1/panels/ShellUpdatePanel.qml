@@ -12,6 +12,8 @@ PanelWindow {
     id: panel
     required property var root
 
+    screen: root.activePopupScreen
+
     readonly property string applyScript: Quickshell.env("HOME") + "/.config/quickshell/bin/qs-shell-apply-update.sh"
 
     color: "transparent"

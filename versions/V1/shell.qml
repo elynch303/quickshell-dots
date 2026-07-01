@@ -8,6 +8,7 @@
 
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import QtQuick
 import "panels"
 
@@ -45,6 +46,29 @@ ShellRoot {
 
         return valid
     }
+
+    function activeScreenStillValid() {
+        if (!theme.activePopupScreenName) return false
+
+        for (var i = 0; i < barScreens.length; i++) {
+            if (barScreens[i].name === theme.activePopupScreenName) return true
+        }
+
+        return false
+    }
+
+    function ensureActivePopupScreen() {
+        if (barScreens.length === 0) {
+            theme.closePopups()
+            theme.activePopupScreen = null
+            theme.activePopupScreenName = ""
+        } else if (!activeScreenStillValid()) {
+            theme.activatePopupScreen(barScreens[0])
+        }
+    }
+
+    onBarScreensChanged: ensureActivePopupScreen()
+    Component.onCompleted: ensureActivePopupScreen()
 
     // Secondary guard for failures that do not replace the ShellScreen object.
     // resourcesLost is followed by closed, so one pending flag handles the pair
@@ -124,6 +148,43 @@ ShellRoot {
         }
     }
 
+    component PopupDismissLayer: PanelWindow {
+        id: dismissLayer
+
+        required property var root
+        required property var targetScreen
+
+        screen: targetScreen
+        color: Qt.rgba(0, 0, 0, 0.001)
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.focusable: dismissLayer.visible
+        WlrLayershell.keyboardFocus: dismissLayer.visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+        WlrLayershell.namespace: "quickshell-popup-dismiss"
+        mask: Region { item: hitArea }
+
+        Rectangle {
+            id: hitArea
+            x: 0
+            y: 0
+            width: dismissLayer.width
+            height: dismissLayer.height
+            color: Qt.rgba(0, 0, 0, 0.001)
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: dismissLayer.visible
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                onClicked: dismissLayer.root.closePopups()
+            }
+        }
+        visible: root.anyPopupVisible
+            && targetScreen
+            && targetScreen.name !== ""
+            && !root.isActivePopupScreenName(targetScreen.name)
+    }
+
     Variants {
         model: root.barScreens
 
@@ -139,6 +200,19 @@ ShellRoot {
                     targetWindow: barWindow
                     targetScreen: barWindow.modelData
                 }
+            }
+        }
+    }
+
+    Variants {
+        model: root.barScreens
+
+        delegate: Component {
+            PopupDismissLayer {
+                required property var modelData
+
+                root: theme
+                targetScreen: modelData
             }
         }
     }

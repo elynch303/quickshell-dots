@@ -13,6 +13,7 @@ import "modules"
 PanelWindow {
     id: barSlot
     required property var root
+    readonly property string screenName: barSlot.screen ? barSlot.screen.name : ""
 
     color: "transparent"
     // ALWAYS screen-tall → window never resizes → NO compositor resize animation.
@@ -37,6 +38,10 @@ PanelWindow {
     }
     // grab keyboard while unlocked so ESC can exit
     WlrLayershell.keyboardFocus: barSlot.root.barUnlocked ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+    HoverHandler {
+        onHoveredChanged: if (hovered && !barSlot.root.anyPopupVisible) barSlot.root.activatePopupScreen(barSlot.screen)
+    }
 
     // keep Hyprland awake while the idle-inhibitor toggle is on (was lost in the
     // slot port — lived only in the now-inactive Bar.qml)
@@ -160,9 +165,11 @@ PanelWindow {
         applyTo(rightModel,  r)
     }
     function saveOrder() {
+        var serialized = serializeOrder()
         orderSaveProc.command = ["bash", "-c",
-            "mkdir -p \"$(dirname '" + orderCachePath + "')\" && printf '%s' '" + serializeOrder() + "' > '" + orderCachePath + "'"]
+            "mkdir -p \"$(dirname '" + orderCachePath + "')\" && printf '%s' '" + serialized + "' > '" + orderCachePath + "'"]
         orderSaveProc.running = false; orderSaveProc.running = true
+        if (!barSlot.root._barLayoutSyncing) barSlot.root.syncBarOrder(barSlot.screenName, serialized)
     }
     Process { id: orderSaveProc }
     Process {
@@ -187,24 +194,32 @@ PanelWindow {
         if (_orderLoaded) saveOrder()
     }
 
-    // expose split controls on root for the ControlPanel sub-panel (shared engine)
-    Component.onCompleted: {
-        barSlot.root.fnSplitAll = function () {
+    property var layoutController: ({
+        splitAll: function () {
             island.leftSplits     = [true, true, true, true, true, true]
             island.rightSplits    = [true, true, true, true, true, true]
             island.boundarySplits = [true, true]
-        }
-        barSlot.root.fnMergeAll = function () {
+        },
+        mergeAll: function () {
             island.leftSplits     = [false, false, false, false, false, false]
             island.rightSplits    = [false, false, false, false, false, false]
             island.boundarySplits = [false, false]
-            barSlot.root.barAnim  = 0   // merge clears all splits → also clear the gap anim, so a previously-chosen mode doesn't reappear on the next split
-        }
-        barSlot.root.fnDefaultLayout = function () {
-            barSlot.root.fnMergeAll()
+            barSlot.root.barAnim  = 0
+        },
+        defaultLayout: function () {
+            barSlot.layoutController.mergeAll()
             barSlot.resetOrder()
-        }
+        },
+        applySplits: function (serialized) { island.applySplits(serialized) },
+        applyOrder: function (serialized) { barSlot.applyOrder(serialized) }
+    })
+
+    Component.onCompleted: {
+        if (!barSlot.root.activePopupScreenName) barSlot.root.activatePopupScreen(barSlot.screen)
+        barSlot.root.registerBarLayoutController(barSlot.screenName, barSlot.layoutController)
     }
+
+    Component.onDestruction: barSlot.root.unregisterBarLayoutController(barSlot.screenName, barSlot.layoutController)
 
     ShaderEffectSource {
         id: ghost
@@ -294,7 +309,11 @@ PanelWindow {
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: { barSlot.root.calendarTick++; barSlot.root.calendarVisible = !barSlot.root.calendarVisible }
+                        onClicked: {
+                            barSlot.root.activatePopupScreen(barSlot.screen)
+                            barSlot.root.calendarTick++;
+                            barSlot.root.calendarVisible = !barSlot.root.calendarVisible
+                        }
                     }
                 }
                 IdleWidget               { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
@@ -519,9 +538,11 @@ PanelWindow {
             if (p[2].length === boundarySplits.length) boundarySplits = _s2b(p[2], boundarySplits.length)
         }
         function saveSplits() {
+            var serialized = serializeSplits()
             splitSaveProc.command = ["bash", "-c",
-                "mkdir -p \"$(dirname '" + splitCachePath + "')\" && printf '%s' '" + serializeSplits() + "' > '" + splitCachePath + "'"]
+                "mkdir -p \"$(dirname '" + splitCachePath + "')\" && printf '%s' '" + serialized + "' > '" + splitCachePath + "'"]
             splitSaveProc.running = false; splitSaveProc.running = true
+            if (!barSlot.root._barLayoutSyncing) barSlot.root.syncBarSplits(barSlot.screenName, serialized)
         }
         onLeftSplitsChanged:     if (_splitsLoaded) saveSplits()
         onRightSplitsChanged:    if (_splitsLoaded) saveSplits()
@@ -659,42 +680,52 @@ PanelWindow {
             toggleGap: function (i) { var a = island.rightSplits.slice(); a[i] = !a[i]; island.rightSplits = a }
         }
 
-        // ── slot-aware panel X positions: feed the same root props Bar.qml set ──
+        // ── slot-aware panel X positions: publish per-screen anchors ──
         // find a group's slot and map its (frac·width) to window/screen X.
         function groupX(gid, frac) {
             var rows = [leftRowItem, centerRowItem, rightRowItem]
             for (var r = 0; r < rows.length; r++) {
-                var rep = rows[r].rep
+                var row = rows[r]
+                var rep = row.rep
                 if (!rep) continue
                 for (var k = 0; k < rep.count; k++) {
                     var it = rep.itemAt(k)
                     if (it && it.gid === gid) {
-                        var p = it.mapToItem(null, it.width * frac, 0)
-                        return p.x
+                        return island.x + row.x + it.x + it.width * frac
                     }
                 }
             }
             return 0
         }
-        // (touch row/island widths so the binding re-evaluates on layout changes)
-        Binding { target: barSlot.root; property: "trayBarX";          value: (island.width, leftRowItem.width,  island.groupX("G3", 0.0)) }
-        Binding { target: barSlot.root; property: "notifBarX";         value: (island.width, leftRowItem.width,  island.groupX("G3", 0.0)) }
-        Binding { target: barSlot.root; property: "quickActionsBarX";  value: (island.width, rightRowItem.width, island.groupX("G10", 0.5)) }
-        // slot-aware panel anchors (center-X of the group)
-        Binding { target: barSlot.root; property: "volumeBarX";     value: (island.width, leftRowItem.width,   island.groupX("G6",  0.5)) }
-        Binding { target: barSlot.root; property: "networkBarX";    value: (island.width, rightRowItem.width,  island.groupX("G11", 0.5)) }
-        Binding { target: barSlot.root; property: "batteryBarX";    value: (island.width, rightRowItem.width,  island.groupX("G12", 0.5)) }
-        Binding { target: barSlot.root; property: "memoryBarX";     value: (island.width, leftRowItem.width,   island.groupX("G4",  0.5)) }
-        Binding { target: barSlot.root; property: "cpuBarX";        value: (island.width, leftRowItem.width,   island.groupX("G5",  0.5)) }
-        Binding { target: barSlot.root; property: "aiBarX";         value: (island.width, leftRowItem.width,   island.groupX("G7",  0.5)) }
-        Binding { target: barSlot.root; property: "workspaceBarX";  value: (island.width, leftRowItem.width,   island.groupX("G2",  0.5)) }
-        Binding { target: barSlot.root; property: "archBarX";       value: (island.width, leftRowItem.width,   island.groupX("G3",  0.5)) }
-        Binding { target: barSlot.root; property: "bluetoothBarX";  value: (island.width, rightRowItem.width,  island.groupX("G15", 0.5)) }
-        Binding { target: barSlot.root; property: "brightnessBarX"; value: (island.width, rightRowItem.width,  island.groupX("G13", 0.5)) }
-        Binding { target: barSlot.root; property: "powerBarX";      value: (island.width, rightRowItem.width,  island.groupX("G14", 0.5)) }
-        Binding { target: barSlot.root; property: "mprisBarX";      value: (island.width, rightRowItem.width,  island.groupX("G9",  0.5)) }
-        Binding { target: barSlot.root; property: "weatherBarX";    value: (island.width, centerRowItem.width, island.groupX("G8",  0.5)) }
-        Binding { target: barSlot.root; property: "launcherBarX";   value: (island.width, leftRowItem.width,   island.groupX("G1",  0.5)) }
+
+        readonly property string panelScreenName: barSlot.screen ? barSlot.screen.name : ""
+        readonly property var panelAnchors: {
+            void(island.width)
+            void(island.x)
+            void(leftRowItem.x); void(centerRowItem.x); void(rightRowItem.x)
+            void(leftRowItem.width); void(centerRowItem.width); void(rightRowItem.width)
+            return {
+                tray:         island.groupX("G3",  0.0),
+                notif:        island.groupX("G3",  0.0),
+                quickActions: island.groupX("G10", 0.5),
+                volume:       island.groupX("G6",  0.5),
+                network:      island.groupX("G11", 0.5),
+                battery:      island.groupX("G12", 0.5),
+                memory:       island.groupX("G4",  0.5),
+                cpu:          island.groupX("G5",  0.5),
+                ai:           island.groupX("G7",  0.5),
+                workspace:    island.groupX("G2",  0.5),
+                arch:         island.groupX("G3",  0.5),
+                bluetooth:    island.groupX("G15", 0.5),
+                brightness:   island.groupX("G13", 0.5),
+                power:        island.groupX("G14", 0.5),
+                mpris:        island.groupX("G9",  0.5),
+                weather:      island.groupX("G8",  0.5),
+                launcher:     island.groupX("G1",  0.5)
+            }
+        }
+        onPanelAnchorsChanged: barSlot.root.publishBarAnchors(panelScreenName, panelAnchors)
+        Component.onCompleted: barSlot.root.publishBarAnchors(panelScreenName, panelAnchors)
 
         // ── boundary split markers (left↔center, center↔right) ──
         // positioned via real Row geometries (no mapToItem → robust).

@@ -8,6 +8,8 @@ PanelWindow {
     id: profilePanel
     required property var root
 
+    screen: root.activePopupScreen
+
     color: "transparent"
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore

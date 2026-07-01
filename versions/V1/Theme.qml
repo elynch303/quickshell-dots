@@ -57,6 +57,263 @@ Item {
     readonly property color fillPrimaryHover: Qt.lighter(seal, 1.15)                // solid-seal button hover
     function evenW(w) { return 2 * Math.round(w / 2) }  // even px width -> integer-centered native text (crisp)
 
+    // ── Multi-monitor popup routing ─────────────────────────────
+    // Bars exist per screen, but panels remain singletons. The bar under the
+    // pointer publishes its screen + local anchor map before any widget opens a
+    // popup, so the singleton panel can move to the correct output.
+    property var activePopupScreen: null
+    property string activePopupScreenName: ""
+    property var barAnchorsByScreen: ({})
+    property bool _closingPopups: false
+    property var barLayoutControllers: ({})
+    property bool _barLayoutSyncing: false
+
+    readonly property bool anyPopupVisible: calendarVisible || cpuVisible || aiUsageVisible
+        || memVisible || volVisible || controlVisible || networkVisible || bluetoothVisible
+        || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
+        || workspaceVisible || imagePickerVisible || mediaBrowserVisible || notifVisible
+        || powerProfileVisible || archVisible || shellUpdateVisible || trayVisible || trayMenuVisible
+
+    function registerBarLayoutController(screenName, controller) {
+        if (!screenName || !controller) return
+
+        var next = {}
+        for (var screen in barLayoutControllers) next[screen] = barLayoutControllers[screen]
+        next[screenName] = controller
+        barLayoutControllers = next
+    }
+
+    function unregisterBarLayoutController(screenName, controller) {
+        if (!screenName) return
+        if (controller && barLayoutControllers[screenName] !== controller) return
+
+        var next = {}
+        for (var screen in barLayoutControllers) {
+            if (screen !== screenName) next[screen] = barLayoutControllers[screen]
+        }
+        barLayoutControllers = next
+    }
+
+    function barLayoutControllerScreenValid(screenName) {
+        if (!screenName) return false
+
+        for (var i = 0; i < Quickshell.screens.length; i++) {
+            var screen = Quickshell.screens[i]
+            if (screen.name === screenName && screen.width > 0 && screen.height > 0) return true
+        }
+        return false
+    }
+
+    function barLayoutControllerKeys() {
+        var keys = []
+        for (var screen in barLayoutControllers) {
+            if (barLayoutControllerScreenValid(screen)) keys.push(screen)
+        }
+        keys.sort()
+        return keys
+    }
+
+    function applyToBarLayoutControllers(actionName) {
+        var keys = barLayoutControllerKeys()
+
+        _barLayoutSyncing = true
+        try {
+            for (var i = 0; i < keys.length; i++) {
+                var controller = barLayoutControllers[keys[i]]
+                if (controller && controller[actionName]) controller[actionName]()
+            }
+        } finally {
+            _barLayoutSyncing = false
+        }
+    }
+
+    function syncBarSplits(sourceScreenName, serialized) {
+        if (_barLayoutSyncing || !serialized) return
+
+        _barLayoutSyncing = true
+        try {
+            var keys = barLayoutControllerKeys()
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i] === sourceScreenName) continue
+                var controller = barLayoutControllers[keys[i]]
+                if (controller && controller.applySplits) controller.applySplits(serialized)
+            }
+        } finally {
+            _barLayoutSyncing = false
+        }
+    }
+
+    function syncBarOrder(sourceScreenName, serialized) {
+        if (_barLayoutSyncing || !serialized) return
+
+        _barLayoutSyncing = true
+        try {
+            var keys = barLayoutControllerKeys()
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i] === sourceScreenName) continue
+                var controller = barLayoutControllers[keys[i]]
+                if (controller && controller.applyOrder) controller.applyOrder(serialized)
+            }
+        } finally {
+            _barLayoutSyncing = false
+        }
+    }
+
+    function splitAllBars() {
+        applyToBarLayoutControllers("splitAll")
+    }
+
+    function mergeAllBars() {
+        applyToBarLayoutControllers("mergeAll")
+    }
+
+    function resetAllBarLayouts() {
+        applyToBarLayoutControllers("defaultLayout")
+    }
+
+    function activatePopupScreen(screen) {
+        if (!screen || screen.name === "") return
+
+        activePopupScreen = screen
+        activePopupScreenName = screen.name
+        applyActiveBarAnchors()
+    }
+
+    function activateFocusedPopupScreen() {
+        var monitor = Hyprland.focusedMonitor
+        var targetName = monitor ? monitor.name : ""
+
+        for (var i = 0; i < Quickshell.screens.length; i++) {
+            var candidate = Quickshell.screens[i]
+            if (candidate.name === targetName
+                    && candidate.width > 0
+                    && candidate.height > 0) {
+                activatePopupScreen(candidate)
+                return true
+            }
+        }
+
+        if (activePopupScreenName !== "") return true
+
+        for (var j = 0; j < Quickshell.screens.length; j++) {
+            var fallback = Quickshell.screens[j]
+            if (fallback.name !== ""
+                    && fallback.width > 0
+                    && fallback.height > 0) {
+                activatePopupScreen(fallback)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    function isActivePopupScreenName(screenName) {
+        return activePopupScreenName !== "" && screenName === activePopupScreenName
+    }
+
+    function applyAnchor(name, x) {
+        if (name === "tray") trayBarX = x
+        else if (name === "notif") notifBarX = x
+        else if (name === "quickActions") quickActionsBarX = x
+        else if (name === "volume") volumeBarX = x
+        else if (name === "network") networkBarX = x
+        else if (name === "battery") batteryBarX = x
+        else if (name === "memory") memoryBarX = x
+        else if (name === "cpu") cpuBarX = x
+        else if (name === "ai") aiBarX = x
+        else if (name === "workspace") workspaceBarX = x
+        else if (name === "arch") archBarX = x
+        else if (name === "bluetooth") bluetoothBarX = x
+        else if (name === "brightness") brightnessBarX = x
+        else if (name === "power") powerBarX = x
+        else if (name === "mpris") mprisBarX = x
+        else if (name === "weather") weatherBarX = x
+        else if (name === "launcher") launcherBarX = x
+        else if (name === "shellUpdate") shellUpdateBarX = x
+        else if (name === "trayMenu") trayMenuX = x
+    }
+
+    function applyActiveBarAnchors() {
+        var anchors = activePopupScreenName ? barAnchorsByScreen[activePopupScreenName] : null
+        if (!anchors) return
+
+        for (var name in anchors) applyAnchor(name, anchors[name])
+    }
+
+    function publishBarAnchors(screenName, anchors) {
+        if (!screenName || !anchors) return
+
+        var next = {}
+        for (var screen in barAnchorsByScreen) next[screen] = barAnchorsByScreen[screen]
+        next[screenName] = anchors
+        barAnchorsByScreen = next
+
+        if (screenName === activePopupScreenName) applyActiveBarAnchors()
+    }
+
+    function setPanelAnchor(name, x, screenName) {
+        var targetScreen = screenName || activePopupScreenName
+        if (targetScreen) {
+            var next = {}
+            for (var screen in barAnchorsByScreen) next[screen] = barAnchorsByScreen[screen]
+
+            var current = next[targetScreen] || {}
+            var anchors = {}
+            for (var key in current) anchors[key] = current[key]
+            anchors[name] = x
+            next[targetScreen] = anchors
+            barAnchorsByScreen = next
+        }
+
+        if (!targetScreen || targetScreen === activePopupScreenName) applyAnchor(name, x)
+    }
+
+    function closePopups(except) {
+        _closingPopups = true
+        if (except !== "calendarVisible") calendarVisible = false
+        if (except !== "cpuVisible") cpuVisible = false
+        if (except !== "aiUsageVisible") aiUsageVisible = false
+        if (except !== "memVisible") memVisible = false
+        if (except !== "volVisible") volVisible = false
+        if (except !== "controlVisible") controlVisible = false
+        if (except !== "networkVisible") networkVisible = false
+        if (except !== "bluetoothVisible") bluetoothVisible = false
+        if (except !== "batteryVisible") batteryVisible = false
+        if (except !== "brightnessVisible") brightnessVisible = false
+        if (except !== "mprisVisible") mprisVisible = false
+        if (except !== "weatherVisible") weatherVisible = false
+        if (except !== "workspaceVisible") workspaceVisible = false
+        if (except !== "imagePickerVisible") imagePickerVisible = false
+        if (except !== "mediaBrowserVisible") mediaBrowserVisible = false
+        if (except !== "notifVisible") notifVisible = false
+        if (except !== "powerProfileVisible") powerProfileVisible = false
+        if (except !== "archVisible") archVisible = false
+        if (except !== "shellUpdateVisible") shellUpdateVisible = false
+        if (except !== "trayVisible") trayVisible = false
+        if (except !== "trayMenuVisible") trayMenuVisible = false
+        hideTooltip()
+        _closingPopups = false
+    }
+
+    function popupOpened(prop) {
+        if (!_closingPopups && theme[prop]) closePopups(prop)
+    }
+
+    function openImagePicker(mode) {
+        activateFocusedPopupScreen()
+        mediaBrowserVisible = false
+        imagePickerMode = mode
+        imagePickerVisible = true
+    }
+
+    function openMediaBrowser(mode) {
+        activateFocusedPopupScreen()
+        imagePickerVisible = false
+        mediaBrowserMode = mode
+        mediaBrowserVisible = true
+    }
+
     // ── pill/card border (default, non-borderless mode) ──
     // A premium "inactive window border" look: the surface tone (paper) nudged a
     // tick toward the foreground (ink) → a quiet edge a touch brighter than the
@@ -144,6 +401,7 @@ Item {
 
     // ── Calendar state ──
     property bool calendarVisible: false
+    onCalendarVisibleChanged: popupOpened("calendarVisible")
     property int calendarMonthOffset: 0
     property int calendarTick: 0
     property int selectedDay: 0
@@ -189,9 +447,14 @@ Item {
 
     // ── CPU panel state ──
     property bool cpuVisible: false
+    onCpuVisibleChanged: popupOpened("cpuVisible")
 
     // ── AI usage panel state + which tool the bar pill shows ──
     property bool   aiUsageVisible: false
+    onAiUsageVisibleChanged: {
+        popupOpened("aiUsageVisible")
+        if (aiUsageVisible) refreshAiUsage()
+    }
     property string aiTool: "claude"   // "claude" or "codex" — icon shown in the bar
 
     // ── AI usage data (single source of truth) ───────────────────
@@ -304,8 +567,6 @@ Item {
         aiReadCodex.running = false;  aiReadCodex.running = true
     }
 
-    onAiUsageVisibleChanged: if (aiUsageVisible) refreshAiUsage()
-
     Timer {
         // 30s normally; 5s while the AI panel is open (responsive when looked at)
         interval: theme.aiUsageVisible ? 5000 : 30000
@@ -315,12 +576,18 @@ Item {
 
     // ── Memory panel state ──
     property bool memVisible: false
+    onMemVisibleChanged: popupOpened("memVisible")
 
     // ── Volume panel state ──
     property bool volVisible: false
+    onVolVisibleChanged: popupOpened("volVisible")
 
     // ── Control center state ──
     property bool controlVisible: false
+    onControlVisibleChanged: {
+        popupOpened("controlVisible")
+        if (!controlVisible) { splitsSubVisible = false; wwSubVisible = false }
+    }
 
     // ── Split state (controlled by Bar + ControlPanel) ──
     property bool splitLeft:   false
@@ -333,14 +600,12 @@ Item {
 
     // ── Bar layout / unlock (drag&drop reorder). barUnlocked is transient. ──
     property bool barUnlocked: false
-    // split-control hooks — assigned by BarSlot, called by the ControlPanel split
-    // sub-panel (same engine → shared root, no IPC needed).
-    property var  fnSplitAll:      null
-    property var  fnMergeAll:      null
-    property var  fnDefaultLayout: null
+    // split-control hooks called by the ControlPanel split sub-panel.
+    property var  fnSplitAll:      function () { theme.splitAllBars() }
+    property var  fnMergeAll:      function () { theme.mergeAllBars() }
+    property var  fnDefaultLayout: function () { theme.resetAllBarLayouts() }
     property bool splitsSubVisible: false
     property bool wwSubVisible: false   // "Widgets & Workspaces" fly-out
-    onControlVisibleChanged: if (!controlVisible) { splitsSubVisible = false; wwSubVisible = false }   // don't reopen with the panel
 
     readonly property bool anySplit: splitLeft || splitRight || splitArch
                                   || splitMon  || splitNet  || splitMprisL
@@ -698,29 +963,40 @@ Item {
 
     // ── New widget panel states ──
     property bool networkVisible:   false
+    onNetworkVisibleChanged: popupOpened("networkVisible")
     property bool bluetoothVisible: false
+    onBluetoothVisibleChanged: popupOpened("bluetoothVisible")
     property bool batteryVisible:   false
+    onBatteryVisibleChanged: popupOpened("batteryVisible")
     property bool brightnessVisible: false
+    onBrightnessVisibleChanged: popupOpened("brightnessVisible")
     property bool mprisVisible:     false
+    onMprisVisibleChanged: popupOpened("mprisVisible")
     property bool weatherVisible:   false
+    onWeatherVisibleChanged: popupOpened("weatherVisible")
     property bool workspaceVisible: false
+    onWorkspaceVisibleChanged: popupOpened("workspaceVisible")
 
     // ── Image picker state (theme/wallpaper carousel) ──
     property bool   imagePickerVisible:  false
+    onImagePickerVisibleChanged: popupOpened("imagePickerVisible")
     property string imagePickerMode:     "wallpaper"   // "theme" or "wallpaper"
     property real   quickActionsBarX:    0
     // ── Media browser state (screenshots/videos carousel) ──
     property bool   mediaBrowserVisible: false
+    onMediaBrowserVisibleChanged: popupOpened("mediaBrowserVisible")
     property string mediaBrowserMode:    "screenshots"  // "screenshots" or "videos"
     // ── Idle inhibitor (Wayland idle-inhibit protocol) ──
     property bool   idleInhibited:       false
     // ── Notification state ──
     property bool notifVisible: false
+    onNotifVisibleChanged: popupOpened("notifVisible")
     property int  notifCount:   0
     property real notifBarX:    0
 
     // ── Power Profile state ──
     property bool powerProfileVisible: false
+    onPowerProfileVisibleChanged: popupOpened("powerProfileVisible")
     property string powerProfileCurrent: ""
 
     Process {
@@ -760,6 +1036,7 @@ Item {
 
     // ── Arch Updater state ──
     property bool archVisible: false
+    onArchVisibleChanged: popupOpened("archVisible")
     property var archUpdates: []
     property int archRefreshTick: 0
 
@@ -870,6 +1147,7 @@ Item {
 
     // ── Shell Updater state (badge ⇄ panel; fed by ShellUpdateWidget's FileView) ──
     property bool shellUpdateVisible: false
+    onShellUpdateVisibleChanged: popupOpened("shellUpdateVisible")
     property int  shellUpdateBehind: 0
     property var  shellUpdateSummary: []
     property string shellUpdateVersion: ""
@@ -877,6 +1155,7 @@ Item {
 
     // ── Tray state ──
     property bool trayVisible: false
+    onTrayVisibleChanged: popupOpened("trayVisible")
     property var trayPinned: []
     property real trayBarX: 10
 
@@ -898,11 +1177,12 @@ Item {
 
     // ── Tray context-menu state (themed menu, rendered by TrayMenu.qml) ──
     property bool trayMenuVisible: false
+    onTrayMenuVisibleChanged: popupOpened("trayMenuVisible")
     property var  trayMenuHandle: null   // the QsMenuHandle of the clicked item
     property real trayMenuX: 0           // global x to anchor the menu under the icon
     function openTrayMenu(handle, x) {
         trayMenuHandle = handle
-        trayMenuX = x
+        setPanelAnchor("trayMenu", x)
         trayMenuVisible = true
     }
 
@@ -957,9 +1237,9 @@ Item {
     //  function name `theme` shadowing the `id: theme`)
     IpcHandler {
         target: "picker"
-        function theme(): void       { mediaBrowserVisible = false; imagePickerMode = "theme";     imagePickerVisible = true }
-        function wallpaper(): void   { mediaBrowserVisible = false; imagePickerMode = "wallpaper"; imagePickerVisible = true }
-        function screenshots(): void { imagePickerVisible = false;  mediaBrowserMode = "screenshots"; mediaBrowserVisible = true }
-        function videos(): void      { imagePickerVisible = false;  mediaBrowserMode = "videos";      mediaBrowserVisible = true }
+        function theme(): void       { openImagePicker("theme") }
+        function wallpaper(): void   { openImagePicker("wallpaper") }
+        function screenshots(): void { openMediaBrowser("screenshots") }
+        function videos(): void      { openMediaBrowser("videos") }
     }
 }

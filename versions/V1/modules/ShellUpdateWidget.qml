@@ -79,7 +79,7 @@ Item {
             tip.hide()
             rootMod.publish()
             var p = rootMod.mapToItem(null, rootMod.width / 2, 0)   // badge centre, global X
-            rootMod.root.shellUpdateBarX = p.x
+            rootMod.root.setPanelAnchor("shellUpdate", p.x)
             rootMod.root.shellUpdateVisible = true
         }
     }

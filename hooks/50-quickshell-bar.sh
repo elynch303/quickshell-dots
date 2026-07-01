@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 1) live-reload the bar's theme colors
-qs -c bar ipc call theme reload 2>/dev/null || true
+qs -c bar ipc call theme reload >/dev/null 2>&1 || true
 
 bg="$HOME/.config/omarchy/current/theme/backgrounds"
 
