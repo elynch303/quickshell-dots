@@ -92,6 +92,25 @@ PanelWindow {
                 out.push(r[i].pkg)
         return out
     }
+    function shellQuote(value) {
+        return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
+    }
+    function hexColor(c) {
+        function h(v) {
+            var x = Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16)
+            return x.length < 2 ? "0" + x : x
+        }
+        return "#" + h(c.r) + h(c.g) + h(c.b)
+    }
+    function themedGumConfirmEnv() {
+        return "env -u NO_COLOR"
+            + " GUM_CONFIRM_PROMPT_FOREGROUND=" + shellQuote(hexColor(root.ink))
+            + " GUM_CONFIRM_PROMPT_BACKGROUND=" + shellQuote(hexColor(root.bg))
+            + " GUM_CONFIRM_SELECTED_FOREGROUND=" + shellQuote(hexColor(root.paper))
+            + " GUM_CONFIRM_SELECTED_BACKGROUND=" + shellQuote(hexColor(root.seal))
+            + " GUM_CONFIRM_UNSELECTED_FOREGROUND=" + shellQuote(hexColor(root.ink))
+            + " GUM_CONFIRM_UNSELECTED_BACKGROUND=" + shellQuote(hexColor(root.bg))
+    }
 
     Rectangle {
         id: card
@@ -412,8 +431,12 @@ PanelWindow {
                                 prompt += " " + archPanel.aurReviewPackages + " AUR review packages will be skipped.";
                             if (root.archGateDegraded)
                                 prompt += " (security feed degraded)";
+                            var updateCommand = archPanel.themedGumConfirmEnv()
+                                + " gum confirm " + archPanel.shellQuote(prompt)
+                                + " && sudo pacman -Syu" + ign;
                             panelUpdateRunner.command = ["bash", "-c",
-                                "omarchy-launch-floating-terminal-with-presentation 'gum confirm \"" + prompt + "\" && sudo pacman -Syu" + ign + "'"];
+                                "omarchy-launch-floating-terminal-with-presentation "
+                                    + archPanel.shellQuote(updateCommand)];
                             root.archVisible = false;
                             panelUpdateRunner.running = false;
                             panelUpdateRunner.running = true;

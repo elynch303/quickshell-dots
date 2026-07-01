@@ -63,6 +63,7 @@ ShellRoot {
             theme.activePopupScreen = null
             theme.activePopupScreenName = ""
         } else if (!activeScreenStillValid()) {
+            if (theme.anyPopupVisible) theme.closePopups()
             theme.activatePopupScreen(barScreens[0])
         }
     }

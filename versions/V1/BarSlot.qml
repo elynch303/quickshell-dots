@@ -219,7 +219,14 @@ PanelWindow {
         barSlot.root.registerBarLayoutController(barSlot.screenName, barSlot.layoutController)
     }
 
-    Component.onDestruction: barSlot.root.unregisterBarLayoutController(barSlot.screenName, barSlot.layoutController)
+    Component.onDestruction: {
+        if (barSlot.root
+                && barSlot.root.isActivePopupScreenName(barSlot.screenName)
+                && barSlot.root.anyPopupVisible) {
+            barSlot.root.closePopups()
+        }
+        barSlot.root.unregisterBarLayoutController(barSlot.screenName, barSlot.layoutController)
+    }
 
     ShaderEffectSource {
         id: ghost
