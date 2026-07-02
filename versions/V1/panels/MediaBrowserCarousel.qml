@@ -445,6 +445,7 @@ PanelWindow {
     // ── Label + hint (contrast-stable; delete-confirm) ──
     Column {
         visible: panel.ready
+        z: 500
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom; anchors.bottomMargin: 32
         width: root.evenW(Math.min(panel.expandedW + 96, Math.max(320, parent.width - 48)))
