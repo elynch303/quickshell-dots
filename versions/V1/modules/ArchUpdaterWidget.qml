@@ -13,7 +13,8 @@ Item {
     property bool refreshing: false
 
     readonly property bool hasUpdates: rootMod.updateCount > 0
-    readonly property int packageBadgeCount: root.archBadgePackages ? rootMod.updateCount : 0
+    readonly property bool badgePrefsLoaded: root._widgetsLoaded
+    readonly property int packageBadgeCount: (rootMod.badgePrefsLoaded && root.archBadgePackages) ? Math.max(0, rootMod.updateCount) : 0
     readonly property int cleanThemeCount: {
         var n = 0, list = root.themeUpdList || []
         for (var i = 0; i < list.length; i++) {
@@ -23,7 +24,7 @@ Item {
         return n
     }
     readonly property bool hasThemeUpdates: rootMod.cleanThemeCount > 0
-    readonly property int themeBadgeCount: root.archBadgeThemes ? rootMod.cleanThemeCount : 0
+    readonly property int themeBadgeCount: (rootMod.badgePrefsLoaded && root.archBadgeThemes) ? Math.max(0, rootMod.cleanThemeCount) : 0
     readonly property int badgeCount: rootMod.packageBadgeCount + rootMod.themeBadgeCount
     readonly property bool hasBadge: rootMod.badgeCount > 0
     readonly property bool hasNotice: rootMod.hasUpdates || rootMod.hasThemeUpdates || root.themeUpdLocalEdits > 0
