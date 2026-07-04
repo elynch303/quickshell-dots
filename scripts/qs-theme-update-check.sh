@@ -16,10 +16,11 @@
 #   2. `git fetch` only when the remote moved (needed for the behind-count).
 #
 # Neutral per-theme state (no policy, no gate — just what Omarchy's git pull would face):
-#   clean        reachable, behind>0, no local tracked edits (untracked-only counts
-#                as clean — git pull handles it)
+#   clean        reachable, behind>0, no local tracked edits and no untracked file
+#                that an incoming tracked file would overwrite
 #   local-edits  reachable, behind>0, has tracked modifications or local commits
-#                (git pull may merge/conflict — the user sees it in the terminal)
+#                or an untracked overwrite collision (git pull may merge/conflict
+#                or abort — the user sees it in the terminal)
 #   unreachable  the remote could not be reached
 #   (up-to-date and no-upstream themes are simply not listed)
 #
@@ -98,10 +99,13 @@ check_one() {
     -c protocol.https.allow=always
     -c protocol.ssh.allow=always)
 
-  emit() { # emit <state> <behind>
+  emit() { # emit <state> <behind> [reason] [files-json]
+    local reason="${3:-}" files_json="${4:-[]}"
     jq -n --arg name "$name" --arg state "$1" --argjson behind "$2" \
+          --arg reason "$reason" --argjson files "$files_json" \
           --argjson current "$( [ "$name" = "${CURRENT_THEME:-}" ] && echo true || echo false )" \
-          '{name:$name, state:$state, behind:$behind, current:$current}' > "$out" 2>/dev/null
+          '{name:$name, state:$state, behind:$behind, current:$current,
+            reason:$reason, files:$files}' > "$out" 2>/dev/null
   }
 
   # upstream wiring (branch.<head>.remote/.merge). No upstream => not listable.
@@ -124,18 +128,41 @@ check_one() {
     timeout "${FETCH_TIMEOUT:-45}" "${tg[@]}" fetch --quiet -- "$remote" "$rbranch" >/dev/null 2>&1 || reach="unreachable"
   fi
 
-  local behind ahead tracked_dirty
+  local behind ahead tracked_dirty untracked_collision untracked_collision_files tracked_dirty_files reason files_json
   behind="$("${tg[@]}" rev-list --count "HEAD..$track_ref" 2>/dev/null || echo 0)"
   ahead="$("${tg[@]}" rev-list --count "$track_ref..HEAD" 2>/dev/null || echo 0)"
   tracked_dirty="$("${tg[@]}" status --porcelain 2>/dev/null | grep -cv '^??\|^$' || true)"
+  "${tg[@]}" diff --name-only --diff-filter=ACMRT "HEAD..$track_ref" 2>/dev/null | sort -u > "$out.incoming" || : > "$out.incoming"
+  "${tg[@]}" ls-files --others --exclude-standard 2>/dev/null | sort -u > "$out.untracked" || : > "$out.untracked"
+  untracked_collision_files="$(comm -12 "$out.incoming" "$out.untracked" | head -n 5)" || untracked_collision_files=""
+  untracked_collision="$(printf '%s\n' "$untracked_collision_files" | sed '/^$/d' | head -n 1)" || untracked_collision=""
+  tracked_dirty_files="$(
+    { "${tg[@]}" diff --name-only 2>/dev/null; "${tg[@]}" diff --cached --name-only 2>/dev/null; } \
+      | sort -u | head -n 5
+  )" || tracked_dirty_files=""
 
   if [ "$reach" = "unreachable" ]; then emit unreachable "${behind:-0}"; return 0; fi
 
   # neutral state: local commits OR tracked modifications => local-edits (a plain
-  # git pull may merge/conflict); otherwise clean (untracked-only pulls fine).
+  # git pull may merge/conflict). An untracked file is also local-edits when the
+  # incoming update tracks the same path, because git pull would abort rather than
+  # overwrite it.
   local state="clean"
-  { [ "${ahead:-0}" -gt 0 ] || [ "${tracked_dirty:-0}" -gt 0 ]; } && state="local-edits"
-  emit "$state" "${behind:-0}"
+  { [ "${ahead:-0}" -gt 0 ] || [ "${tracked_dirty:-0}" -gt 0 ] || [ -n "$untracked_collision" ]; } && state="local-edits"
+  reason=""
+  files_json="[]"
+  if [ "$state" = "local-edits" ]; then
+    if [ -n "$untracked_collision" ]; then
+      reason="untracked conflict"
+      files_json="$(printf '%s\n' "$untracked_collision_files" | sed '/^$/d' | jq -R . | jq -s '.[0:5]' 2>/dev/null)" || files_json="[]"
+    elif [ "${tracked_dirty:-0}" -gt 0 ]; then
+      reason="tracked edits"
+      files_json="$(printf '%s\n' "$tracked_dirty_files" | sed '/^$/d' | jq -R . | jq -s '.[0:5]' 2>/dev/null)" || files_json="[]"
+    elif [ "${ahead:-0}" -gt 0 ]; then
+      reason="local commits"
+    fi
+  fi
+  emit "$state" "${behind:-0}" "$reason" "$files_json"
   return 0
 }
 export -f check_one
@@ -204,7 +231,7 @@ state="$(jq -s --arg checked "$(date -Is)" --argjson total "$total" --argjson de
     currentStale: (([ .[] | select(.current and .behind > 0) ] | length) > 0),
     themes:    ([ .[] | select(.behind > 0 or .state == "unreachable") ]
                 | sort_by([(.state == "unreachable" | tostring), (.state == "local-edits" | tostring), .name])
-                | map({name, behind, state, current})) }
+                | map({name, behind, state, current, reason, files})) }
 ' "$tmpdir"/*.json)"
 
 write_state "$state"

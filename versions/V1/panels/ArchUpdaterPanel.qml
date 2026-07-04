@@ -169,11 +169,9 @@ PanelWindow {
     }
 
     // ── theme update = the accepted Omarchy path, shown in a visible terminal ──
-    // No custom apply script and no safe/review policy: "Update all" runs Omarchy's
-    // own omarchy-theme-update; a per-theme update runs `git -C <dir> pull` — the
-    // single-theme equivalent. Both run in the Omarchy floating terminal so git
-    // output, conflicts, auth prompts and merge notices are visible, exactly like
-    // Omarchy. Each ends by re-running our check so the panel refreshes.
+    // Theme updates use the same primitive as Omarchy (`git pull` in a visible
+    // terminal). Bulk updates intentionally target only clean themes; local-edits
+    // stay in the list for review because a plain git pull may abort or conflict.
     readonly property string themeCheckScript: Quickshell.env("HOME") + "/.config/quickshell/bin/qs-theme-update-check.sh"
 
     function launchThemeTerminal(inner) {
@@ -184,9 +182,33 @@ PanelWindow {
         panelUpdateRunner.running = true
     }
 
+    function cleanThemeNames() {
+        var out = [], list = root.themeUpdList || []
+        for (var i = 0; i < list.length; i++) {
+            var t = list[i] || {}
+            if (t.state === "clean" && t.behind > 0 && /^[A-Za-z0-9._-]+$/.test(t.name || ""))
+                out.push(t.name)
+        }
+        return out
+    }
+    function cleanThemeUpdateCount() {
+        return cleanThemeNames().length
+    }
     function updateAllThemes() {
-        // Omarchy's own updater over every git theme, then refresh our cache.
-        launchThemeTerminal("omarchy-theme-update; " + shellQuote(themeCheckScript))
+        var names = cleanThemeNames()
+        if (names.length <= 0) return
+        if (root.themeUpdLocalEdits <= 0) {
+            launchThemeTerminal("omarchy-theme-update; " + shellQuote(themeCheckScript))
+            return
+        }
+        var parts = ["set +e"]
+        for (var i = 0; i < names.length; i++) {
+            var dir = Quickshell.env("HOME") + "/.config/omarchy/themes/" + names[i]
+            parts.push("printf '%s\\n' " + shellQuote("Updating: " + names[i]))
+            parts.push("git -C " + shellQuote(dir) + " pull")
+        }
+        parts.push(shellQuote(themeCheckScript))
+        launchThemeTerminal(parts.join("; "))
     }
 
     function updateOneTheme(name) {
@@ -802,10 +824,20 @@ PanelWindow {
                                 required property int index
                                 readonly property bool isUnreach:   modelData.state === "unreachable"
                                 readonly property bool isLocalEdits: modelData.state === "local-edits"
+                                readonly property bool isClean:      modelData.state === "clean"
+                                readonly property bool canViewChanges: modelData.behind > 0 && !isUnreach
+                                readonly property var localFiles: modelData.files || []
+                                readonly property string localReason: modelData.reason || ""
+                                readonly property string localFileLabel: localFiles.length > 0
+                                    ? localFiles[0] + (localFiles.length > 1 ? " +" + (localFiles.length - 1) : "")
+                                    : localReason
+                                readonly property string stateLabel: isUnreach ? "unreachable"
+                                    : isLocalEdits ? ("blocked" + (localFileLabel !== "" ? ": " + localFileLabel : ""))
+                                    : "clean"
                                 // a per-theme "update this" runs `git -C <dir> pull` (Omarchy
-                                // semantics). Offered for any reachable outdated theme — even
-                                // local-edits, where the terminal will show the merge/conflict.
-                                readonly property bool canPull: modelData.behind > 0 && !isUnreach
+                                // semantics). Offer it only for clean themes; local-edits have
+                                // predictable pull failures/conflicts and must be reviewed first.
+                                readonly property bool canPull: modelData.behind > 0 && isClean
 
                                 width: parent.width
                                 height: 22
@@ -829,16 +861,16 @@ PanelWindow {
                                             anchors.verticalCenter: parent.verticalCenter
                                             width: parent.width
                                             text: isUnreach ? "—" : (modelData.behind + (modelData.behind === 1 ? " commit" : " commits"))
-                                            color: behindMa.containsMouse && themeRow.canPull ? root.seal : Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.7)
+                                            color: behindMa.containsMouse && themeRow.canViewChanges ? root.seal : Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.7)
                                             font.family: root.mono; font.pixelSize: 10
                                             elide: Text.ElideRight
                                         }
                                         MouseArea {
                                             id: behindMa
                                             anchors.fill: parent
-                                            hoverEnabled: themeRow.canPull
-                                            enabled: themeRow.canPull
-                                            cursorShape: themeRow.canPull ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            hoverEnabled: themeRow.canViewChanges
+                                            enabled: themeRow.canViewChanges
+                                            cursorShape: themeRow.canViewChanges ? Qt.PointingHandCursor : Qt.ArrowCursor
                                             onClicked: archPanel.viewThemeChanges(modelData.name)
                                         }
                                     }
@@ -849,8 +881,8 @@ PanelWindow {
                                         UiText {
                                             anchors.left: parent.left
                                             anchors.verticalCenter: parent.verticalCenter
-                                            width: parent.width - 76
-                                            text: isUnreach ? "unreachable" : isLocalEdits ? "local edits" : "clean"
+                                            width: parent.width - (themeRow.canPull ? 76 : 16)
+                                            text: themeRow.stateLabel
                                             color: isLocalEdits ? root.inkDeep : root.sumi
                                             font.family: root.mono; font.pixelSize: 10
                                             elide: Text.ElideRight
@@ -911,11 +943,11 @@ PanelWindow {
                     width: parent.width
                     spacing: 8
 
-                    // Update all — runs Omarchy's own omarchy-theme-update over every
-                    // git theme, in the visible Omarchy terminal (per-theme "update"
-                    // chips cover selective updates). Enabled when anything is outdated.
+                    // Update clean — bulk-pulls only themes that the checker marked
+                    // clean; blocked/local-edits stay untouched for review.
                     Rectangle {
-                        readonly property bool canApply: root.themeUpdOutdated > 0
+                        readonly property int cleanCount: archPanel.cleanThemeUpdateCount()
+                        readonly property bool canApply: cleanCount > 0
                         width: (parent.width - 8) / 2
                         height: 28; radius: root.tileRadius
                         opacity: canApply ? 1.0 : 0.45
@@ -924,7 +956,8 @@ PanelWindow {
                         Behavior on color { ColorAnimation { duration: 120 } }
                         UiText {
                             anchors.centerIn: parent
-                            text: root.themeUpdOutdated > 0 ? "Update all" : "No updates"
+                            text: parent.canApply ? (root.themeUpdLocalEdits > 0 ? "Update clean" : "Update all")
+                                                  : root.themeUpdOutdated > 0 ? "Review first" : "No updates"
                             color: root.paper
                             font.family: root.mono; font.pixelSize: 11
                         }
