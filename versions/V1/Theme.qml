@@ -840,6 +840,8 @@ Item {
     onLauncherLogoIconChanged: if (_widgetsLoaded) saveWidgets()
     onWeatherImperialChanged: if (_widgetsLoaded) saveWidgets()
     onClock12hChanged:        if (_widgetsLoaded) saveWidgets()
+    onArchBadgePackagesChanged: if (_widgetsLoaded) saveWidgets()
+    onArchBadgeThemesChanged:   if (_widgetsLoaded) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleShadowChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleFrostChanged:       if (_widgetsLoaded) saveWidgets()
@@ -873,7 +875,9 @@ Item {
                  + (styleFrost ? "1" : "0") + " "         // +17 frost / lowered island opacity
                  + launcherLogoMode + " "                 // +18 launcher logo mode (text/icon)
                  + launcherLogoText + " "                 // +19 text logo id
-                 + launcherLogoIcon                       // +20 icon logo id
+                 + launcherLogoIcon + " "                 // +20 icon logo id
+                 + (archBadgePackages ? "1" : "0") + " "  // +21 updater package badge
+                 + (archBadgeThemes   ? "1" : "0")        // +22 updater clean-theme badge
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1067,6 +1071,8 @@ Item {
                             theme.launcherLogoText = lm
                         }
                     }
+                    if (parts.length > wsField + 21) theme.archBadgePackages = parts[wsField + 21] !== "0"
+                    if (parts.length > wsField + 22) theme.archBadgeThemes   = parts[wsField + 22] !== "0"
                 }
                 theme._widgetsLoaded = true
             }
@@ -1283,6 +1289,8 @@ Item {
     property bool   themeUpdChecking: false   // a check is in flight (button disabled)
     property int    themeCheckTick: 0         // ++ from the panel button to trigger a check
     property string activeUpdateTab: "packages"   // which ArchUpdaterPanel tab is shown
+    property bool   archBadgePackages: true   // package count badge on the bar updater icon
+    property bool   archBadgeThemes: true     // clean-theme count badge on the bar updater icon
 
     // ── Tray state ──
     property bool trayVisible: false

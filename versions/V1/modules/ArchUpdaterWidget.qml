@@ -13,6 +13,20 @@ Item {
     property bool refreshing: false
 
     readonly property bool hasUpdates: rootMod.updateCount > 0
+    readonly property int packageBadgeCount: root.archBadgePackages ? rootMod.updateCount : 0
+    readonly property int cleanThemeCount: {
+        var n = 0, list = root.themeUpdList || []
+        for (var i = 0; i < list.length; i++) {
+            var t = list[i] || {}
+            if (t.state === "clean" && t.behind > 0) n++
+        }
+        return n
+    }
+    readonly property bool hasThemeUpdates: rootMod.cleanThemeCount > 0
+    readonly property int themeBadgeCount: root.archBadgeThemes ? rootMod.cleanThemeCount : 0
+    readonly property int badgeCount: rootMod.packageBadgeCount + rootMod.themeBadgeCount
+    readonly property bool hasBadge: rootMod.badgeCount > 0
+    readonly property bool hasNotice: rootMod.hasUpdates || rootMod.hasThemeUpdates || root.themeUpdLocalEdits > 0
 
     implicitWidth: 26
     implicitHeight: 28
@@ -100,12 +114,12 @@ Item {
             text: rootMod.refreshing ? "\uE5D5" : IconMap.icon("package_2")
             color: rootMod.refreshing
                 ? Qt.rgba(root.sumi.r, root.sumi.g, root.sumi.b, 1)
-                : (rootMod.hasUpdates ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4))
+                : (rootMod.hasNotice ? root.seal : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4))
             font.pixelSize: 14
         }
 
         Rectangle {
-            visible: rootMod.hasUpdates && !rootMod.refreshing
+            visible: rootMod.hasBadge && !rootMod.refreshing
             anchors.verticalCenter: ic.verticalCenter
             anchors.verticalCenterOffset: -6
             anchors.horizontalCenter: ic.horizontalCenter
@@ -118,7 +132,7 @@ Item {
             Text {
                 id: badgeText
                 anchors.centerIn: parent
-                text: rootMod.updateCount > 99 ? "99+" : String(rootMod.updateCount)
+                text: rootMod.badgeCount > 99 ? "99+" : String(rootMod.badgeCount)
                 color: root.paper
                 font.family: root.mono
                 font.pixelSize: 7
@@ -132,9 +146,8 @@ Item {
         var parts = []
         if (rootMod.systemCount) parts.push(rootMod.systemCount + " system")
         if (rootMod.aurCount) parts.push(rootMod.aurCount + " AUR")
-        // themes are a separate source (badge stays packages-only); show the count
-        // in the tooltip when a theme check has found outdated repos
-        if (root.themeUpdOutdated > 0) parts.push(root.themeUpdOutdated + " themes")
+        if (rootMod.cleanThemeCount > 0) parts.push(rootMod.cleanThemeCount + " themes")
+        if (root.themeUpdLocalEdits > 0) parts.push(root.themeUpdLocalEdits + " review")
         if (parts.length === 0) return "Up to date"
         return parts.join(" \u00B7 ") + "\nClick to view details"
     }

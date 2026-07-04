@@ -356,6 +356,7 @@ PanelWindow {
                 UiText {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
+                    id: closeX
                     text: "\u2715"
                     color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
@@ -366,6 +367,79 @@ PanelWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.archVisible = false
+                    }
+                }
+                Row {
+                    anchors.right: closeX.left
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 18
+                    spacing: 8
+                    UiText {
+                        id: badgeToggleLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Badge Toggle:"
+                        color: root.ink
+                        font.family: root.mono
+                        font.pixelSize: 11
+                    }
+                    Repeater {
+                        model: [
+                            { id: "packages", label: "PKG" },
+                            { id: "themes",   label: "Themes" }
+                        ]
+                        Item {
+                            id: badgeToggleItem
+                            required property var modelData
+                            readonly property bool active: modelData.id === "packages"
+                                ? root.archBadgePackages
+                                : root.archBadgeThemes
+                            width: badgeToggleText.implicitWidth + 36
+                            height: 18
+                            UiText {
+                                id: badgeToggleText
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: badgeToggleItem.modelData.label
+                                color: root.ink
+                                font.family: root.mono
+                                font.pixelSize: 11
+                            }
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 30
+                                height: 16
+                                radius: 8
+                                color: badgeToggleItem.active
+                                    ? root.fillActive
+                                    : badgeToggleMa.containsMouse ? root.fillHover : root.fillIdle
+                                border.color: (badgeToggleItem.active || badgeToggleMa.containsMouse) ? root.seal : root.sep
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Rectangle {
+                                    width: 10
+                                    height: 10
+                                    radius: 5
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: badgeToggleItem.active ? parent.width - width - 3 : 3
+                                    color: badgeToggleItem.active ? root.seal : root.sumi
+                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                            MouseArea {
+                                id: badgeToggleMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (badgeToggleItem.modelData.id === "packages")
+                                        root.archBadgePackages = !root.archBadgePackages
+                                    else
+                                        root.archBadgeThemes = !root.archBadgeThemes
+                                }
+                            }
+                        }
                     }
                 }
             }
