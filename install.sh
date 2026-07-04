@@ -151,11 +151,19 @@ install_shell_updater() {
 install_theme_updater() {
   local src="$1"
   local bindst="$HOME/.config/quickshell/bin"
+  local state="$HOME/.cache/qs-theme-updates.json"
+  local t
 
   [[ -f "$src/scripts/qs-theme-update-check.sh" ]] || return 0
 
   mkdir -p "$bindst"
   install -m 755 "$src/scripts/qs-theme-update-check.sh" "$bindst/qs-theme-update-check.sh"
+  if [[ ! -e "$state" ]]; then
+    mkdir -p "$(dirname "$state")"
+    t="$(mktemp -p "$(dirname "$state")" .qs-theme-updates.XXXXXX)"
+    printf '{"checked":"","total":0,"reachable":0,"outdated":0,"localEdits":0,"degraded":false,"currentStale":false,"themes":[]}\n' > "$t"
+    mv "$t" "$state"
+  fi
 
   info "Theme update checker installed (panel check uses Omarchy theme repos)"
 }

@@ -25,6 +25,20 @@ put() { # src dst mode
   cp "$src" "$t" && chmod "$mode" "$t" && mv -f "$t" "$dst" || { rm -f "$t"; return 1; }
 }
 
+seed_theme_state() {
+  local state="$HOME/.cache/qs-theme-updates.json"
+  local t
+  [ -e "$state" ] && return 0
+  mkdir -p "$(dirname "$state")" || return 1
+  t="$(mktemp -p "$(dirname "$state")" .qs-theme-updates.XXXXXX)" || return 1
+  if printf '{"checked":"","total":0,"reachable":0,"outdated":0,"localEdits":0,"degraded":false,"currentStale":false,"themes":[]}\n' > "$t" \
+      && mv "$t" "$state"; then
+    return 0
+  fi
+  rm -f "$t"
+  return 1
+}
+
 rc=0
 mkdir -p "$bin" "$qsbin" "$units"
 
@@ -47,6 +61,12 @@ put "$repo/scripts/qs-shell-check-update.sh" "$qsbin/qs-shell-check-update.sh" 7
 put "$repo/scripts/qs-shell-apply-update.sh" "$qsbin/qs-shell-apply-update.sh" 755 || rc=1
 put "$repo/systemd/qs-shell-update-check.service" "$units/qs-shell-update-check.service" 644 || rc=1
 put "$repo/systemd/qs-shell-update-check.timer"   "$units/qs-shell-update-check.timer"   644 || rc=1
+
+# ── theme-update checker used by ArchUpdaterPanel ───────────────
+if [ -f "$repo/scripts/qs-theme-update-check.sh" ]; then
+  put "$repo/scripts/qs-theme-update-check.sh" "$qsbin/qs-theme-update-check.sh" 755 || rc=1
+  seed_theme_state || rc=1
+fi
 
 # Re-arm both timers so refreshed unit files take effect now. Plain
 # enable --now is a no-op on an already-active timer, and a daemon-reload

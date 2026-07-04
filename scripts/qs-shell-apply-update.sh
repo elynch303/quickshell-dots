@@ -19,6 +19,7 @@ set -euo pipefail
 
 REPO="${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}"
 DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
+[ "$DEST" != "/" ] && DEST="${DEST%/}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
@@ -47,6 +48,73 @@ clear_state() {
   local t
   t="$(mktemp -p "$STATE_DIR")" || return 0
   printf '{"behind": 0, "checked": "%s"}\n' "$(date -Is)" > "$t" && mv "$t" "$STATE" || rm -f "$t"
+}
+
+bar_pids() {
+  local cfg="$DEST/shell.qml"
+  qs list --all 2>/dev/null | awk -v cfg="$cfg" '
+    $1 == "Process" && $2 == "ID:" { pid = $3 }
+    /^[[:space:]]*Config path:/ {
+      path = $0
+      sub(/^[[:space:]]*Config path:[[:space:]]*/, "", path)
+      gsub(/^"|"$/, "", path)
+      if (path == cfg && pid != "") print pid
+      pid = ""
+    }
+  ' || true
+}
+
+stop_registered_bars() {
+  local rounds="${1:-60}" stable="${2:-5}"
+  local pids pid quiet=0
+
+  # Crash-relaunched Quickshell instances can respawn after a TERM. Rescan on
+  # every pass and require a short stable-empty window before trusting that the
+  # old bar is gone.
+  for _ in $(seq 1 "$rounds"); do
+    pids="$(bar_pids | sort -u)"
+    if [ -z "$pids" ]; then
+      quiet=$((quiet + 1))
+      [ "$quiet" -ge "$stable" ] && return 0
+    else
+      quiet=0
+      for pid in $pids; do
+        kill -TERM "$pid" 2>/dev/null || true
+      done
+    fi
+    sleep 0.1
+  done
+
+  [ -z "$(bar_pids | sort -u)" ]
+}
+
+legacy_bar_running() {
+  pgrep -f 'qs.* -c bar([[:space:]]|$)' >/dev/null 2>&1 || \
+    pgrep -f "quickshell -p $DEST" >/dev/null 2>&1
+}
+
+stop_legacy_bars() {
+  # Legacy fallback for installs too old to show up in `qs list`, and a backup
+  # if Quickshell's registry misses an instance.
+  pkill -f 'qs.* -c bar([[:space:]]|$)' 2>/dev/null || true
+  pkill -f "quickshell -p $DEST" 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    legacy_bar_running || return 0
+    sleep 0.1
+  done
+
+  ! legacy_bar_running
+}
+
+stop_bar_instances() {
+  local rc=0
+
+  stop_registered_bars 60 5 || true
+  stop_legacy_bars || rc=1
+  # One final registry pass catches a crash-relaunch that appeared while the
+  # legacy command-line fallback was waiting.
+  stop_registered_bars 30 5 || rc=1
+  return "$rc"
 }
 
 ver="V1"
@@ -112,19 +180,11 @@ cp -r "$REPO/versions/$ver/." "$stage/"
 printf '%s\n' "$ver" > "$stage/.qsrise"
 
 # Stop the bar before swapping, and WAIT for it to actually exit (don't trust a
-# fixed sleep). Covers both launch styles: `qs -c bar` (current launcher) and
-# `quickshell -p $DEST` (legacy installs) — a bar left running through the swap
-# would keep serving the old tree.
+# fixed sleep). Prefer Quickshell's registered config path over command-line
+# matching: after IPC/crash recovery, the same bar can show up as
+# `/usr/bin/quickshell`, not `qs -c bar`.
 if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-  # Scope to THIS config only. A bare `pkill -x qs` also kills any other
-  # quickshell instance the user runs (e.g. a second `qs -c <other>` config) —
-  # match the bar config's command line instead.
-  pkill -f 'qs.* -c bar([[:space:]]|$)' 2>/dev/null || true
-  pkill -f "quickshell -p $DEST" 2>/dev/null || true
-  for _ in $(seq 1 30); do
-    pgrep -f 'qs.* -c bar([[:space:]]|$)' >/dev/null 2>&1 || pgrep -f "quickshell -p $DEST" >/dev/null 2>&1 || break
-    sleep 0.1
-  done
+  stop_bar_instances || fail "Could not stop the old bar instance safely."
 fi
 
 # Atomic swap with rollback. At every instant $DEST holds either the old or the
