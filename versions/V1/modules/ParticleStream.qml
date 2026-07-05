@@ -696,7 +696,20 @@ Item {
                             { q: "LOGIC WILL GET YOU FROM A TO Z; IMAGINATION WILL GET YOU EVERYWHERE.", a: "ALBERT EINSTEIN" },
                             { q: "I HAVE NOT FAILED. I'VE JUST FOUND 10,000 WAYS THAT WON'T WORK.", a: "THOMAS EDISON" },
                             { q: "AN INVESTMENT IN KNOWLEDGE PAYS THE BEST INTEREST.", a: "BENJAMIN FRANKLIN" },
-                            { q: "INNOVATION DISTINGUISHES BETWEEN A LEADER AND A FOLLOWER.", a: "STEVE JOBS" }
+                            { q: "INNOVATION DISTINGUISHES BETWEEN A LEADER AND A FOLLOWER.", a: "STEVE JOBS" },
+                            { q: "IF YOU WANT TO FIND THE SECRETS OF THE UNIVERSE, THINK IN TERMS OF ENERGY, FREQUENCY AND VIBRATION.", a: "NIKOLA TESLA" },
+                            { q: "I DON'T CARE THAT THEY STOLE MY IDEA. I CARE THAT THEY DON'T HAVE ANY OF THEIR OWN.", a: "NIKOLA TESLA" },
+                            { q: "OF ALL THINGS, I LIKED BOOKS BEST.", a: "NIKOLA TESLA" },
+                            { q: "THE PRESENT IS THEIRS; THE FUTURE, FOR WHICH I REALLY WORKED, IS MINE.", a: "NIKOLA TESLA" },
+                            { q: "A COMPUTER WOULD DESERVE TO BE CALLED INTELLIGENT IF IT COULD DECEIVE A HUMAN INTO BELIEVING THAT IT WAS HUMAN.", a: "ALAN TURING" },
+                            { q: "WE CAN ONLY SEE A SHORT DISTANCE AHEAD, BUT WE CAN SEE PLENTY THERE THAT NEEDS TO BE DONE.", a: "ALAN TURING" },
+                            { q: "WHAT IS PROVED NOW WAS ONCE ONLY IMAGINED.", a: "WILLIAM BLAKE" },
+                            { q: "LOOK DEEP INTO NATURE, AND THEN YOU WILL UNDERSTAND EVERYTHING BETTER.", a: "ALBERT EINSTEIN" },
+                            { q: "THE SUPREME ART OF WAR IS TO SUBDUE THE ENEMY WITHOUT FIGHTING.", a: "SUN TZU" },
+                            { q: "THE MEASURE OF A MAN IS WHAT HE DOES WITH POWER.", a: "PLATO" },
+                            { q: "IF YOU WANT TO TEST A MAN'S CHARACTER, GIVE HIM POWER.", a: "ABRAHAM LINCOLN" },
+                            { q: "THE UNEXAMINED LIFE IS NOT WORTH LIVING.", a: "SOCRATES" },
+                            { q: "MAN IS CONDEMNED TO BE FREE.", a: "JEAN-PAUL SARTRE" }
                         ]
                         return { F35: F35, QUOTES: QUOTES }
                     })()
@@ -792,7 +805,7 @@ Item {
                     var MIN_TWO_LINE_CELL8 = 2.35
                     var TWO_LINE_ROWS8 = 11
                     var TWO_LINE_OFFSET8 = 6
-                    var q08 = Math.floor(hash(sd8 + 41) * QUOTES8.length) % QUOTES8.length
+                    var q08 = cycle8 % QUOTES8.length
                     for (var qi8 = 0; qi8 < QUOTES8.length && !qA8; qi8++) {
                         var Q8 = QUOTES8[(q08 + qi8) % QUOTES8.length]
                         var c18 = Q8.q.length * 4 - 1
