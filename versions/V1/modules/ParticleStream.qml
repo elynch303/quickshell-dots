@@ -777,17 +777,26 @@ Item {
                                 pts.push([colOff + ci8 * 4 + L8[li8][0], rowOff + L8[li8][1]])
                         }
                     }
-                    var fitCell8 = function(cols, rows2, gapw) {
+                    var cellFor8 = function(cols, rows2, gapw) {
                         var c8 = Math.min(3.2, (gapw - 24) / Math.max(1, cols - 1), (height - 6) / Math.max(1, rows2 - 1))
-                        return c8 >= 2.0 ? c8 : 0
+                        return c8 > 0 && isFinite(c8) ? c8 : 0
+                    }
+                    var fitCell8 = function(cols, rows2, gapw, minCell) {
+                        var c8 = cellFor8(cols, rows2, gapw)
+                        return c8 >= minCell ? c8 : 0
                     }
 
                     var qA8 = null, qB8 = null
+                    var ONE_LINE_MAX_CHARS8 = 44
+                    var MIN_ONE_LINE_CELL8 = 2.65
+                    var MIN_TWO_LINE_CELL8 = 2.35
+                    var TWO_LINE_ROWS8 = 11
+                    var TWO_LINE_OFFSET8 = 6
                     var q08 = Math.floor(hash(sd8 + 41) * QUOTES8.length) % QUOTES8.length
                     for (var qi8 = 0; qi8 < QUOTES8.length && !qA8; qi8++) {
                         var Q8 = QUOTES8[(q08 + qi8) % QUOTES8.length]
                         var c18 = Q8.q.length * 4 - 1
-                        if (fitCell8(c18, 5, gwA8) > 0) {
+                        if (Q8.q.length <= ONE_LINE_MAX_CHARS8 && fitCell8(c18, 5, gwA8, MIN_ONE_LINE_CELL8) > 0) {
                             qA8 = { pts: [], rows: 5, cols: c18 }
                             textGrid8(Q8.q, 0, 0, qA8.pts)
                         } else {
@@ -797,18 +806,18 @@ Item {
                                                   ws8.slice(si8).join(" ").length)
                                 if (m8 < bl8) { bl8 = m8; best8 = si8 }
                             }
-                            if (best8 > 0 && fitCell8(bl8 * 4 - 1, 12, gwA8) > 0) {
+                            if (best8 > 0 && fitCell8(bl8 * 4 - 1, TWO_LINE_ROWS8, gwA8, MIN_TWO_LINE_CELL8) > 0) {
                                 var s18 = ws8.slice(0, best8).join(" ")
                                 var s28 = ws8.slice(best8).join(" ")
-                                qA8 = { pts: [], rows: 12, cols: bl8 * 4 - 1 }
+                                qA8 = { pts: [], rows: TWO_LINE_ROWS8, cols: bl8 * 4 - 1 }
                                 textGrid8(s18, Math.round((bl8 - s18.length) * 2), 0, qA8.pts)
-                                textGrid8(s28, Math.round((bl8 - s28.length) * 2), 7, qA8.pts)
+                                textGrid8(s28, Math.round((bl8 - s28.length) * 2), TWO_LINE_OFFSET8, qA8.pts)
                             }
                         }
                         if (qA8) {
                             var au8 = "-" + Q8.a
                             var ca8 = au8.length * 4 - 1
-                            if (gwB8 > 0 && fitCell8(ca8, 5, gwB8) > 0) {
+                            if (gwB8 > 0 && fitCell8(ca8, 5, gwB8, MIN_TWO_LINE_CELL8) > 0) {
                                 qB8 = { pts: [], rows: 5, cols: ca8 }
                                 textGrid8(au8, 0, 0, qB8.pts)
                             }
