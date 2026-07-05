@@ -101,6 +101,62 @@ Item {
         }
     }
 
+    readonly property string quotesPath8: Quickshell.env("HOME") + "/.config/quickshell/bar/quotes.txt"
+    property var quotes8: [
+        { q: "THE ONLY WAY TO DO GREAT WORK IS TO LOVE WHAT YOU DO.", a: "STEVE JOBS" }
+    ]
+
+    function sanitizeQuote8(s, cap) {
+        s = String(s || "").toUpperCase()
+        s = s.replace(/\u2018|\u2019|\u0060|\u00b4/g, "'")
+             .replace(/\u201c|\u201d/g, "")
+             .replace(/\u2014|\u2013|\u2015/g, "-")
+             .replace(/\u2026/g, ".")
+        var ok = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,'!-/; "
+        var out = ""
+        for (var i = 0; i < s.length && out.length < cap; i++)
+            if (ok.indexOf(s.charAt(i)) >= 0) out += s.charAt(i)
+        return out.replace(/ +/g, " ").trim()
+    }
+
+    function parseQuotes8(text) {
+        var out = []
+        var lines = String(text || "").split(/\r?\n/)
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (line === "" || line.charAt(0) === "#") continue
+            var cut = line.lastIndexOf("|")
+            var q = cut >= 0 ? line.substring(0, cut) : line
+            var a = cut >= 0 ? line.substring(cut + 1) : ""
+            q = sanitizeQuote8(q, 160)
+            a = sanitizeQuote8(a, 36)
+            if (q !== "") out.push({ q: q, a: a })
+        }
+        return out
+    }
+
+    function reloadQuotes8() {
+        var parsed = []
+        try { parsed = parseQuotes8(quotesFile8.text()) } catch (e) {}
+        if (parsed.length > 0) quotes8 = parsed
+        if (canvas) {
+            canvas.quoteSwarm = null
+            if (active && mode === 8) {
+                animating8 = true
+                canvas.tick7 = 16
+                canvas.requestPaint()
+            }
+        }
+    }
+
+    FileView {
+        id: quotesFile8
+        path: root.quotesPath8
+        watchChanges: true
+        onFileChanged: quotesFile8.reload()
+        onLoaded: root.reloadQuotes8()
+    }
+
     function pulseLife7(p) {
         if (!p) return 0
         if (p.k === "text") return p.life || 10500
@@ -680,43 +736,12 @@ Item {
                             "/": [[2,0],[2,1],[1,2],[0,3],[0,4]],
                             ";": [[1,1],[1,3],[0,4]]
                         }
-                        var QUOTES = [
-                            { q: "THE ONLY WAY TO DO GREAT WORK IS TO LOVE WHAT YOU DO.", a: "STEVE JOBS" },
-                            { q: "BELIEVE YOU CAN AND YOU'RE HALFWAY THERE.", a: "THEODORE ROOSEVELT" },
-                            { q: "START WHERE YOU ARE. USE WHAT YOU HAVE. DO WHAT YOU CAN.", a: "ARTHUR ASHE" },
-                            { q: "THE SECRET OF GETTING AHEAD IS GETTING STARTED.", a: "MARK TWAIN" },
-                            { q: "DREAM BIG AND DARE TO FAIL.", a: "NORMAN VAUGHAN" },
-                            { q: "IT DOES NOT MATTER HOW SLOWLY YOU GO AS LONG AS YOU DO NOT STOP.", a: "CONFUCIUS" },
-                            { q: "CHANGE YOUR THOUGHTS AND YOU CHANGE YOUR WORLD.", a: "NORMAN VINCENT PEALE" },
-                            { q: "WHETHER YOU THINK YOU CAN OR YOU THINK YOU CAN'T, YOU'RE RIGHT.", a: "HENRY FORD" },
-                            { q: "THE BEST WAY TO PREDICT THE FUTURE IS TO CREATE IT.", a: "PETER DRUCKER" },
-                            { q: "IF YOU CAN DREAM IT, YOU CAN DO IT.", a: "WALT DISNEY" },
-                            { q: "IMAGINATION IS MORE IMPORTANT THAN KNOWLEDGE.", a: "ALBERT EINSTEIN" },
-                            { q: "THE IMPORTANT THING IS NOT TO STOP QUESTIONING.", a: "ALBERT EINSTEIN" },
-                            { q: "LOGIC WILL GET YOU FROM A TO Z; IMAGINATION WILL GET YOU EVERYWHERE.", a: "ALBERT EINSTEIN" },
-                            { q: "I HAVE NOT FAILED. I'VE JUST FOUND 10,000 WAYS THAT WON'T WORK.", a: "THOMAS EDISON" },
-                            { q: "AN INVESTMENT IN KNOWLEDGE PAYS THE BEST INTEREST.", a: "BENJAMIN FRANKLIN" },
-                            { q: "INNOVATION DISTINGUISHES BETWEEN A LEADER AND A FOLLOWER.", a: "STEVE JOBS" },
-                            { q: "IF YOU WANT TO FIND THE SECRETS OF THE UNIVERSE, THINK IN TERMS OF ENERGY, FREQUENCY AND VIBRATION.", a: "NIKOLA TESLA" },
-                            { q: "I DON'T CARE THAT THEY STOLE MY IDEA. I CARE THAT THEY DON'T HAVE ANY OF THEIR OWN.", a: "NIKOLA TESLA" },
-                            { q: "OF ALL THINGS, I LIKED BOOKS BEST.", a: "NIKOLA TESLA" },
-                            { q: "THE PRESENT IS THEIRS; THE FUTURE, FOR WHICH I REALLY WORKED, IS MINE.", a: "NIKOLA TESLA" },
-                            { q: "A COMPUTER WOULD DESERVE TO BE CALLED INTELLIGENT IF IT COULD DECEIVE A HUMAN INTO BELIEVING THAT IT WAS HUMAN.", a: "ALAN TURING" },
-                            { q: "WE CAN ONLY SEE A SHORT DISTANCE AHEAD, BUT WE CAN SEE PLENTY THERE THAT NEEDS TO BE DONE.", a: "ALAN TURING" },
-                            { q: "WHAT IS PROVED NOW WAS ONCE ONLY IMAGINED.", a: "WILLIAM BLAKE" },
-                            { q: "LOOK DEEP INTO NATURE, AND THEN YOU WILL UNDERSTAND EVERYTHING BETTER.", a: "ALBERT EINSTEIN" },
-                            { q: "THE SUPREME ART OF WAR IS TO SUBDUE THE ENEMY WITHOUT FIGHTING.", a: "SUN TZU" },
-                            { q: "THE MEASURE OF A MAN IS WHAT HE DOES WITH POWER.", a: "PLATO" },
-                            { q: "IF YOU WANT TO TEST A MAN'S CHARACTER, GIVE HIM POWER.", a: "ABRAHAM LINCOLN" },
-                            { q: "THE UNEXAMINED LIFE IS NOT WORTH LIVING.", a: "SOCRATES" },
-                            { q: "MAN IS CONDEMNED TO BE FREE.", a: "JEAN-PAUL SARTRE" }
-                        ]
-                        return { F35: F35, QUOTES: QUOTES }
+                        return { F35: F35 }
                     })()
                 }
 
                 var F8 = canvas.quoteData.F35
-                var QUOTES8 = canvas.quoteData.QUOTES
+                var QUOTES8 = root.quotes8
                 var T8 = 16000
                 var lo8 = now / T8
                 var cycle8 = Math.floor(lo8)
