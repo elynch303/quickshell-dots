@@ -428,7 +428,8 @@ Item {
 
     function sanitize7(s, cap) {
         s = (s || "").toUpperCase()
-        s = s.replace(/Ä/g, "A").replace(/Ö/g, "O").replace(/Ü/g, "U").replace(/ß/g, "SS")
+        s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        s = s.replace(/ß/g, "SS").replace(/Ø/g, "O").replace(/Æ/g, "AE")
              .replace(/[—–]/g, "-").replace(/[’`´]/g, "'")
         var ok = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,'!-/;< "
         var out = ""
@@ -451,9 +452,10 @@ Item {
             if (pulses[i].k !== "text") ps.push(pulses[i])
             else if (!wn && pulses[i].w) return
         }
+        var lifeL = Math.min(9500, 4500 + l.length * 55)
         ps.push({ t: tnow, k: "text", d: dir === undefined ? 1 : dir, l: l, r: r, w: wn,
-                  life: wn ? 10000 : (sh ? 4200 : 7400), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
-                  r0: wn ? 8600 : (sh ? 3000 : 5900), r1: wn ? 9400 : (sh ? 3600 : 6700) })
+                  life: wn ? 10000 : (sh ? 4200 : lifeL), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
+                  r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700) })
         pulses = ps
         animating7 = true
         canvas.tick7 = 16
@@ -657,6 +659,7 @@ Item {
     Canvas {
         id: canvas
         anchors.fill: parent
+        renderStrategy: Canvas.Threaded
         // adaptive tick for mode 7/8: 16ms while moving, slower while idle/holding
         property int tick7: 250
         // dot-matrix glyph table for text pulses, built once on first use
@@ -994,20 +997,16 @@ Item {
             }
 
             if (root.mode === 7) {
-                // ══ EVENT REACTOR: the bar reacts to Hyprland ══
-                // No loop, no schedule — dots appear ONLY as impulses from
-                // real events (see the pulse listeners on the root item):
-                //   workspace switch  → text swarm with workspace + app count
-                //   window opened     → subtle clock-side pulse
-                //   window closed     → inverse clock-side pulse
-                //   fullscreen on/off → short state text
-                //   monitor focus     → soft sweep on that bar only
-                //   theme switch      → theme name text swarm
-                //   battery low       → queued warning text (laptop only)
-                //   notification      → swarm flies in, forms the MESSAGE
-                //                       (left of clock) + its SOURCE (right)
-                //   track change      → same, TITLE + ARTIST - ALBUM
-                // Everything decays and the bar sleeps at 4Hz in between.
+                // ══ EVENT REACTOR: the bar reacts to the session ══
+                // No loop, no schedule: dots appear only as impulses from real
+                // events. Producers today:
+                //   window open/close  -> subtle clock-side pulse in/out
+                //   monitor focus      -> soft sweep on that bar only
+                //   workspace/fullscreen/theme/config reload/notification/track
+                //   DND/mute/Voxtype/update/pacman -> text swarm
+                //   warning states     -> recurring text while true:
+                //     OFFLINE, BATTERY, AI QUOTA, URGENT.
+                // Everything decays; the timer stops when no pulse is alive.
                 if (!canvas.swarmData) {
                     // 3×5 dot-matrix glyphs, built once (NOT per frame)
                     canvas.swarmData = { F35: {
