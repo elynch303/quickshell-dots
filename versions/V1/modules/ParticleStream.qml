@@ -164,18 +164,23 @@ Item {
     function pulseLife7(p) {
         if (!p) return 0
         if (p.k === "text") return p.life || 10500
-        if (p.k === "monsweep") return 3400
+        if (p.k === "monsweep") return p.life || 3400
         if (p.k === "win") return 1600
         return 5000
     }
 
-    function pushPulse(kind, dir) {
+    function pushPulse(kind, dir, opts) {
         if (!active || mode !== 7) return
         var tnow = Date.now()
         var ps = []
         for (var i = 0; i < pulses.length; i++)
             if (tnow - pulses[i].t < pulseLife7(pulses[i])) ps.push(pulses[i])
-        if (ps.length < 8) ps.push({ t: tnow, k: kind, d: dir === undefined ? 1 : dir })
+        var p = { t: tnow, k: kind, d: dir === undefined ? 1 : dir }
+        opts = opts || ({})
+        if (opts.life !== undefined) p.life = opts.life
+        if (opts.gain !== undefined) p.gain = opts.gain
+        if (opts.count !== undefined) p.count = opts.count
+        if (ps.length < 8) ps.push(p)
         pulses = ps
         animating7 = true
         canvas.tick7 = 16
@@ -384,6 +389,9 @@ Item {
         function onLastAppliedNameChanged() {
             if (theme.lastAppliedName !== "") root.scheduleThemeText7(theme.lastAppliedName)
         }
+        function onReactorTest(kind, arg) {
+            root.runReactorTest(String(kind || ""), String(arg || ""))
+        }
     }
 
     Timer {
@@ -460,12 +468,71 @@ Item {
         }
         var lifeL = Math.min(9500, 4500 + l.length * 55)
         ps.push({ t: tnow, k: "text", d: dir === undefined ? 1 : dir, l: l, r: r, w: wn,
+                  two: !wn && !sh && l.length > 24,
                   life: wn ? 10000 : (sh ? 4200 : lifeL), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
                   r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700) })
         pulses = ps
         animating7 = true
         canvas.tick7 = 16
         canvas.requestPaint()
+    }
+
+    function testParts7(arg) {
+        var parts = String(arg || "").split("|")
+        return { l: parts[0] || "", r: parts.length > 1 ? parts.slice(1).join("|") : "" }
+    }
+
+    function runReactorTest(kind, arg) {
+        if (!active || mode !== 7) return
+
+        kind = String(kind || "").trim().toLowerCase()
+        arg = String(arg || "")
+
+        if (kind === "text" || kind === "text-long") {
+            var t = testParts7(arg || "THIS IS A LONG REACTOR TEST MESSAGE|SOURCE")
+            pushText(t.l, t.r || "TEST", 1, "long")
+        } else if (kind === "text-short") {
+            var ts = testParts7(arg || "REACTOR|TEST")
+            pushText(ts.l, ts.r, 1, "short")
+        } else if (kind === "text-warn" || kind === "warn") {
+            var tw = testParts7(arg || "OFFLINE!|NETWORK")
+            pushText(tw.l, tw.r || "WARNING", 1, "warn", true)
+        } else if (kind === "win" || kind === "win-open") {
+            pushPulse("win", arg === "close" || arg === "-1" ? -1 : 1)
+        } else if (kind === "win-close") {
+            pushPulse("win", -1)
+        } else if (kind === "monsweep" || kind === "sweep") {
+            pushPulse("monsweep", arg === "-1" ? -1 : 1, { life: 5200, gain: 0.82, count: 54 })
+        } else if (kind === "pacman" || kind === "packages") {
+            var parsedN = parseInt(arg || "3")
+            var n = isFinite(parsedN) ? Math.max(1, parsedN) : 3
+            pushText(n + (n === 1 ? " PACKAGE" : " PACKAGES") + " CHANGED", "PACMAN", 1, "long")
+        } else if (kind === "urgent") {
+            if (!armed7) return
+            urgentAddr = "__test__"
+            urgentCls = sanitize7(arg || "ATTENTION", 28) || "ATTENTION"
+            urgentNags = 0
+            var wn0 = warnNext
+            wn0.urgent = 0
+            warnNext = wn0
+            warnCheck()
+        } else if (kind === "quota") {
+            if (!armed7) return
+            var who = sanitize7(arg || "CLAUDE", 16) || "CLAUDE"
+            queueWarn7(who + " 90", "AI QUOTA!")
+        } else if (kind === "ws" || kind === "workspace") {
+            var ws = parseInt(arg || "1")
+            pushText("WS " + (isFinite(ws) && ws > 0 ? ws : 1), "TEST APPS", 1, "short")
+        } else if (kind === "clear") {
+            pulses = []
+            animating7 = false
+            warnQueue7 = []
+            warnQueueTimer.stop()
+            clearUrgent7()
+            canvas.requestPaint()
+        } else {
+            pushText("REACTOR TEST", kind.toUpperCase(), 1, "short")
+        }
     }
 
     // ── warning engine: warnings are STATES, not events — they re-announce
@@ -1189,8 +1256,9 @@ Item {
                     if (age < root.pulseLife7(p)) livePs7.push(p)
                     var sd = p.t % 86400000
                     if (p.k === "monsweep") {
-                        if (age >= 3400) continue
-                        alive7 = true; sweep7(p, age, 3400, p.d, 0.55, 30)
+                        var lifeM = p.life || 3400
+                        if (age >= lifeM) continue
+                        alive7 = true; sweep7(p, age, lifeM, p.d, p.gain || 0.55, p.count || 30)
                     } else if (p.k === "win") {
                         if (age >= 1600) continue
                         alive7 = true
@@ -1249,7 +1317,7 @@ Item {
                             var gwA7 = gaps7[i1].x2 - gaps7[i1].x1
                             var mc = Math.max(3, Math.floor(((gwA7 - 24) / 2.0 + 1) / 4))
                             var l1 = p.l, l2 = ""
-                            if (p.l.length > mc) {           // balanced wrap, hard cap
+                            if (p.l.length > mc || p.two) {  // balanced wrap, hard cap
                                 var cut = p.l.lastIndexOf(" ", Math.min(mc, Math.ceil(p.l.length / 2) + 6))
                                 if (cut < 4) cut = Math.min(mc, Math.ceil(p.l.length / 2))
                                 l1 = p.l.substring(0, cut).trim().substring(0, mc)

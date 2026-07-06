@@ -30,6 +30,13 @@ ShellRoot {
         function refresh(): void { theme.archRefreshTick++ }
     }
 
+    IpcHandler {
+        target: "reactor"
+        function test(kind: string, arg: string): void { theme.reactorTest(kind, arg) }
+        function monsweep(): void { theme.reactorTest("monsweep", "") }
+        function clear(): void { theme.reactorTest("clear", "") }
+    }
+
     // QtWayland creates a nameless 0x0 placeholder screen while no real output
     // exists; exclude it so no unusable layer surface is created. A new real
     // ShellScreen identity makes Variants destroy the old BarSlot and

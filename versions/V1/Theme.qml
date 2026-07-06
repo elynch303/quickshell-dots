@@ -7,6 +7,7 @@ import "Palette.js" as Palette
 
 Item {
     id: theme
+    signal reactorTest(string kind, string arg)
 
     readonly property string colorsPath: Quickshell.env("HOME") + "/.config/omarchy/current/theme/colors.toml"
 
