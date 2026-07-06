@@ -38,6 +38,8 @@ Item {
             pendingUrgentAddr7 = ""
             pendingUrgentCls7 = ""
             urgentAddr = ""
+            urgentCls = ""
+            urgentNags = 0
             recentOpen7 = ({})
             urgentProbe7.stop()
         } else {
@@ -71,6 +73,8 @@ Item {
             pendingUrgentAddr7 = ""
             pendingUrgentCls7 = ""
             urgentAddr = ""
+            urgentCls = ""
+            urgentNags = 0
             recentOpen7 = ({})
             urgentProbe7.stop()
             warnQueue7 = []
@@ -241,6 +245,7 @@ Item {
         if (cls === "") return
         urgentAddr = addr
         urgentCls = cls
+        urgentNags = 0
         var wn0 = warnNext; wn0.urgent = 0; warnNext = wn0
         warnCheck()
     }
@@ -283,7 +288,7 @@ Item {
                     delete ro[ac]
                     root.recentOpen7 = ro
                 }
-                if (root.urgentAddr !== "" && ac === root.urgentAddr) root.urgentAddr = ""
+                if (root.urgentAddr !== "" && ac === root.urgentAddr) root.clearUrgent7()
                 if (root.pendingUrgentAddr7 !== "" && ac === root.pendingUrgentAddr7) {
                     root.pendingUrgentAddr7 = ""
                     root.pendingUrgentCls7 = ""
@@ -308,7 +313,7 @@ Item {
                 // focusing the urgent window resolves the warning
                 var a2 = root.eventAddr7(event.data)
                 root.activeAddr7 = a2
-                if (root.urgentAddr !== "" && a2 === root.urgentAddr) root.urgentAddr = ""
+                if (root.urgentAddr !== "" && a2 === root.urgentAddr) root.clearUrgent7()
                 if (root.pendingUrgentAddr7 !== "" && a2 === root.pendingUrgentAddr7) {
                     root.pendingUrgentAddr7 = ""
                     root.pendingUrgentCls7 = ""
@@ -438,13 +443,14 @@ Item {
         return out.replace(/ +/g, " ").trim()
     }
 
-    function pushText(l, r, dir, profile) {
+    function pushText(l, r, dir, profile, force) {
         if (!active || mode !== 7) return
         l = sanitize7(l, 64); r = sanitize7(r, 28)
         if (l === "" && r === "") return
         var tnow = Date.now()
         var sh = profile === "short"
         var wn = profile === "warn"    // warning: longer, and the held text throbs
+        if (!wn && dnd7 && force !== true) return
         var ps = []
         for (var i = 0; i < pulses.length; i++) {
             var keep = pulseLife7(pulses[i])
@@ -468,6 +474,26 @@ Item {
     property var warnQueue7: []
     property string urgentAddr: ""
     property string urgentCls: ""
+    property int urgentNags: 0
+
+    function clearUrgent7() {
+        var cls = urgentCls
+        if (cls !== "" && warnQueue7.length > 0) {
+            var q = []
+            for (var i = 0; i < warnQueue7.length; i++) {
+                var w = warnQueue7[i]
+                if (!(w.l === cls && w.r === "WANTS YOU!")) q.push(w)
+            }
+            warnQueue7 = q
+            if (q.length === 0) warnQueueTimer.stop()
+        }
+        urgentAddr = ""
+        urgentCls = ""
+        urgentNags = 0
+        var wn0 = warnNext
+        wn0.urgent = 0
+        warnNext = wn0
+    }
 
     function queueWarn7(l, r) {
         if (!armed7 || !active || mode !== 7) return false
@@ -518,8 +544,15 @@ Item {
             if (tnow >= wn.aicx && queueWarn7("CODEX " + aiCx7, "AI QUOTA!")) wn.aicx = tnow + 300000
         } else wn.aicx = 0
         if (urgentAddr !== "" && urgentCls !== "") {
-            if (tnow >= wn.urgent && queueWarn7(urgentCls, "WANTS YOU!")) wn.urgent = tnow + 60000
-        } else wn.urgent = 0
+            if (tnow >= wn.urgent && urgentNags < 3
+                    && queueWarn7(urgentCls, "WANTS YOU!")) {
+                wn.urgent = tnow + 60000 * Math.pow(3, urgentNags)
+                urgentNags++
+            }
+        } else {
+            wn.urgent = 0
+            urgentNags = 0
+        }
         warnNext = wn
     }
 
@@ -557,7 +590,7 @@ Item {
     onNotifCChanged: {
         var prev = lastNotifC
         lastNotifC = notifC
-        if (armed7 && active && mode === 7 && prev >= 0 && notifC > prev) notifFetch.running = true
+        if (armed7 && active && mode === 7 && !dnd7 && prev >= 0 && notifC > prev) notifFetch.running = true
     }
     Process {
         id: notifFetch
@@ -594,7 +627,7 @@ Item {
 
     // do-not-disturb toggled
     readonly property bool dnd7: theme.notifSilenced === true
-    onDnd7Changed: if (armed7) pushText(dnd7 ? "DND ON" : "DND OFF", "", 1, "short")
+    onDnd7Changed: if (armed7) pushText(dnd7 ? "DND ON" : "DND OFF", "", 1, "short", true)
 
     // voxtype starts listening
     readonly property string vox7: theme.voxState !== undefined ? theme.voxState : "idle"
@@ -635,9 +668,11 @@ Item {
         stdout: SplitParser {
             onRead: function(line) {
                 if (line.indexOf("transaction started") >= 0) pacTail.pkgN = 0
-                else if (line.indexOf("] upgraded ") >= 0 || line.indexOf("] installed ") >= 0) pacTail.pkgN++
+                else if (line.indexOf("] upgraded ") >= 0
+                         || line.indexOf("] installed ") >= 0
+                         || line.indexOf("] removed ") >= 0) pacTail.pkgN++
                 else if (line.indexOf("transaction completed") >= 0 && pacTail.pkgN > 0)
-                    root.pushText(pacTail.pkgN + (pacTail.pkgN === 1 ? " PACKAGE" : " PACKAGES") + " DONE",
+                    root.pushText(pacTail.pkgN + (pacTail.pkgN === 1 ? " PACKAGE" : " PACKAGES") + " CHANGED",
                                   "PACMAN", 1, "long")
             }
         }
