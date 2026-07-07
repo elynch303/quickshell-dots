@@ -21,6 +21,9 @@ var icons = {
     "headphones": "\uE8F0",
     "mic": "\uE029",
     "mic_off": "\uE02B",
+    "memory": "\uE322",
+    "storage": "\uE1DB",
+    "speed": "\uE9E4",
     "package_2": "\uF569",
 }
 

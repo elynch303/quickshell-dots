@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "../OmarchyPower.js" as OmarchyPower
 
 Item {
     id: rootMod
@@ -9,6 +10,7 @@ Item {
     property bool   hasBacklight: false
     property int    percent:      0
     property string blDevice:     ""
+    property bool   brightnessErrorNotified: false
 
     readonly property string tooltipText: "Brightness · " + percent + "%"
 
@@ -19,6 +21,26 @@ Item {
     opacity: shown ? 1 : 0
 
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+    function refreshBrightness() {
+        briProc.running = false
+        briProc.running = true
+    }
+
+    function runBrightnessStep(up) {
+        var runner = up ? briUp : briDown
+        if (runner.running) return
+        runner.running = true
+    }
+
+    function notifyBrightnessError(action, exitCode) {
+        if (exitCode === 0 || brightnessErrorNotified) return
+        brightnessErrorNotified = true
+        brightnessErrNotify.command = ["bash", "-c",
+            "notify-send -a 'QS-Shell' 'Brightness command failed' '" + action + " failed; brightness backend unavailable.' 2>/dev/null || true"]
+        brightnessErrNotify.running = false
+        brightnessErrNotify.running = true
+    }
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter
@@ -38,6 +60,7 @@ Item {
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactBrightness
             text: "BRI"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
@@ -105,12 +128,12 @@ Item {
     // detect backlight on startup
     Process {
         id: detectProc
-        command: ["bash", "-c", "BL=$(ls /sys/class/backlight/ 2>/dev/null | head -1); [ -n \"$BL\" ] && echo \"$BL\" || echo NONE"]
+        command: ["bash", "-c", OmarchyPower.backlightDetectCmd]
         running: true
         stdout: StdioCollector {
             onStreamFinished: {
                 var bl = this.text.trim()
-                if (bl !== "NONE" && bl !== "") {
+                if (bl !== "") {
                     rootMod.blDevice = bl
                     rootMod.hasBacklight = true
                     root.hasBacklight = true
@@ -121,13 +144,7 @@ Item {
 
     Process {
         id: briProc
-        command: ["bash", "-c",
-            "BL=$(ls /sys/class/backlight/ 2>/dev/null | head -1); " +
-            "[ -z \"$BL\" ] && exit; " +
-            "CUR=$(cat /sys/class/backlight/$BL/brightness 2>/dev/null || echo 0); " +
-            "MAX=$(cat /sys/class/backlight/$BL/max_brightness 2>/dev/null || echo 100); " +
-            "echo $((MAX > 0 ? CUR * 100 / MAX : 0))"
-        ]
+        command: ["bash", "-c", OmarchyPower.brightnessPercentCmd]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -139,11 +156,26 @@ Item {
 
     Timer {
         interval: 3000; running: rootMod.shown; repeat: true; triggeredOnStart: true
-        onTriggered: { briProc.running = false; briProc.running = true }
+        onTriggered: rootMod.refreshBrightness()
     }
 
-    Process { id: briUp;   command: ["bash", "-c", "brightnessctl set +5% -q"] }
-    Process { id: briDown; command: ["bash", "-c", "brightnessctl set 5%- -q"] }
+    Process { id: brightnessErrNotify }
+    Process {
+        id: briUp
+        command: ["bash", "-c", OmarchyPower.brightnessSetCmd("+5%")]
+        onExited: (code) => {
+            rootMod.notifyBrightnessError("Brightness up", code)
+            rootMod.refreshBrightness()
+        }
+    }
+    Process {
+        id: briDown
+        command: ["bash", "-c", OmarchyPower.brightnessSetCmd("5%-")]
+        onExited: (code) => {
+            rootMod.notifyBrightnessError("Brightness down", code)
+            rootMod.refreshBrightness()
+        }
+    }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
@@ -154,9 +186,7 @@ Item {
         onExited:  { tip.hide() }
         onClicked: { tip.hide(); root.brightnessVisible = !root.brightnessVisible }
         onWheel: (e) => {
-            if (e.angleDelta.y > 0) { briUp.running = false;   briUp.running = true }
-            else                    { briDown.running = false; briDown.running = true }
-            briProc.running = false; briProc.running = true
+            rootMod.runBrightnessStep(e.angleDelta.y > 0)
         }
     }
 }

@@ -31,10 +31,11 @@ Item {
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 5
+        spacing: root.compactCpu ? 4 : 5
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactCpu
             text: "CPU"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
@@ -44,6 +45,7 @@ Item {
 
         Canvas {
             id: wave
+            visible: !root.compactCpu
             width: 36
             height: 14
             anchors.verticalCenter: parent.verticalCenter
@@ -106,6 +108,27 @@ Item {
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactCpu
+            text: String(Math.min(100, rootMod.percent)).padStart(2, '0') + "%"
+            color: root.seal
+            font.family: root.mono
+            font.pixelSize: 12
+        }
+
+        IconText {
+            id: compactCpuGlyph
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactCpu
+            text: "planner_review"
+            color: root.seal
+            font.pixelSize: 15
+            font.weight: Font.DemiBold
+            fill: 1
+        }
+
+        UiText {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactCpu
             text: String(Math.min(100, rootMod.percent)).padStart(2, '0') + "%"
             color: root.seal
             font.family: root.mono

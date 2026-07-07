@@ -312,8 +312,8 @@ PanelWindow {
                 }
                 UsageRow { visible: aiPanel.showClaude && aiPanel.clHas; label: "5h"; pct: aiPanel.clPct5h; dim: !aiPanel.clFresh }
                 UsageRow { visible: aiPanel.showClaude && aiPanel.clHas; label: "7d"; pct: aiPanel.clPct7d; dim: !aiPanel.clFresh }
-                DetailRow { visible: aiPanel.showClaude && aiPanel.clHas; k: "5h resets in"; v: root.aiFmtReset(aiPanel.clReset5hTs) || "—" }
-                DetailRow { visible: aiPanel.showClaude && aiPanel.clHas; k: "7d resets in"; v: root.aiFmtReset(aiPanel.clReset7dTs) || "—" }
+                DetailRow { visible: aiPanel.showClaude && aiPanel.clHas; k: "5h resets in"; v: root.aiFmtResetDetail(aiPanel.clReset5hTs) || "—" }
+                DetailRow { visible: aiPanel.showClaude && aiPanel.clHas; k: "7d resets in"; v: root.aiFmtResetDetail(aiPanel.clReset7dTs) || "—" }
                 DetailRow { visible: aiPanel.showClaude && aiPanel.clHas && aiPanel.clTokens !== ""; k: "Tokens"; v: aiPanel.clTokens }
                 DetailRow { visible: aiPanel.showClaude && aiPanel.clHas && aiPanel.clRate !== "";   k: "Rate"; v: aiPanel.clRate }
                 DetailRow { visible: aiPanel.showClaude && aiPanel.clHas && aiPanel.clToday > 0; k: "Today"; v: (aiPanel.clToday / 1e6).toFixed(2) + "M tok" }
@@ -345,8 +345,8 @@ PanelWindow {
                 }
                 UsageRow { visible: aiPanel.showCodex && aiPanel.cxHas; label: "5h"; pct: aiPanel.cxPct5h; dim: !aiPanel.cxFresh }
                 UsageRow { visible: aiPanel.showCodex && aiPanel.cxHas; label: "7d"; pct: aiPanel.cxPct7d; dim: !aiPanel.cxFresh }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "5h resets in"; v: root.aiFmtReset(aiPanel.cxReset5hTs) || "—" }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "7d resets in"; v: root.aiFmtReset(aiPanel.cxReset7dTs) || "—" }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "5h resets in"; v: root.aiFmtResetDetail(aiPanel.cxReset5hTs) || "—" }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "7d resets in"; v: root.aiFmtResetDetail(aiPanel.cxReset7dTs) || "—" }
                 DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxTokens !== ""; k: "Tokens"; v: aiPanel.cxTokens }
                 DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxRate !== "";   k: "Rate"; v: aiPanel.cxRate }
                 DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxToday > 0; k: "Today"; v: (aiPanel.cxToday / 1e6).toFixed(2) + "M tok" }

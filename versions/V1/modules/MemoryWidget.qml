@@ -32,10 +32,11 @@ Item {
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 5
+        spacing: root.compactMemory ? 4 : 5
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactMemory
             text: "MEM"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
@@ -45,6 +46,7 @@ Item {
 
         Canvas {
             id: ring
+            visible: !root.compactMemory
             width: 16
             height: 16
             anchors.verticalCenter: parent.verticalCenter
@@ -87,6 +89,7 @@ Item {
         }
 
         Row {
+            visible: !root.compactMemory
             spacing: 0
             anchors.verticalCenter: parent.verticalCenter
 
@@ -96,6 +99,65 @@ Item {
                 font.family: root.mono
                 font.pixelSize: 12
             }
+        }
+
+        Item {
+            id: compactMemGlyph
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactMemory
+            width: 16
+            height: 16
+
+            Canvas {
+                id: compactMemRing
+                anchors.fill: parent
+
+                property color tint: root.seal
+                property color base: root.ink
+                onTintChanged: requestPaint()
+                onBaseChanged: requestPaint()
+
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    var cx = width / 2
+                    var cy = height / 2
+                    var r = (width / 2) - 1.5
+                    var ratio = Math.max(0, Math.min(1, rootMod.percent / 100))
+                    var start = -Math.PI / 2
+                    var end = start + Math.PI * 2 * ratio
+
+                    ctx.lineWidth = 1.7
+                    ctx.lineCap = "round"
+
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+                    ctx.strokeStyle = Qt.rgba(base.r, base.g, base.b, 0.18)
+                    ctx.stroke()
+
+                    if (ratio > 0) {
+                        ctx.beginPath()
+                        ctx.arc(cx, cy, r, start, end)
+                        ctx.strokeStyle = tint
+                        ctx.stroke()
+                    }
+                }
+
+                Component.onCompleted: requestPaint()
+                Connections {
+                    target: rootMod
+                    function onPercentChanged() { compactMemRing.requestPaint() }
+                }
+            }
+        }
+
+        UiText {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactMemory
+            text: String(Math.round(rootMod.usedGiB)) + "G"
+            color: root.seal
+            font.family: root.mono
+            font.pixelSize: 12
         }
     }
 

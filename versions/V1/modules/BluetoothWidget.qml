@@ -45,6 +45,7 @@ Item {
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactBluetooth
             text: "BT"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
@@ -58,7 +59,7 @@ Item {
             color: rootMod.connected
                 ? root.seal
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, rootMod.btOn ? 0.7 : 0.3)
-            font.pixelSize: 14
+            font.pixelSize: root.compactBluetooth ? 15 : 14
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 

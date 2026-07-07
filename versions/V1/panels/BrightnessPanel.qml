@@ -3,6 +3,7 @@ import "../modules"
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import "../OmarchyPower.js" as OmarchyPower
 
 PanelWindow {
     id: briPanel
@@ -20,6 +21,8 @@ PanelWindow {
     readonly property int gap: 8
 
     property int percent: 0
+    property int queuedSetPercent: -1
+    property bool brightnessErrorNotified: false
 
     property real reveal: root.brightnessVisible ? 1 : 0
     Behavior on reveal {
@@ -34,6 +37,35 @@ PanelWindow {
     MouseArea { anchors.fill: parent; onClicked: root.brightnessVisible = false }
 
     function refresh() { briData.running = false; briData.running = true }
+
+    function requestSetPercent(p) {
+        queuedSetPercent = Math.max(1, Math.min(100, p))
+        percent = queuedSetPercent
+        setDebounce.restart()
+    }
+
+    function drainSetQueue() {
+        if (setRunner.running || queuedSetPercent < 0) return
+        var p = queuedSetPercent
+        queuedSetPercent = -1
+        setRunner.command = ["bash", "-c", OmarchyPower.brightnessSetCmd(p + "%")]
+        setRunner.running = true
+    }
+
+    function notifyBrightnessError(action, exitCode) {
+        if (exitCode === 0 || brightnessErrorNotified) return
+        brightnessErrorNotified = true
+        brightnessErrNotify.command = ["bash", "-c",
+            "notify-send -a 'QS-Shell' 'Brightness command failed' '" + action + " failed; brightness backend unavailable.' 2>/dev/null || true"]
+        brightnessErrNotify.running = false
+        brightnessErrNotify.running = true
+    }
+
+    function runStep(up) {
+        var runner = up ? upRunner : downRunner
+        if (runner.running) return
+        runner.running = true
+    }
 
     Rectangle {
         id: card
@@ -109,9 +141,7 @@ PanelWindow {
                         onPositionChanged: (e) => { if (pressed) setFromX(e.x) }
                         function setFromX(px) {
                             var p = Math.max(1, Math.min(100, Math.round(px / track.width * 100)))
-                            setRunner.command = ["bash", "-c", "brightnessctl set " + p + "% -q"]
-                            setRunner.running = false; setRunner.running = true
-                            briPanel.percent = p
+                            briPanel.requestSetPercent(p)
                         }
                     }
                 }
@@ -139,7 +169,7 @@ PanelWindow {
                         id: _dn
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onClicked: { downRunner.running = false; downRunner.running = true; Qt.callLater(briPanel.refresh) }
+                        onClicked: briPanel.runStep(false)
                     }
                 }
                 Rectangle {
@@ -158,21 +188,23 @@ PanelWindow {
                         id: _up
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onClicked: { upRunner.running = false; upRunner.running = true; Qt.callLater(briPanel.refresh) }
+                        onClicked: briPanel.runStep(true)
                     }
                 }
             }
         }
     }
 
+    Timer {
+        id: setDebounce
+        interval: 90
+        repeat: false
+        onTriggered: briPanel.drainSetQueue()
+    }
+
     Process {
         id: briData
-        command: ["bash", "-c",
-            "BL=$(ls /sys/class/backlight/ 2>/dev/null | head -1); [ -z \"$BL\" ] && exit; " +
-            "CUR=$(cat /sys/class/backlight/$BL/brightness 2>/dev/null || echo 0); " +
-            "MAX=$(cat /sys/class/backlight/$BL/max_brightness 2>/dev/null || echo 100); " +
-            "echo $((MAX > 0 ? CUR * 100 / MAX : 0))"
-        ]
+        command: ["bash", "-c", OmarchyPower.brightnessPercentCmd]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -182,9 +214,32 @@ PanelWindow {
         }
     }
 
-    Process { id: setRunner;  command: ["bash", "-c", "true"] }
-    Process { id: upRunner;   command: ["bash", "-c", "brightnessctl set +5% -q"] }
-    Process { id: downRunner; command: ["bash", "-c", "brightnessctl set 5%- -q"] }
+    Process { id: brightnessErrNotify }
+    Process {
+        id: setRunner
+        command: ["bash", "-c", "true"]
+        onExited: (code) => {
+            briPanel.notifyBrightnessError("Set brightness", code)
+            if (briPanel.queuedSetPercent >= 0) briPanel.drainSetQueue()
+            else briPanel.refresh()
+        }
+    }
+    Process {
+        id: upRunner
+        command: ["bash", "-c", OmarchyPower.brightnessSetCmd("+5%")]
+        onExited: (code) => {
+            briPanel.notifyBrightnessError("Brightness up", code)
+            briPanel.refresh()
+        }
+    }
+    Process {
+        id: downRunner
+        command: ["bash", "-c", OmarchyPower.brightnessSetCmd("5%-")]
+        onExited: (code) => {
+            briPanel.notifyBrightnessError("Brightness down", code)
+            briPanel.refresh()
+        }
+    }
 
     onVisibleChanged: { if (visible) refresh() }
 }

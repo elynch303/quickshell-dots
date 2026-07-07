@@ -12,6 +12,13 @@ Item {
     property bool active: false
     property int  mode:   1          // 1=stream, 2=surge, 3=bolt, 4=bolt2, 5=stream2, 6=surge2, 7=reactor, 8=quotes
     property string monitor: ""      // this bar's output (for monitor-focus pulses)
+    readonly property bool reactorMode7: mode === 7
+    readonly property bool ambientField7: mode === 7
+    readonly property int ambientParticleCount7: 44
+    readonly property int ambientIdleTick7: 120
+    readonly property real ambientTextFade7: 0.34
+    readonly property real ambientFadeStep7: 0.025
+    readonly property real ambientRiseStep7: 0.04
 
     opacity: active ? 1.0 : 0.0
     Behavior on opacity { NumberAnimation { duration: 500; easing.type: Easing.InOutCubic } }
@@ -27,31 +34,57 @@ Item {
     property string activeAddr7: ""
     property string pendingUrgentAddr7: ""
     property string pendingUrgentCls7: ""
+    property string aiWindowRootPid7: ""
+    property var recentAiAnnounce7: ({})
     property var recentOpen7: ({})
+    property var pendingAiOpen7: ({})
+    property bool armedIntroShown7: false
+    property double lastReactorTs7: 0
+    property bool reactorFeedBaselined7: false
+
+    readonly property string reactorEventPath7: Quickshell.env("HOME") + "/.cache/qs-reactor-event"
+    FileView {
+        id: reactorEventFile7
+        path: root.reactorEventPath7
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reactorEventFile7.reload()
+        onLoaded: root.handleReactorEventFile7()
+        onLoadFailed: {
+            if (!root.reactorFeedBaselined7) {
+                root.reactorFeedBaselined7 = true
+                root.lastReactorTs7 = 0
+            }
+        }
+    }
 
     onModeChanged: {
         warnQueue7 = []
         warnQueueTimer.stop()
-        if (mode !== 7) {
+        if (!reactorMode7) {
             pulses = []
             animating7 = false
+            armedIntroShown7 = false
             pendingUrgentAddr7 = ""
             pendingUrgentCls7 = ""
             urgentAddr = ""
             urgentCls = ""
             urgentNags = 0
+            aiWindowRootPid7 = ""
+            recentAiAnnounce7 = ({})
             recentOpen7 = ({})
+            pendingAiOpen7 = ({})
             urgentProbe7.stop()
+            aiOpenProbe7.stop()
         } else {
             pulses = []
-            animating7 = false
+            animating7 = ambientField7
+            armedIntroShown7 = false
+            aiWindowRootPid7 = ""
             var ws7 = Hyprland.focusedWorkspace
             lastWsId = ws7 && ws7.id > 0 ? ws7.id : -1
             canvas.tick7 = 16
-            Qt.callLater(function() {
-                if (root.active && root.mode === 7)
-                    root.pushText("REACTOR", "ARMED", 1, "short")
-            })
+            Qt.callLater(function() { root.announceReactorArmed7() })
         }
         if (mode === 8) {
             animating8 = true
@@ -75,10 +108,20 @@ Item {
             urgentAddr = ""
             urgentCls = ""
             urgentNags = 0
+            aiWindowRootPid7 = ""
+            recentAiAnnounce7 = ({})
+            aiWindowProbe7.running = false
             recentOpen7 = ({})
+            pendingAiOpen7 = ({})
             urgentProbe7.stop()
+            aiOpenProbe7.stop()
             warnQueue7 = []
             warnQueueTimer.stop()
+        } else if (reactorMode7) {
+            animating7 = ambientField7
+            canvas.tick7 = ambientField7 ? ambientIdleTick7 : 16
+            canvas.requestPaint()
+            Qt.callLater(function() { root.announceReactorArmed7() })
         } else if (mode === 8) {
             animating8 = true
             quoteWake8.stop()
@@ -91,6 +134,13 @@ Item {
         if (!active || mode !== 8) return
         quoteWake8.interval = Math.max(250, Math.ceil(delay))
         quoteWake8.restart()
+    }
+
+    function announceReactorArmed7() {
+        if (!active || !reactorMode7 || armedIntroShown7)
+            return
+        armedIntroShown7 = true
+        pushText("REACTOR", "ARMED", 1, "short")
     }
 
     Timer {
@@ -170,7 +220,7 @@ Item {
     }
 
     function pushPulse(kind, dir, opts) {
-        if (!active || mode !== 7) return
+        if (!active || !reactorMode7) return
         var tnow = Date.now()
         var ps = []
         for (var i = 0; i < pulses.length; i++)
@@ -192,7 +242,7 @@ Item {
     }
 
     function requestWorkspaceText(id, dir) {
-        if (!active || mode !== 7 || id <= 0) return
+        if (!active || !reactorMode7 || id <= 0) return
         pendingWsId = id
         pendingWsDir = dir
         wsCountProc.running = false
@@ -220,6 +270,63 @@ Item {
         return ""
     }
 
+    function pidForAddr7(addr) {
+        if (addr === "") return ""
+        try {
+            var tls = Hyprland.toplevels.values
+            for (var i = 0; i < tls.length; i++) {
+                var o = tls[i].lastIpcObject
+                if (o && String(o.address || "").replace(/^0x/, "").toLowerCase() === addr) {
+                    var p = Number(o.pid || 0)
+                    return p > 0 ? String(Math.floor(p)) : ""
+                }
+            }
+        } catch (e) {}
+        return ""
+    }
+
+    function requestAiForAddr7(addr) {
+        if (!armed7 || !active || !reactorMode7 || !ownsGlobalHelpers7) return false
+        var pid = pidForAddr7(addr)
+        if (pid === "") return false
+        aiWindowRootPid7 = pid
+        aiWindowProbe7.running = false
+        aiWindowProbe7.running = true
+        return true
+    }
+
+    function scheduleAiOpenProbe7(addr) {
+        if (!armed7 || !active || !reactorMode7 || !ownsGlobalHelpers7 || addr === "") return
+        var q = pendingAiOpen7
+        q[addr] = 4
+        pendingAiOpen7 = q
+        aiOpenProbe7.restart()
+    }
+
+    function probePendingAiOpen7() {
+        if (aiWindowProbe7.running) {
+            aiOpenProbe7.restart()
+            return
+        }
+        var q = pendingAiOpen7
+        var again = false
+        for (var addr in q) {
+            if (!(q[addr] > 0)) {
+                delete q[addr]
+                continue
+            }
+            requestAiForAddr7(addr)
+            q[addr] = q[addr] - 1
+            if (q[addr] > 0) again = true
+            else delete q[addr]
+            break
+        }
+        for (var left in q)
+            if (q[left] > 0) again = true
+        pendingAiOpen7 = q
+        if (again && active && reactorMode7) aiOpenProbe7.restart()
+    }
+
     function rememberOpen7(addr) {
         if (addr === "") return
         var ro = recentOpen7
@@ -235,7 +342,7 @@ Item {
         var cls = pendingUrgentCls7
         pendingUrgentAddr7 = ""
         pendingUrgentCls7 = ""
-        if (!active || mode !== 7 || addr === "") return
+        if (!active || !reactorMode7 || addr === "") return
         if (addr === activeAddr7) return
 
         var ro = recentOpen7
@@ -263,6 +370,14 @@ Item {
         onTriggered: root.commitUrgent7()
     }
 
+    Timer {
+        id: aiOpenProbe7
+        interval: 900
+        repeat: false
+        running: false
+        onTriggered: root.probePendingAiOpen7()
+    }
+
     Connections {
         target: Hyprland
         function onFocusedWorkspaceChanged() {
@@ -282,7 +397,9 @@ Item {
         }
         function onRawEvent(event) {
             if (event.name === "openwindow") {
-                root.rememberOpen7(root.eventAddr7(event.data))
+                var openAddr = root.eventAddr7(event.data)
+                root.rememberOpen7(openAddr)
+                root.scheduleAiOpenProbe7(openAddr)
                 root.pushPulse("win", 1)
             }
             else if (event.name === "closewindow") {
@@ -444,37 +561,75 @@ Item {
         s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         s = s.replace(/ß/g, "SS").replace(/Ø/g, "O").replace(/Æ/g, "AE")
              .replace(/[—–]/g, "-").replace(/[’`´]/g, "'")
-        var ok = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,'!-/;< "
+        var ok = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,'!-/;+< "
         var out = ""
         for (var i = 0; i < s.length && out.length < cap; i++)
             if (ok.indexOf(s.charAt(i)) >= 0) out += s.charAt(i)
         return out.replace(/ +/g, " ").trim()
     }
 
+    function parseReactorEvent7(raw) {
+        raw = String(raw || "")
+        if (raw.length > 4096) raw = raw.slice(raw.length - 4096)
+        raw = raw.trim()
+        if (raw === "") return null
+        var nl = raw.lastIndexOf("\n")
+        if (nl >= 0) raw = raw.slice(nl + 1)
+        var parts = raw.split("\t")
+        var ts = parseFloat(parts[0])
+        if (!isFinite(ts)) return null
+        return { ts: ts, l: parts[1] || "", r: parts.length > 2 ? parts.slice(2).join("\t") : "" }
+    }
+
+    function baselineReactorEventFile7() {
+        if (reactorFeedBaselined7) return
+        var ev = null
+        try { ev = parseReactorEvent7(reactorEventFile7.text()) } catch (e) {}
+        reactorFeedBaselined7 = true
+        var now = Date.now()
+        lastReactorTs7 = ev && ev.ts > 0 ? Math.min(ev.ts, now) : now
+    }
+
+    function handleReactorEventFile7() {
+        if (!reactorFeedBaselined7) {
+            baselineReactorEventFile7()
+            return
+        }
+        var ev = null
+        try { ev = parseReactorEvent7(reactorEventFile7.text()) } catch (e) { return }
+        if (!ev) return
+        var now = Date.now()
+        if (ev.ts > now + 300000 || ev.ts <= lastReactorTs7) return
+        if (!armed7 || !active || !reactorMode7) return
+        if (pushText(ev.l, ev.r, 1, "long")) lastReactorTs7 = ev.ts
+    }
+
     function pushText(l, r, dir, profile, force) {
-        if (!active || mode !== 7) return
+        if (!active || !reactorMode7) return false
         l = sanitize7(l, 64); r = sanitize7(r, 28)
-        if (l === "" && r === "") return
+        if (l === "" && r === "") return false
         var tnow = Date.now()
         var sh = profile === "short"
         var wn = profile === "warn"    // warning: longer, and the held text throbs
-        if (!wn && dnd7 && force !== true) return
+        if (!wn && dnd7 && force !== true) return false
         var ps = []
         for (var i = 0; i < pulses.length; i++) {
             var keep = pulseLife7(pulses[i])
             if (tnow - pulses[i].t >= keep) continue
             if (pulses[i].k !== "text") ps.push(pulses[i])
-            else if (!wn && pulses[i].w) return
+            else if (!wn && pulses[i].w) return false
         }
         var lifeL = Math.min(9500, 4500 + l.length * 55)
         ps.push({ t: tnow, k: "text", d: dir === undefined ? 1 : dir, l: l, r: r, w: wn,
                   two: !wn && !sh && l.length > 24,
                   life: wn ? 10000 : (sh ? 4200 : lifeL), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
-                  r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700) })
+                  r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700),
+                  fade: wn ? 1100 : (sh ? 750 : 900) })
         pulses = ps
         animating7 = true
         canvas.tick7 = 16
         canvas.requestPaint()
+        return true
     }
 
     function testParts7(arg) {
@@ -482,8 +637,92 @@ Item {
         return { l: parts[0] || "", r: parts.length > 1 ? parts.slice(1).join("|") : "" }
     }
 
+    function aiParts7(arg) {
+        var parts = String(arg || "").split("|")
+        return { tool: parts[0] || "",
+                 model: parts.length > 1 ? parts[1] : "",
+                 effort: parts.length > 2 ? parts.slice(2).join(" ") : "" }
+    }
+
+    function aiProbeParts7(arg) {
+        var parts = String(arg || "").split("|")
+        return { rootPid: parts[0] || "",
+                 tool: parts.length > 1 ? parts[1] : "",
+                 model: parts.length > 2 ? parts[2] : "",
+                 effort: parts.length > 3 ? parts.slice(3).join(" ") : "" }
+    }
+
+    function cleanAiModel7(model, cap) {
+        var m = String(model || "")
+        m = m.replace(/\([^)]*\)/g, "")
+             .replace(/^models\//i, "")
+             .replace(/_/g, "-")
+             .trim()
+        m = m.replace(/^claude-(opus|sonnet|haiku)-([0-9]+)-([0-9]+)/i, "$1 $2.$3")
+             .replace(/^claude-(fable|mythos)-([0-9]+)/i, "$1 $2")
+             .replace(/^(opus|sonnet|haiku)-([0-9]+)-([0-9]+)/i, "$1 $2.$3")
+             .replace(/^(fable|mythos)-([0-9]+)/i, "$1 $2")
+             .replace(/^claude-/i, "")
+        return sanitize7(m, cap || 28)
+    }
+
+    function cleanAiEffort7(effort, tool) {
+        var e = String(effort || "").trim().toLowerCase()
+        if (e === "" || e === "none" || e === "default") return ""
+        if (tool === "CLAUDE" && (e === "xhigh" || e === "ultrathink" || e === "ultra" || e === "ultraa"))
+            return "ULTRA"
+        if (e === "high") return "HIGH"
+        if (e === "medium" || e === "med") return "MED"
+        if (e === "low" || e === "minimal") return "LOW"
+        return sanitize7(e, 8)
+    }
+
+    function pushAiModel7(tool, model, effort) {
+        var t = sanitize7(tool, 16)
+        var e = cleanAiEffort7(effort, t)
+        var m = cleanAiModel7(model, e !== "" ? 18 : 28)
+        if (t === "") return
+        if (m === "") m = "ACTIVE"
+        if (e !== "") m = sanitize7(m + " + " + e, 28)
+        pushText(t, m, 1, "long")
+    }
+
+    function handleAiWindowProbe7(raw) {
+        var lines = String(raw || "").split("\n")
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (line === "") continue
+
+            var parts = aiProbeParts7(line)
+            var rootPid = String(parts.rootPid || "").trim()
+            var tool = sanitize7(parts.tool, 16)
+            if (rootPid === "" || tool === "") continue
+
+            var sig = rootPid + "|" + tool + "|" + cleanAiModel7(parts.model, 28) + "|" + cleanAiEffort7(parts.effort, tool)
+            var now = Date.now()
+            var recent = recentAiAnnounce7 || ({})
+            var pruned = false
+            for (var k in recent) {
+                if (!(recent[k] > 0) || now - recent[k] > 60000) {
+                    delete recent[k]
+                    pruned = true
+                }
+            }
+            var last = recent[sig] || 0
+            if (armed7 && now - last > 8000) {
+                recent[sig] = now
+                recentAiAnnounce7 = recent
+                pushAiModel7(tool, parts.model, parts.effort)
+            } else if (pruned) {
+                recentAiAnnounce7 = recent
+            }
+            return
+        }
+    }
+
     function runReactorTest(kind, arg) {
-        if (!active || mode !== 7) return
+        if (!active || !reactorMode7) return
 
         kind = String(kind || "").trim().toLowerCase()
         arg = String(arg || "")
@@ -507,6 +746,9 @@ Item {
             var parsedN = parseInt(arg || "3")
             var n = isFinite(parsedN) ? Math.max(1, parsedN) : 3
             pushText(n + (n === 1 ? " PACKAGE" : " PACKAGES") + " CHANGED", "PACMAN", 1, "long")
+        } else if (kind === "ai" || kind === "model") {
+            var tm = aiParts7(arg || "CODEX|GPT-5.5|XHIGH")
+            pushAiModel7(tm.tool, tm.model, tm.effort)
         } else if (kind === "urgent") {
             if (!armed7) return
             urgentAddr = "__test__"
@@ -519,13 +761,13 @@ Item {
         } else if (kind === "quota") {
             if (!armed7) return
             var who = sanitize7(arg || "CLAUDE", 16) || "CLAUDE"
-            queueWarn7(who + " 90", "AI QUOTA!")
+            queueWarn7(who + " 80", "AI QUOTA!")
         } else if (kind === "ws" || kind === "workspace") {
             var ws = parseInt(arg || "1")
             pushText("WS " + (isFinite(ws) && ws > 0 ? ws : 1), "TEST APPS", 1, "short")
         } else if (kind === "clear") {
             pulses = []
-            animating7 = false
+            animating7 = ambientField7
             warnQueue7 = []
             warnQueueTimer.stop()
             clearUrgent7()
@@ -537,7 +779,7 @@ Item {
 
     // ── warning engine: warnings are STATES, not events — they re-announce
     //    themselves while the state lasts, and stop the moment it ends ──
-    property var warnNext: ({ offline: 0, batt: 0, aicl: 0, aicx: 0, urgent: 0 })
+    property var warnNext: ({ offline: 0, batt: 0, aicl: 0, aicx: 0, aioc: 0, urgent: 0 })
     property var warnQueue7: []
     property string urgentAddr: ""
     property string urgentCls: ""
@@ -563,7 +805,7 @@ Item {
     }
 
     function queueWarn7(l, r) {
-        if (!armed7 || !active || mode !== 7) return false
+        if (!armed7 || !active || !reactorMode7) return false
         var q = warnQueue7.slice(0)
         for (var i = 0; i < q.length; i++) {
             if (q[i].l === l && q[i].r === r) return false
@@ -579,7 +821,7 @@ Item {
     }
 
     function drainWarnQueue7() {
-        if (!active || mode !== 7 || warnQueue7.length === 0) {
+        if (!active || !reactorMode7 || warnQueue7.length === 0) {
             warnQueueTimer.stop()
             return
         }
@@ -592,7 +834,7 @@ Item {
     }
 
     function warnCheck() {
-        if (!armed7 || !active || mode !== 7) return
+        if (!armed7 || !active || !reactorMode7) return
         var tnow = Date.now()
         var wn = warnNext
         if (netMode7 === "none") {
@@ -610,6 +852,9 @@ Item {
         if (aiCxHot) {
             if (tnow >= wn.aicx && queueWarn7("CODEX " + aiCx7, "AI QUOTA!")) wn.aicx = tnow + 300000
         } else wn.aicx = 0
+        if (aiOcHot) {
+            if (tnow >= wn.aioc && queueWarn7("OPENCODE " + aiOc7, "AI QUOTA!")) wn.aioc = tnow + 300000
+        } else wn.aioc = 0
         if (urgentAddr !== "" && urgentCls !== "") {
             if (tnow >= wn.urgent && urgentNags < 3
                     && queueWarn7(urgentCls, "WANTS YOU!")) {
@@ -636,18 +881,31 @@ Item {
 
     Timer {
         interval: 30000; repeat: true
-        running: root.active && root.mode === 7
+        running: root.active && root.reactorMode7
         onTriggered: root.warnCheck()
     }
 
-    // track change → swarm forms TITLE (left) and ARTIST - ALBUM (right)
+    // track change → swarm forms TITLE (left) and ARTIST - ALBUM (right).
+    // Web players often publish transient metadata first, so debounce and dedupe
+    // by title+artist+album rather than title alone.
     MprisSelect { id: psSel }
     readonly property string psTrack: psSel.player ? (psSel.player.trackTitle || "") : ""
-    onPsTrackChanged: {
-        if (!armed7 || psTrack === "") return
-        var ar = psSel.player ? (psSel.player.trackArtist || "") : ""
-        var al = psSel.player ? (psSel.player.trackAlbum  || "") : ""
-        pushText(psTrack, ar + (al ? " - " + al : ""), 1, "long")
+    property string lastAnnouncedTrack7: ""
+    onPsTrackChanged: if (armed7 && reactorMode7) trackDebounce7.restart()
+    Timer {
+        id: trackDebounce7
+        interval: 800
+        repeat: false
+        onTriggered: {
+            var t = root.psTrack
+            if (!root.armed7 || !root.reactorMode7 || t === "") return
+            var ar = psSel.player ? (psSel.player.trackArtist || "") : ""
+            var al = psSel.player ? (psSel.player.trackAlbum  || "") : ""
+            var sig = t + "|" + ar + "|" + al
+            if (sig === root.lastAnnouncedTrack7) return
+            if (root.pushText(t, ar + (al ? " - " + al : ""), 1, "long"))
+                root.lastAnnouncedTrack7 = sig
+        }
     }
 
     // new notification (the bar's mako poll counts up) → fetch newest, show
@@ -657,7 +915,7 @@ Item {
     onNotifCChanged: {
         var prev = lastNotifC
         lastNotifC = notifC
-        if (armed7 && active && mode === 7 && !dnd7 && prev >= 0 && notifC > prev) notifFetch.running = true
+        if (armed7 && active && reactorMode7 && !dnd7 && prev >= 0 && notifC > prev) notifFetch.running = true
     }
     Process {
         id: notifFetch
@@ -709,26 +967,87 @@ Item {
         else pushText("VOLUME", "UNMUTED", 1, "short")
     }
 
-    // AI quota crossing 90% of the 5h window (hysteresis: rearms below 85%)
+    // AI quota crossing 80% of the 5h window (hysteresis: rearms below 75%)
     readonly property int aiCl7: theme.aiClPct5h !== undefined ? theme.aiClPct5h : 0
     readonly property int aiCx7: theme.aiCxPct5h !== undefined ? theme.aiCxPct5h : 0
+    readonly property int aiOc7: theme.aiOcPct5h !== undefined ? theme.aiOcPct5h : 0
+    readonly property int aiQuotaWarn7: 80
+    readonly property int aiQuotaReset7: 75
     property bool aiClHot: false
     property bool aiCxHot: false
+    property bool aiOcHot: false
+    property bool aiClQuotaPrimed7: false
+    property bool aiCxQuotaPrimed7: false
+    property bool aiOcQuotaPrimed7: false
     readonly property string helperOwnerMonitor7: Quickshell.screens.length > 0 ? Quickshell.screens[0].name : ""
     readonly property bool ownsGlobalHelpers7: root.monitor === "" || root.monitor === helperOwnerMonitor7
     onAiCl7Changed: {
-        if (aiCl7 >= 90 && !aiClHot) { aiClHot = true; warnCheck() }
-        else if (aiCl7 < 85) aiClHot = false
+        if (!aiClQuotaPrimed7) {
+            aiClQuotaPrimed7 = true
+            aiClHot = aiCl7 >= aiQuotaWarn7
+            return
+        }
+        if (aiCl7 >= aiQuotaWarn7 && !aiClHot) { aiClHot = true; warnCheck() }
+        else if (aiCl7 < aiQuotaReset7) aiClHot = false
     }
     onAiCx7Changed: {
-        if (aiCx7 >= 90 && !aiCxHot) { aiCxHot = true; warnCheck() }
-        else if (aiCx7 < 85) aiCxHot = false
+        if (!aiCxQuotaPrimed7) {
+            aiCxQuotaPrimed7 = true
+            aiCxHot = aiCx7 >= aiQuotaWarn7
+            return
+        }
+        if (aiCx7 >= aiQuotaWarn7 && !aiCxHot) { aiCxHot = true; warnCheck() }
+        else if (aiCx7 < aiQuotaReset7) aiCxHot = false
+    }
+    onAiOc7Changed: {
+        if (!aiOcQuotaPrimed7) {
+            aiOcQuotaPrimed7 = true
+            aiOcHot = aiOc7 >= aiQuotaWarn7
+            return
+        }
+        if (aiOc7 >= aiQuotaWarn7 && !aiOcHot) { aiOcHot = true; warnCheck() }
+        else if (aiOc7 < aiQuotaReset7) aiOcHot = false
+    }
+
+    // Probe only the focused window's process tree. This avoids background
+    // Claude/Codex terminals re-announcing while still catching long-running OpenCode.
+    readonly property string aiWindowProbeCommand:
+        "root_pid=\"$1\"; [[ \"$root_pid\" =~ ^[0-9]+$ ]] || exit 0; [ -d \"/proc/$root_pid\" ] || exit 0; " +
+        "model_arg() { printf '%s\\n' \"$1\" | sed -nE 's/.*(^|[[:space:]])(--model|-m)(=|[[:space:]]+)([^[:space:]]+).*/\\4/p' | head -n1; }; " +
+        "claude_latest_model() { find \"$HOME/.claude/projects\" -name '*.jsonl' -printf '%T@ %p\\n' 2>/dev/null | sort -nr 2>/dev/null | head -n 4 | cut -d' ' -f2- | while read -r f; do jq -r '.message.model // empty' \"$f\" 2>/dev/null; done | tail -n1; }; " +
+        "queue=\"$root_pid\"; seen=\"\"; while [ -n \"$queue\" ]; do next=\"\"; for pid in $queue; do " +
+        "case \" $seen \" in *\" $pid \"*) continue;; esac; seen=\"$seen $pid\"; " +
+        "[ -r \"/proc/$pid/comm\" ] || continue; comm=$(cat \"/proc/$pid/comm\" 2>/dev/null); args=$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null); " +
+        "lc=${comm,,}; la=${args,,}; " +
+        "case \"$la\" in *claude-usage*|*codex-usage*|*opencode-usage*|*app-server*|*codex-linux-sandbox*|*--sandbox-policy-cwd*) ;; " +
+        "*) model=$(model_arg \"$args\"); " +
+        "if [[ \"$lc\" == \"claude\" || \"$la\" =~ (^|/|[[:space:]])claude([[:space:]]|$) ]]; then " +
+        "[ -n \"$model\" ] || model=$(claude_latest_model); " +
+        "[ -n \"$model\" ] || model=$(jq -r '.model // empty' \"$HOME/.claude/settings.json\" 2>/dev/null | sed 's/\\[[0-9;]*m//g' | head -n1); " +
+        "effort=$(jq -r '.effortLevel // empty' \"$HOME/.claude/settings.json\" 2>/dev/null | head -n1); " +
+        "echo \"$root_pid|CLAUDE|$model|$effort\"; exit 0; fi; " +
+        "if [[ \"$lc\" == \"codex\" || \"$la\" =~ (^|/|[[:space:]])codex([[:space:]]|$) ]]; then " +
+        "[ -n \"$model\" ] || model=$(sed -nE 's/^model[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p' \"$HOME/.codex/config.toml\" 2>/dev/null | head -n1); " +
+        "effort=$(sed -nE 's/^model_reasoning_effort[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p' \"$HOME/.codex/config.toml\" 2>/dev/null | head -n1); " +
+        "echo \"$root_pid|CODEX|$model|$effort\"; exit 0; fi; " +
+        "if [[ \"$lc\" == \"opencode\" || \"$la\" =~ (^|/|[[:space:]])opencode([/-]|[[:space:]]|$) || \"$la\" =~ opencode-ai || \"$la\" =~ opencode-linux || \"$la\" =~ /\\.local/share/opencode ]]; then " +
+        "[ -n \"$model\" ] || model=$(jq -r '._model // empty' \"$HOME/.cache/opencode-usage.json\" 2>/dev/null | head -n1); " +
+        "[ -n \"$model\" ] || model=$(jq -r '.recent[0].modelID // empty' \"$HOME/.local/state/opencode/model.json\" 2>/dev/null | head -n1); " +
+        "echo \"$root_pid|OPENCODE|$model|\"; exit 0; fi; ;; esac; " +
+        "for child in $(pgrep -P \"$pid\" 2>/dev/null); do next=\"$next $child\"; done; done; queue=\"$next\"; done"
+
+    Process {
+        id: aiWindowProbe7
+        command: ["bash", "-c", root.aiWindowProbeCommand, "ai-window-probe", root.aiWindowRootPid7]
+        stdout: StdioCollector {
+            onStreamFinished: root.handleAiWindowProbe7(this.text)
+        }
     }
 
     // pacman transaction finished (streaming log tail — no helper script)
     Process {
         id: pacTail
-        running: root.active && root.mode === 7 && root.ownsGlobalHelpers7
+        running: root.active && root.reactorMode7 && root.ownsGlobalHelpers7
         command: ["bash", "-c", "tail -n 0 -F /var/log/pacman.log 2>/dev/null"]
         property int pkgN: 0
         onRunningChanged: if (!running) pkgN = 0
@@ -750,11 +1069,11 @@ Item {
         // upload, both screens) costs ~23% CPU — so full rate only during
         // fast motion, half rate while a motif just breathes, ~4Hz in the
         // dark between events (canvas.tick7 is set from onPaint)
-        interval: (root.mode === 7 || root.mode === 8) ? canvas.tick7 : ((root.mode === 5 || root.mode === 6) ? 16 : 33)
+        interval: (root.reactorMode7 || root.mode === 8) ? canvas.tick7 : ((root.mode === 5 || root.mode === 6) ? 16 : 33)
         repeat: true
-        running: root.active && ((root.mode === 7 && root.animating7)
+        running: root.active && ((root.reactorMode7 && root.animating7)
                                  || (root.mode === 8 && root.animating8)
-                                 || (root.mode !== 7 && root.mode !== 8))
+                                 || (!root.reactorMode7 && root.mode !== 8))
         onTriggered: canvas.requestPaint()
     }
 
@@ -762,13 +1081,17 @@ Item {
         id: canvas
         anchors.fill: parent
         renderStrategy: Canvas.Threaded
-        // adaptive tick for mode 7/8: 16ms while moving, slower while idle/holding
+        // adaptive tick for reactor/quotes: 16ms while moving, slower while idle/holding
         property int tick7: 250
         // dot-matrix glyph table for text pulses, built once on first use
         property var swarmData: null
         // mode 8 quotes cache, separate from the mode-7 event cache
         property var quoteData: null
         property var quoteSwarm: null
+        property real fieldFade: 1.0
+        property int recruited: 0
+        property real fieldT: 0
+        property real lastPaintNow: 0
 
         onPaint: {
             var ctx  = getContext("2d")
@@ -1098,17 +1421,18 @@ Item {
                 return
             }
 
-            if (root.mode === 7) {
+            if (root.reactorMode7) {
                 // ══ EVENT REACTOR: the bar reacts to the session ══
-                // No loop, no schedule: dots appear only as impulses from real
-                // events. Producers today:
+                // Small ambient swarms drift in the gaps. Event text forms from
+                // that same drifting field, so messages condense out of the dust.
+                // Producers today:
                 //   window open/close  -> subtle clock-side pulse in/out
                 //   monitor focus      -> soft sweep on that bar only
                 //   workspace/fullscreen/theme/config reload/notification/track
                 //   DND/mute/Voxtype/update/pacman -> text swarm
                 //   warning states     -> recurring text while true:
                 //     OFFLINE, BATTERY, AI QUOTA, URGENT.
-                // Everything decays; the timer stops when no pulse is alive.
+                // Event pulses decay; the ambient field keeps a slow idle loop alive.
                 if (!canvas.swarmData) {
                     // 3×5 dot-matrix glyphs, built once (NOT per frame)
                     canvas.swarmData = { F35: {
@@ -1153,19 +1477,12 @@ Item {
                         "'": [[1,0],[1,1]],
                         "!": [[1,0],[1,1],[1,2],[1,4]],
                         "-": [[0,2],[1,2],[2,2]],
+                        "+": [[1,1],[0,2],[1,2],[2,2],[1,3]],
                         "/": [[2,0],[2,1],[1,2],[0,3],[0,4]],
                         ";": [[1,1],[1,3],[0,4]],
                         "<": [[2,0],[1,1],[0,2],[1,3],[2,4]]
                     } }
                 }
-                var ps7 = root.pulses
-                if (ps7.length === 0) {
-                    root.animating7 = false
-                    canvas.tick7 = 250
-                    ctx.globalAlpha = 1.0
-                    return
-                }
-
                 var gaps7 = []
                 for (var gi = 0; gi + 1 < runs.length; gi++) {
                     var gx1 = root.layout.runRightEdge(runs[gi].e)
@@ -1248,6 +1565,63 @@ Item {
                     }
                 }
 
+                var ps7 = root.pulses
+                var ambientN7 = root.ambientParticleCount7
+                var dtF = now - canvas.lastPaintNow
+                canvas.lastPaintNow = now
+                canvas.fieldT += (dtF > 0 && dtF < 60) ? dtF : (dtF >= 60 ? 16 : 0)
+                var ftF = canvas.fieldT
+                var driftPos7 = function(i) {
+                    var r1 = hash(i * 3 + 1), r2 = hash(i * 3 + 2), r3 = hash(i * 3 + 3)
+                    var bf = hash(i * 5 + 7)
+                    var gidx = Math.min(gaps7.length - 1, Math.floor(hash(i * 5 + 11) * gaps7.length))
+                    var gp = gaps7[Math.max(0, gidx)]
+                    var span = Math.max(1, gp.x2 - gp.x1 - 12)
+                    return { x: gp.x1 + 6 + bf * span
+                                + 20 * Math.sin(ftF / (1250 + 650 * r1) + 6.283 * r2)
+                                + 7 * Math.sin(ftF / (460 + 220 * r3) + r1 * 5.0),
+                             y: cy + (height / 2 - 5) * 0.82 * Math.sin(ftF / (980 + 520 * r3) + 6.283 * r1)
+                                + 3.0 * Math.sin(ftF / (380 + 180 * r2) + r3 * 4.0) }
+                }
+                var paintAmbientField7 = function(fromIdx, alpha) {
+                    if (alpha <= 0.01) return
+                    var blinkSlot = Math.floor(ftF / 900)
+                    var blinkPhase = (ftF % 900) / 900
+                    for (var fi = fromIdx; fi < ambientN7; fi++) {
+                        var d = driftPos7(fi)
+                        var blink = hash(fi * 19 + blinkSlot * 23) > 0.94
+                                  ? Math.sin(blinkPhase * Math.PI) * 0.75
+                                  : 0
+                        var tw = 0.48 + 0.26 * Math.sin(ftF / 640 + fi * 1.3) + blink
+                        var sz = 1.18 + 0.24 * Math.sin(ftF / 820 + fi * 2.1) + blink * 0.55
+                        dot7(d.x, d.y, sz, sz * 0.4, alpha * tw)
+                    }
+                }
+                var hasText7 = false
+                for (var ht = 0; ht < ps7.length; ht++)
+                    if (ps7[ht].k === "text" && now - ps7[ht].t < root.pulseLife7(ps7[ht])) hasText7 = true
+                if (!hasText7) canvas.recruited = 0
+                if (ps7.length === 0) {
+                    if (root.ambientField7) {
+                        canvas.fieldFade += (1.0 - canvas.fieldFade) * root.ambientRiseStep7
+                        canvas.recruited = 0
+                        paintAmbientField7(0, 0.72 * canvas.fieldFade)
+                        root.animating7 = true
+                        canvas.tick7 = root.ambientIdleTick7
+                        ctx.globalAlpha = 1.0
+                        return
+                    }
+                    root.animating7 = false
+                    canvas.tick7 = 250
+                    ctx.globalAlpha = 1.0
+                    return
+                }
+                if (root.ambientField7) {
+                    canvas.fieldFade += ((hasText7 ? root.ambientTextFade7 : 1.0) - canvas.fieldFade)
+                            * (hasText7 ? root.ambientFadeStep7 : root.ambientRiseStep7)
+                    paintAmbientField7(canvas.recruited, 0.72 * canvas.fieldFade)
+                }
+
                 var alive7 = false
                 var livePs7 = []
                 for (var pi7 = 0; pi7 < ps7.length; pi7++) {
@@ -1315,13 +1689,29 @@ Item {
                                 i2 = sw7
                             }
                             var gwA7 = gaps7[i1].x2 - gaps7[i1].x1
-                            var mc = Math.max(3, Math.floor(((gwA7 - 24) / 2.0 + 1) / 4))
-                            var l1 = p.l, l2 = ""
-                            if (p.l.length > mc || p.two) {  // balanced wrap, hard cap
-                                var cut = p.l.lastIndexOf(" ", Math.min(mc, Math.ceil(p.l.length / 2) + 6))
-                                if (cut < 4) cut = Math.min(mc, Math.ceil(p.l.length / 2))
-                                l1 = p.l.substring(0, cut).trim().substring(0, mc)
-                                l2 = p.l.substring(cut).trim().substring(0, mc)
+                            var cellFit7 = function(cols, rows2) {
+                                var c7 = Math.min(cols <= 11 ? 5.4 : 4.4,
+                                                  (gwA7 - 24) / Math.max(1, cols - 1),
+                                                  (height - 6) / Math.max(1, rows2 - 1))
+                                return c7 > 0 && isFinite(c7) ? c7 : 0
+                            }
+                            var minCell7 = 1.8
+                            var capL7 = Math.max(3, Math.floor((gwA7 - 24) / 1.9 / 4))
+                            var full7 = p.l.substring(0, capL7 * 2)
+                            var l1 = full7, l2 = ""
+                            var mid7 = Math.ceil(full7.length / 2)
+                            var cut = full7.lastIndexOf(" ", Math.min(full7.length - 1, mid7 + 4))
+                            if (cut < 3) cut = full7.indexOf(" ", mid7)
+                            if (cut < 3) cut = mid7
+                            var a1 = full7.substring(0, cut).trim().substring(0, capL7)
+                            var a2 = full7.substring(cut).trim().substring(0, capL7)
+                            var cell1 = cellFit7(full7.length * 4 - 1, 5)
+                            var cell2 = a2.length > 0 ? cellFit7(Math.max(a1.length, a2.length) * 4 - 1, 12) : 0
+                            if (a2.length > 0 && cell2 >= minCell7 && (full7.length > capL7 || cell2 > cell1 + 0.2)) {
+                                l1 = a1
+                                l2 = a2
+                            } else {
+                                l1 = full7.substring(0, capL7)
                             }
                             var mxl = Math.max(l1.length, l2.length)
                             var pts7t = []
@@ -1329,8 +1719,8 @@ Item {
                             if (l2) mkPts(l2, Math.round((mxl - l2.length) * 2), 7, pts7t, 0)
                             var colsB7 = 1
                             if (i2 >= 0 && hasRightText7) {
-                                var mcB = Math.max(3, Math.floor(((gaps7[i2].x2 - gaps7[i2].x1 - 24) / 2.0 + 1) / 4))
-                                var rr = p.r.substring(0, mcB)
+                                var capB7 = Math.max(3, Math.floor((gaps7[i2].x2 - gaps7[i2].x1 - 24) / 1.9 / 4))
+                                var rr = p.r.substring(0, capB7)
                                 colsB7 = Math.max(1, rr.length * 4 - 1)
                                 mkPts(rr, 0, 0, pts7t, 1)
                             }
@@ -1353,7 +1743,7 @@ Item {
                         var geoT = [null, null]
                         var mg7 = function(slot, gp, cols, rows2) {
                             if (!gp) return
-                            var cl = Math.min(cols <= 11 ? 5.4 : 3.2,
+                            var cl = Math.min(cols <= 11 ? 5.4 : 4.4,
                                               (gp.x2 - gp.x1 - 24) / Math.max(1, cols - 1),
                                               (height - 6) / (rows2 - 1))
                             if (cl < 1.8) return
@@ -1367,7 +1757,7 @@ Item {
                         if (age >= p.s1) qT = 1
                         else if (age > p.s0) { var uT = (age - p.s0) / (p.s1 - p.s0); qT = uT * uT * (3 - 2 * uT) }
                         if (age > p.r0) { var rT = Math.min(1, (age - p.r0) / (p.r1 - p.r0)); rT = rT * rT * (3 - 2 * rT); qT *= 1 - rT }
-                        var alT = Math.min(1, age / 450) * Math.min(1, (p.life - age) / 450)
+                        var alT = Math.min(1, age / 450) * Math.min(1, (p.life - age) / (p.fade || 900))
                         // warnings throb while held — the whole text breathes
                         // in brightness and size as one body
                         var wA = 1, wS = 1
@@ -1379,17 +1769,24 @@ Item {
                         var leave7 = age > p.r1 ? (age - p.r1) / (p.life - p.r1) : 0; leave7 = leave7 * leave7
                         var shift7 = p.d * (fx2 - fx1) * 0.45 * (leave7 - enter7)
                         var sdT = p.t % 86400000
-                        for (var ti = 0; ti < G.pts.length; ti++) {
+                        var Ptot = G.pts.length
+                        var af7 = root.ambientField7
+                        for (var ti = 0; ti < Ptot; ti++) {
                             var ptT = G.pts[ti]
                             var gT = geoT[ptT[2]]
-                            var wxT = fx1 + hash(sdT + ti * 7 + 5) * (fx2 - fx1) + shift7
+                            var pxT, pyT, rgT, rcT
+                            if (af7) {
+                                var d07 = driftPos7(ti)
+                                pxT = d07.x; pyT = d07.y; rgT = 1.3; rcT = 0.5
+                            } else {
+                                pxT = fx1 + hash(sdT + ti * 7 + 5) * (fx2 - fx1) + shift7
                                       + 12 * Math.sin(now / (800 + 500 * hash(sdT + ti * 7 + 1))
                                                       + 6.283 * hash(sdT + ti * 7 + 2))
-                            var wyT = cy + (height / 2 - 6) * 0.85
+                                pyT = cy + (height / 2 - 6) * 0.85
                                       * Math.sin(now / (600 + 500 * hash(sdT + ti * 7 + 3))
                                                  + 6.283 * hash(sdT + ti * 7 + 4))
-                            var rgT = 2.2, rcT = 1.0
-                            var pxT = wxT, pyT = wyT
+                                rgT = 2.2; rcT = 1.0
+                            }
                             if (gT && qT > 0) {
                                 pxT += (gT.ox + ptT[0] * gT.cell - pxT) * qT
                                 pyT += (gT.oy + ptT[1] * gT.cell - pyT) * qT
@@ -1397,16 +1794,17 @@ Item {
                                     pxT += 0.4 * Math.sin(now / 240 + ti)
                                     pyT += 0.4 * Math.cos(now / 300 + ti * 1.7)
                                 }
-                                rgT += (gT.cell * 0.62 - 2.2) * qT
-                                rcT += (gT.cell * 0.30 - 1.0) * qT
+                                rgT += (gT.cell * 0.62 - rgT) * qT
+                                rcT += (gT.cell * 0.30 - rcT) * qT
                             }
                             dot7(pxT, pyT, rgT * wS, rcT * wS, alT * wA)
                         }
+                        canvas.recruited = af7 ? Math.min(Ptot, ambientN7) : 0
                     }
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
-                root.animating7 = alive7
-                canvas.tick7 = alive7 ? 16 : 250
+                root.animating7 = root.ambientField7 ? true : alive7
+                canvas.tick7 = alive7 ? 16 : (root.ambientField7 ? root.ambientIdleTick7 : 250)
                 ctx.globalAlpha = 1.0
                 return
             }

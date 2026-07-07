@@ -191,6 +191,23 @@ Item {
 
     function resetAllBarLayouts() {
         applyToBarLayoutControllers("defaultLayout")
+        resetCompactDisplayModes()
+    }
+
+    function resetCompactDisplayModes() {
+        var changed = compactNetwork || compactBattery || compactBrightness || compactCpu
+                   || compactMemory || compactVolume || compactBluetooth || compactPower
+        _compactResetting = true
+        compactNetwork = false
+        compactBattery = false
+        compactBrightness = false
+        compactCpu = false
+        compactMemory = false
+        compactVolume = false
+        compactBluetooth = false
+        compactPower = false
+        _compactResetting = false
+        if (changed && _widgetsLoaded) saveWidgets()
     }
 
     function activatePopupScreen(screen) {
@@ -546,6 +563,28 @@ Item {
         var d = Math.floor(h / 24); return d + "d " + (h % 24) + "h"
     }
 
+    function aiPad2(n) { return n < 10 ? "0" + n : "" + n }
+
+    function aiFmtResetClock(ts) {
+        aiClockTick
+        if (!(ts > Date.now() / 1000)) return ""
+        var d = new Date(ts * 1000)
+        var now = new Date()
+        var day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        var resetDay0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+        var dayDelta = Math.round((resetDay0 - day0) / 86400000)
+        var time = aiPad2(d.getHours()) + ":" + aiPad2(d.getMinutes())
+        if (dayDelta <= 0) return time
+        var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[d.getDay()] + " " + time
+    }
+
+    function aiFmtResetDetail(ts) {
+        var rel = aiFmtReset(ts)
+        var clock = aiFmtResetClock(ts)
+        return rel && clock ? rel + " • " + clock : (rel || clock)
+    }
+
     Process {
         id: aiReadClaude
         command: ["bash", "-c",
@@ -801,6 +840,17 @@ Item {
     property bool modMpris:      true    // G9 now-playing / mpris pill
     property bool modClaude:     false   // default off (toggle in ControlPanel)
 
+    // Per-widget compact display modes. Defaults are full-width for backwards
+    // compatibility; ControlPanel toggles persist these below.
+    property bool compactNetwork:    false
+    property bool compactBattery:    false
+    property bool compactBrightness: false
+    property bool compactCpu:        false
+    property bool compactMemory:     false
+    property bool compactVolume:     false
+    property bool compactBluetooth:  false
+    property bool compactPower:      false
+
     // backlight presence — set by BrightnessWidget once it probes /sys/class/backlight.
     // ControlPanel uses this to hide the Brightness toggle on desktops without one.
     property bool hasBacklight:  false
@@ -824,6 +874,7 @@ Item {
     // ── widget/workspace state persistence ──
     readonly property string widgetsCachePath: Quickshell.env("HOME") + "/.cache/quickshell_widgets"
     property bool _widgetsLoaded: false
+    property bool _compactResetting: false
 
     onModMemoryChanged:     if (_widgetsLoaded) saveWidgets()
     onModBrightnessChanged: if (_widgetsLoaded) saveWidgets()
@@ -846,6 +897,14 @@ Item {
     onClock12hChanged:        if (_widgetsLoaded) saveWidgets()
     onArchBadgePackagesChanged: if (_widgetsLoaded) saveWidgets()
     onArchBadgeThemesChanged:   if (_widgetsLoaded) saveWidgets()
+    onCompactNetworkChanged:    if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactBatteryChanged:    if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactBrightnessChanged: if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactCpuChanged:        if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactMemoryChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactVolumeChanged:     if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactBluetoothChanged:  if (_widgetsLoaded && !_compactResetting) saveWidgets()
+    onCompactPowerChanged:      if (_widgetsLoaded && !_compactResetting) saveWidgets()
     onStyleBorderChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleShadowChanged:      if (_widgetsLoaded) saveWidgets()
     onStyleFrostChanged:       if (_widgetsLoaded) saveWidgets()
@@ -881,7 +940,15 @@ Item {
                  + launcherLogoText + " "                 // +19 text logo id
                  + launcherLogoIcon + " "                 // +20 icon logo id
                  + (archBadgePackages ? "1" : "0") + " "  // +21 updater package badge
-                 + (archBadgeThemes   ? "1" : "0")        // +22 updater clean-theme badge
+                 + (archBadgeThemes   ? "1" : "0") + " "  // +22 updater clean-theme badge
+                 + (compactNetwork    ? "1" : "0") + " "  // +23 compact network pill
+                 + (compactBattery    ? "1" : "0") + " "  // +24
+                 + (compactBrightness ? "1" : "0") + " "  // +25
+                 + (compactCpu        ? "1" : "0") + " "  // +26
+                 + (compactMemory     ? "1" : "0") + " "  // +27
+                 + (compactVolume     ? "1" : "0") + " "  // +28
+                 + (compactBluetooth  ? "1" : "0") + " "  // +29
+                 + (compactPower      ? "1" : "0")        // +30
         widgetSaveProc.command = ["bash", "-c",
             "echo '" + line + "' > '" + widgetsCachePath + "'"]
         widgetSaveProc.running = false
@@ -1077,6 +1144,14 @@ Item {
                     }
                     if (parts.length > wsField + 21) theme.archBadgePackages = parts[wsField + 21] !== "0"
                     if (parts.length > wsField + 22) theme.archBadgeThemes   = parts[wsField + 22] !== "0"
+                    if (parts.length > wsField + 23) theme.compactNetwork    = parts[wsField + 23] === "1"
+                    if (parts.length > wsField + 24) theme.compactBattery    = parts[wsField + 24] === "1"
+                    if (parts.length > wsField + 25) theme.compactBrightness = parts[wsField + 25] === "1"
+                    if (parts.length > wsField + 26) theme.compactCpu        = parts[wsField + 26] === "1"
+                    if (parts.length > wsField + 27) theme.compactMemory     = parts[wsField + 27] === "1"
+                    if (parts.length > wsField + 28) theme.compactVolume     = parts[wsField + 28] === "1"
+                    if (parts.length > wsField + 29) theme.compactBluetooth  = parts[wsField + 29] === "1"
+                    if (parts.length > wsField + 30) theme.compactPower      = parts[wsField + 30] === "1"
                 }
                 theme._widgetsLoaded = true
             }

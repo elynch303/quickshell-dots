@@ -30,6 +30,17 @@ PanelWindow {
     property string defaultSink: ""
     property string _appsRaw:    ""
     property string _sinksRaw:   ""
+    property bool   audioErrorNotified: false
+
+    readonly property string outputMuteCommand:
+        "(command -v omarchy-swayosd-client >/dev/null 2>&1 && omarchy-swayosd-client --output-volume mute-toggle) || " +
+        "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle || " +
+        "pamixer -t"
+
+    readonly property string micMuteCommand:
+        "if command -v omarchy-audio-input-mute >/dev/null 2>&1; then " +
+        "omarchy-audio-input-mute; " +
+        "else wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle || pamixer --default-source -t; fi"
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
     function run(cmd, refreshAfter) {
@@ -37,6 +48,16 @@ PanelWindow {
         actProc.refreshAfterExit = refreshAfter === true
         actProc.command = ["bash", "-c", cmd]
         actProc.running = true
+    }
+    function notifyAudioError(action, exitCode) {
+        if (exitCode === 0 || audioErrorNotified) return
+        audioErrorNotified = true
+        audioErrNotify.command = ["bash", "-c",
+            "notify-send -a 'QS-Shell' 'Audio command failed' " +
+            volPanel.shq(action + " failed; audio backend unavailable.") +
+            " 2>/dev/null || true"]
+        audioErrNotify.running = false
+        audioErrNotify.running = true
     }
 
     function setDefaultSink(dev) {
@@ -255,7 +276,6 @@ PanelWindow {
                     onClicked: {
                         muteRunner.running = false
                         muteRunner.running = true
-                        Qt.callLater(function() { audio.refresh() })
                     }
                 }
             }
@@ -397,10 +417,6 @@ PanelWindow {
                     onClicked: {
                         micMuteRunner.running = false
                         micMuteRunner.running = true
-                        Qt.callLater(function() {
-                            micData.running = false
-                            micData.running = true
-                        })
                     }
                 }
             }
@@ -434,8 +450,24 @@ PanelWindow {
         }
     }
 
-    Process { id: muteRunner;    command: ["bash", "-c", "pamixer -t"] }
-    Process { id: micMuteRunner; command: ["bash", "-c", "pamixer --default-source -t"] }
+    Process { id: audioErrNotify }
+    Process {
+        id: muteRunner
+        command: ["bash", "-c", volPanel.outputMuteCommand]
+        onExited: (code) => {
+            volPanel.notifyAudioError("Mute volume", code)
+            audio.refresh()
+        }
+    }
+    Process {
+        id: micMuteRunner
+        command: ["bash", "-c", volPanel.micMuteCommand]
+        onExited: (code) => {
+            volPanel.notifyAudioError("Mute mic", code)
+            micData.running = false
+            micData.running = true
+        }
+    }
     Process { id: audioRunner;   command: ["bash", "-c", "omarchy-launch-audio"] }
     Process {
         id: actProc

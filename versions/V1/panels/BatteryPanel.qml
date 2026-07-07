@@ -3,7 +3,7 @@ import "../modules"
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Services.UPower
+import "../OmarchyPower.js" as OmarchyPower
 
 PanelWindow {
     id: batPanel
@@ -21,24 +21,20 @@ PanelWindow {
     readonly property int gap: 8
 
     property int    percent: 0
-    property string status:  "Unknown"
-    property string capacity: ""
-    property string sizeText: ""        // total energy capacity in Wh (from sysfs)
-    property int    cycles:   0          // charge cycles (from sysfs)
-    readonly property bool charging: status === "Charging"
-
-    // live time estimates from UPower (seconds); 0 when unknown / not applicable
-    readonly property var  dev:         UPower.displayDevice
-    readonly property real timeToEmpty: dev ? dev.timeToEmpty : 0
-    readonly property real timeToFull:  dev ? dev.timeToFull  : 0
-    readonly property real changeRate:  dev ? Math.abs(dev.changeRate) : 0   // live W (charge/discharge)
-    readonly property string timeLabel: charging ? "Time to full" : "Time left"
-    readonly property string timeText:  charging ? fmtDuration(timeToFull) : fmtDuration(timeToEmpty)
-    function fmtDuration(s) {
-        if (!s || s <= 0) return ""
-        var h = Math.floor(s / 3600)
-        var m = Math.floor((s % 3600) / 60)
-        return h > 0 ? (h + "h " + m + "m") : (m + "m")
+    property string status:  "unknown"
+    property string batteryId: ""
+    property string healthText: ""
+    property string sizeText: ""
+    property string timeLabel: "Time left"
+    property string timeText: ""
+    property string powerRate: ""
+    property int    cycles:   0
+    readonly property string healthLabel: batteryId !== "" ? "Health (" + batteryId + ")" : "Health"
+    readonly property bool charging: status === "charging"
+    function statusTitle(s) {
+        var t = String(s || "unknown")
+        if (t === "fully-charged") return "Full"
+        return t.length > 0 ? t.charAt(0).toUpperCase() + t.slice(1) : "Unknown"
     }
 
     property real reveal: root.batteryVisible ? 1 : 0
@@ -129,7 +125,7 @@ PanelWindow {
                     width: parent.width
                     UiText { text: "Status"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
                     UiText {
-                        text: batPanel.status
+                        text: batPanel.statusTitle(batPanel.status)
                         color: batPanel.charging ? root.indigo : root.ink
                         font.family: root.mono; font.pixelSize: 11
                     }
@@ -142,15 +138,15 @@ PanelWindow {
                 }
                 Row {
                     width: parent.width
-                    visible: batPanel.capacity !== ""
-                    UiText { text: "Health"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    UiText { text: batPanel.capacity; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    visible: batPanel.healthText !== ""
+                    UiText { text: batPanel.healthLabel; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.healthText; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
-                    visible: batPanel.changeRate > 0.05
-                    UiText { text: "Power draw"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
-                    UiText { text: batPanel.changeRate.toFixed(1) + " W"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
+                    visible: batPanel.powerRate !== ""
+                    UiText { text: batPanel.charging ? "Charge rate" : "Power draw"; color: root.sumiHi; font.family: root.mono; font.pixelSize: 11; width: parent.width * 0.4 }
+                    UiText { text: batPanel.powerRate + " W"; color: root.ink; font.family: root.mono; font.pixelSize: 11 }
                 }
                 Row {
                     width: parent.width
@@ -185,30 +181,21 @@ PanelWindow {
 
     Process {
         id: batData
-        command: ["bash", "-c",
-            "BAT=$(ls /sys/class/power_supply/ 2>/dev/null | grep -m1 '^BAT'); [ -z \"$BAT\" ] && exit; " +
-            "CAP=$(cat /sys/class/power_supply/$BAT/capacity 2>/dev/null || echo 0); " +
-            "STA=$(cat /sys/class/power_supply/$BAT/status 2>/dev/null || echo Unknown); " +
-            "FULL=$(cat /sys/class/power_supply/$BAT/charge_full 2>/dev/null || cat /sys/class/power_supply/$BAT/energy_full 2>/dev/null || echo 0); " +
-            "DESIGN=$(cat /sys/class/power_supply/$BAT/charge_full_design 2>/dev/null || cat /sys/class/power_supply/$BAT/energy_full_design 2>/dev/null || echo 0); " +
-            "HEALTH=$(awk -v f=\"$FULL\" -v d=\"$DESIGN\" 'BEGIN{ if(d>0){ h=f*100/d; if(h>100) h=100; printf \"%d%%\", h } else print \"\" }'); " +
-            "CYC=$(cat /sys/class/power_supply/$BAT/cycle_count 2>/dev/null || echo 0); " +
-            "EFD=$(cat /sys/class/power_supply/$BAT/energy_full_design 2>/dev/null || echo 0); " +
-            "CFD=$(cat /sys/class/power_supply/$BAT/charge_full_design 2>/dev/null || echo 0); " +
-            "VMD=$(cat /sys/class/power_supply/$BAT/voltage_min_design 2>/dev/null || cat /sys/class/power_supply/$BAT/voltage_now 2>/dev/null || echo 0); " +
-            "SIZE=$(awk -v e=\"$EFD\" -v c=\"$CFD\" -v v=\"$VMD\" 'BEGIN{ if(e>0) printf \"%.0f Wh\", e/1000000; else if(c>0&&v>0) printf \"%.0f Wh\", c*v/1000000000000; else print \"\" }'); " +
-            "echo \"$CAP|$STA|$HEALTH|$CYC|$SIZE\""
-        ]
+        command: ["bash", "-c", OmarchyPower.batteryDataCmd]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
                 var parts = this.text.trim().split("|")
-                if (parts.length >= 2) {
-                    batPanel.percent = parseInt(parts[0]) || 0
-                    batPanel.status = parts[1] || "Unknown"
-                    batPanel.capacity = parts[2] || ""
-                    batPanel.cycles = parts.length > 3 ? (parseInt(parts[3]) || 0) : 0
-                    batPanel.sizeText = parts.length > 4 ? (parts[4] || "") : ""
+                if (parts.length >= 9) {
+                    batPanel.batteryId = parts[0] || ""
+                    batPanel.percent = parseInt(parts[1]) || 0
+                    batPanel.status = parts[2] || "unknown"
+                    batPanel.timeLabel = parts[3] || "Time left"
+                    batPanel.timeText = parts[4] || ""
+                    batPanel.powerRate = parts[5] || ""
+                    batPanel.sizeText = parts[6] || ""
+                    batPanel.healthText = parts[7] || ""
+                    batPanel.cycles = parseInt(parts[8]) || 0
                 }
             }
         }

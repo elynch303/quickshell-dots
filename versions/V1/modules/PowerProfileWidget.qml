@@ -18,6 +18,18 @@ Item {
         return "BAL"
     }
 
+    readonly property string profileIcon: {
+        if (isPowerSaver)  return "\uF06C"
+        if (isPerformance) return "\uF0E7"
+        return "\uF24E"
+    }
+
+    readonly property color profileColor: {
+        if (isPowerSaver)  return root.indigo
+        if (isPerformance) return root.seal
+        return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+    }
+
     readonly property string tooltipText: {
         if (isPowerSaver)  return "Power Saver"
         if (isPerformance) return "Performance"
@@ -49,6 +61,7 @@ Item {
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactPower
             text: "PWR"
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.6)
             font.family: root.mono
@@ -58,12 +71,20 @@ Item {
 
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactPower
+            text: rootMod.profileIcon
+            renderType: Text.QtRendering
+            color: rootMod.profileColor
+            font.family: root.mono
+            font.pixelSize: 15
+            Behavior on color { ColorAnimation { duration: 200 } }
+        }
+
+        UiText {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactPower
             text: rootMod.shortName
-            color: {
-                if (rootMod.isPowerSaver)  return root.indigo
-                if (rootMod.isPerformance) return root.seal
-                return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
-            }
+            color: rootMod.profileColor
             font.family: root.mono
             font.pixelSize: 12
             Behavior on color { ColorAnimation { duration: 200 } }

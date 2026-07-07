@@ -80,6 +80,7 @@ Item {
         // ── label ──
         UiText {
             anchors.verticalCenter: parent.verticalCenter
+            visible: !root.compactNetwork
             text: "NET"
             color: mode === "none"
                 ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.7)
@@ -92,7 +93,7 @@ Item {
         // ── ethernet: dual sparkline ──
         Canvas {
             id: netGraph
-            visible: rootMod.mode === "ethernet"
+            visible: rootMod.mode === "ethernet" && !root.compactNetwork
             width: 36; height: 14
             anchors.verticalCenter: parent.verticalCenter
 
@@ -162,7 +163,7 @@ Item {
         // ── ethernet: down/up speed, stacked to save width ──
         Column {
             anchors.verticalCenter: parent.verticalCenter
-            visible: rootMod.mode === "ethernet"
+            visible: rootMod.mode === "ethernet" && !root.compactNetwork
             spacing: 0
             UiText {
                 width: 54; height: 11
@@ -189,14 +190,26 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: rootMod.mode === "wifi"
             text: IconMap.icon(rootMod.wifiIconName)
-            color: root.ink
-            font.pixelSize: 14
+            color: root.compactNetwork ? root.seal : root.ink
+            font.pixelSize: root.compactNetwork ? 15 : 14
+            Behavior on color { ColorAnimation { duration: 160 } }
+        }
+
+        IconText {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.compactNetwork && rootMod.mode !== "wifi"
+            text: IconMap.icon(rootMod.mode === "ethernet" ? "lan" : "signal_wifi_off")
+            color: rootMod.mode === "ethernet"
+                ? root.seal
+                : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.65)
+            font.pixelSize: 15
+            Behavior on color { ColorAnimation { duration: 160 } }
         }
 
         // ── wifi: ssid ──
         UiText {
             anchors.verticalCenter: parent.verticalCenter
-            visible: rootMod.mode === "wifi"
+            visible: rootMod.mode === "wifi" && !root.compactNetwork
             text: rootMod.ssid
             color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
             font.family: root.mono

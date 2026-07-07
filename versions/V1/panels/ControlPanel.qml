@@ -22,6 +22,7 @@ PanelWindow {
     // power sub-menu starts CLOSED — no destructive tile is ever pre-shown
     property bool powerOpen: false
     property bool wsOpen: false   // Workspaces collapsible inside the WW fly-out
+    property bool compactOpen: false
 
     property real reveal: root.controlVisible ? 1 : 0
     Behavior on reveal {
@@ -31,7 +32,7 @@ PanelWindow {
         }
     }
     visible: reveal > 0.001
-    onRevealChanged: if (reveal < 0.01) { powerOpen = false; wsOpen = false; root.splitsSubVisible = false; root.wwSubVisible = false }  // reset when closed
+    onRevealChanged: if (reveal < 0.01) { powerOpen = false; wsOpen = false; compactOpen = false; root.splitsSubVisible = false; root.wwSubVisible = false }  // reset when closed
     WlrLayershell.keyboardFocus: root.controlVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // ── reusable tile: neutral by default, highlights only on hover ──
@@ -59,6 +60,53 @@ PanelWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: parent.activated()
+        }
+    }
+
+    component CompactToggle: Item {
+        property string label
+        property bool active: false
+        signal toggled()
+
+        height: 20
+        UiText {
+            id: toggleText
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: parent.label
+            color: parent.active || toggleMa.containsMouse ? root.seal : root.ink
+            font.family: root.mono
+            font.pixelSize: 11
+            font.weight: parent.active ? Font.Medium : Font.Normal
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+        Rectangle {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: 30
+            height: 16
+            radius: 8
+            color: parent.active ? root.fillActive : toggleMa.containsMouse ? root.fillHover : root.fillIdle
+            border.color: (parent.active || toggleMa.containsMouse) ? root.seal : root.sep
+            border.width: 1
+            Behavior on color { ColorAnimation { duration: 120 } }
+            Rectangle {
+                width: 10
+                height: 10
+                radius: 5
+                anchors.verticalCenter: parent.verticalCenter
+                x: parent.parent.active ? parent.width - width - 3 : 3
+                color: parent.parent.active ? root.seal : root.sumi
+                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                Behavior on color { ColorAnimation { duration: 120 } }
+            }
+        }
+        MouseArea {
+            id: toggleMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: parent.toggled()
         }
     }
 
@@ -438,6 +486,30 @@ PanelWindow {
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Volume";      active: root.modVolume;  onActivated: root.modVolume = !root.modVolume }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Now playing"; active: root.modMpris;   onActivated: root.modMpris = !root.modMpris }
                 Tile { width: root.evenW((wwCol.width - 8) / 2); label: "Battery";     visible: root.hasBattery; active: true; enabled: false }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
+            Tile {
+                width: parent.width
+                label: ctrlPanel.compactOpen ? "Compact Display  ▾" : "Compact Display  ▸"
+                active: ctrlPanel.compactOpen
+                onActivated: ctrlPanel.compactOpen = !ctrlPanel.compactOpen
+            }
+            Grid {
+                visible: ctrlPanel.compactOpen
+                width: parent.width
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 6
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Network";    active: root.compactNetwork;    onToggled: root.compactNetwork = !root.compactNetwork }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Battery";    visible: root.hasBattery; active: root.compactBattery;    onToggled: root.compactBattery = !root.compactBattery }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Brightness"; visible: root.hasBacklight; active: root.compactBrightness; onToggled: root.compactBrightness = !root.compactBrightness }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Bluetooth";  active: root.compactBluetooth;  onToggled: root.compactBluetooth = !root.compactBluetooth }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Power";      active: root.compactPower;      onToggled: root.compactPower = !root.compactPower }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "CPU";        active: root.compactCpu;        onToggled: root.compactCpu = !root.compactCpu }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Memory";     active: root.compactMemory;     onToggled: root.compactMemory = !root.compactMemory }
+                CompactToggle { width: root.evenW((wwCol.width - 8) / 2); label: "Volume";     active: root.compactVolume;     onToggled: root.compactVolume = !root.compactVolume }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
