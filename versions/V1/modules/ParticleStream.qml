@@ -291,6 +291,7 @@ Item {
         if (pid === "") return false
         aiWindowRootPid7 = pid
         aiWindowProbe7.running = false
+        aiWindowProbe7.stderrText = ""
         aiWindowProbe7.running = true
         return true
     }
@@ -721,6 +722,13 @@ Item {
         }
     }
 
+    function logAiWindowProbeExit7(exitCode, stderrText) {
+        if (exitCode === 0) return
+        var err = String(stderrText || "").trim()
+        if (err.length > 260) err = err.slice(0, 260) + "..."
+        console.warn("Reactor AI probe failed (exit " + exitCode + ")" + (err !== "" ? ": " + err : ""))
+    }
+
     function runReactorTest(kind, arg) {
         if (!active || !reactorMode7) return
 
@@ -1038,9 +1046,14 @@ Item {
 
     Process {
         id: aiWindowProbe7
+        property string stderrText: ""
         command: ["bash", "-c", root.aiWindowProbeCommand, "ai-window-probe", root.aiWindowRootPid7]
+        onExited: (exitCode) => root.logAiWindowProbeExit7(exitCode, stderrText)
         stdout: StdioCollector {
             onStreamFinished: root.handleAiWindowProbe7(this.text)
+        }
+        stderr: StdioCollector {
+            onStreamFinished: aiWindowProbe7.stderrText = this.text
         }
     }
 

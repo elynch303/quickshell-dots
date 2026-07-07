@@ -91,6 +91,7 @@ check_one() {
   local -a tg=(git -C "$dir"
     -c core.fsmonitor=
     -c core.hooksPath=/dev/null
+    -c credential.helper=
     -c protocol.allow=never
     -c protocol.ext.allow=never
     -c protocol.file.allow=always
