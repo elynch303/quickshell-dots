@@ -170,7 +170,7 @@ install_theme_updater() {
 
 # ── 1. dependencies ─────────────────────────────────────────────
 need=(qs git jq curl)
-opt=(pamixer brightnessctl powerprofilesctl bluetoothctl iwctl makoctl hypridle)
+opt=(wpctl pactl pamixer brightnessctl upower powerprofilesctl bluetoothctl iwctl makoctl hypridle)
 miss=()
 for b in "${need[@]}"; do command -v "$b" >/dev/null 2>&1 || miss+=("$b"); done
 if ((${#miss[@]})); then

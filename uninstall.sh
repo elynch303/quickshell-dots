@@ -147,6 +147,9 @@ if compgen -G "$HOME/.cache/quickshell_*" >/dev/null 2>&1; then
   info "Removed saved bar settings (widget toggles, splits, slot order)"
 fi
 
+# 4c. remove small runtime caches owned by this bar
+rm -f "$HOME/.cache/qs-reactor-event" "$HOME/.cache/qs-rise-notifications.json"
+
 # 5. restart the bar that was in use before install
 if [[ "$restored" == true ]] && [[ -f "$DEST/shell.qml" ]]; then
   setsid quickshell -p "$DEST" >/dev/null 2>&1 & disown

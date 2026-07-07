@@ -1080,8 +1080,8 @@ Item {
     Timer {
         // mode 7 self-paces: the 60fps tick machinery alone (clear + texture
         // upload, both screens) costs ~23% CPU — so full rate only during
-        // fast motion, half rate while a motif just breathes, ~4Hz in the
-        // dark between events (canvas.tick7 is set from onPaint)
+        // fast motion while events form; ambient idle runs at ~8Hz, and fully
+        // dark/no-gap states back off to ~4Hz or stop (tick7 is set from onPaint)
         interval: (root.reactorMode7 || root.mode === 8) ? canvas.tick7 : ((root.mode === 5 || root.mode === 6) ? 16 : 33)
         repeat: true
         running: root.active && ((root.reactorMode7 && root.animating7)

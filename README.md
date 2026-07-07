@@ -139,12 +139,13 @@ sudo pacman -S quickshell git jq curl ttf-jetbrains-mono-nerd ttf-material-symbo
 Optional packages enable specific widgets:
 
 ```bash
-sudo pacman -S pamixer brightnessctl power-profiles-daemon bluez-utils iwd impala hypridle gpu-screen-recorder
+sudo pacman -S wireplumber libpulse pamixer brightnessctl upower power-profiles-daemon bluez-utils iwd impala hypridle gpu-screen-recorder
 ```
 
 Notes:
 
 - `bluez-utils` provides `bluetoothctl`, which the Bluetooth widget currently uses.
+- `wireplumber` provides `wpctl`; `libpulse` provides `pactl` for the audio panel.
 - `voxtype` is optional for the Voxtype widget.
 - The install script checks required tools and warns about missing optional tools.
 

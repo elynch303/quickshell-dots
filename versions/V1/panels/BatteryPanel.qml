@@ -31,6 +31,9 @@ PanelWindow {
     property int    cycles:   0
     readonly property string healthLabel: batteryId !== "" ? "Health (" + batteryId + ")" : "Health"
     readonly property bool charging: status === "charging"
+    function refreshBatteryData() {
+        if (!batData.running) batData.running = true
+    }
     function statusTitle(s) {
         var t = String(s || "unknown")
         if (t === "fully-charged") return "Full"
@@ -201,7 +204,13 @@ PanelWindow {
         }
     }
 
-    Process { id: btopRunner; command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'btop'"] }
+    Timer {
+        interval: 5000
+        running: root.batteryVisible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: batPanel.refreshBatteryData()
+    }
 
-    onVisibleChanged: { if (visible) { batData.running = false; batData.running = true } }
+    Process { id: btopRunner; command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'btop'"] }
 }

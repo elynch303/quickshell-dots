@@ -274,8 +274,7 @@ PanelWindow {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        muteRunner.running = false
-                        muteRunner.running = true
+                        if (!muteRunner.running) muteRunner.running = true
                     }
                 }
             }
@@ -415,8 +414,7 @@ PanelWindow {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        micMuteRunner.running = false
-                        micMuteRunner.running = true
+                        if (!micMuteRunner.running) micMuteRunner.running = true
                     }
                 }
             }

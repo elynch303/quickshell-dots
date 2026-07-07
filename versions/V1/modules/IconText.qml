@@ -9,6 +9,6 @@ Text {
     renderType: Text.QtRendering
     font.family: "Material Symbols Rounded"
     font.variableAxes: {
-        "FILL": root.fill.toFixed(1),
+        "FILL": root.fill,
     }
 }
