@@ -45,6 +45,48 @@ curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/
 
 The installer backs up an existing config to `~/.config/quickshell/bar.bak.<timestamp>`.
 
+### Manual Start / Restart
+
+After installation, the bar lives at `~/.config/quickshell/bar` and can be run as the named Quickshell config `bar`.
+
+Start it manually:
+
+```bash
+qs -n -d -c bar
+```
+
+Terminal-safe background start if you want to close the launching terminal immediately:
+
+```bash
+qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
+```
+
+If your interactive shell still keeps it in the job table, run:
+
+```bash
+disown
+```
+
+Stop or restart it:
+
+```bash
+qs kill -c bar
+qs -n -d -c bar
+```
+
+Check running instances and logs:
+
+```bash
+qs list --all
+qs log -c bar
+```
+
+Run the checked-out repo directly for development:
+
+```bash
+qs -p ~/Projects/Quickshell-Dots/versions/V1/shell.qml
+```
+
 ## What You Get
 
 | Area | Highlights |
