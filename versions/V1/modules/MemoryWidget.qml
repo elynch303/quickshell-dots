@@ -154,7 +154,7 @@ Item {
         UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.compactMemory
-            text: String(Math.round(rootMod.usedGiB)) + "G"
+            text: String(Math.round(rootMod.usedGiB)).padStart(2, '0') + "G"
             color: root.seal
             font.family: root.mono
             font.pixelSize: 12
