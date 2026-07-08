@@ -19,6 +19,11 @@ Item {
     readonly property real ambientTextFade7: 0.34
     readonly property real ambientFadeStep7: 0.025
     readonly property real ambientRiseStep7: 0.04
+    readonly property int ambientParticleCount8: 66
+    readonly property int ambientIdleTick8: 72
+    readonly property int ambientFreeCount8: 48
+    readonly property real ambientQuoteFade8: 0.68
+    readonly property real ambientRiseStep8: 0.16
 
     opacity: active ? 1.0 : 0.0
     Behavior on opacity { NumberAnimation { duration: 500; easing.type: Easing.InOutCubic } }
@@ -89,11 +94,16 @@ Item {
         if (mode === 8) {
             animating8 = true
             quoteWake8.stop()
+            canvas.quoteAmbientFade = 0.72
+            canvas.quoteLastPaintNow = 0
             canvas.tick7 = 16
         } else {
             animating8 = false
             quoteWake8.stop()
             canvas.quoteSwarm = null
+            canvas.quoteAmbientFade = 0
+            canvas.quoteLastPaintNow = 0
+            canvas.quoteRecruited = 0
         }
         canvas.requestPaint()
     }
@@ -117,6 +127,9 @@ Item {
             aiOpenProbe7.stop()
             warnQueue7 = []
             warnQueueTimer.stop()
+            canvas.quoteAmbientFade = 0
+            canvas.quoteLastPaintNow = 0
+            canvas.quoteRecruited = 0
         } else if (reactorMode7) {
             animating7 = ambientField7
             canvas.tick7 = ambientField7 ? ambientIdleTick7 : 16
@@ -125,6 +138,8 @@ Item {
         } else if (mode === 8) {
             animating8 = true
             quoteWake8.stop()
+            canvas.quoteAmbientFade = 0.72
+            canvas.quoteLastPaintNow = 0
             canvas.tick7 = 16
             canvas.requestPaint()
         }
@@ -1101,6 +1116,10 @@ Item {
         // mode 8 quotes cache, separate from the mode-7 event cache
         property var quoteData: null
         property var quoteSwarm: null
+        property real quoteAmbientFade: 0.0
+        property real quoteFieldT: 0
+        property real quoteLastPaintNow: 0
+        property int quoteRecruited: 0
         property real fieldFade: 1.0
         property int recruited: 0
         property real fieldT: 0
@@ -1190,10 +1209,118 @@ Item {
                 var st8 = hash(sd8 + 9) * 0.2
                 var t8 = (lo8 - cycle8 - st8) * T8
                 var END8 = 12600
-                if (t8 < 0 || t8 >= END8) {
+
+                var gaps8 = []
+                for (var gi8 = 0; gi8 + 1 < runs.length; gi8++) {
+                    var gx18 = root.layout.runRightEdge(runs[gi8].e)
+                    var gx28 = root.layout.runLeftEdge(runs[gi8 + 1].s)
+                    if (gx28 - gx18 < 10 || !isFinite(gx18) || !isFinite(gx28)) continue
+                    gaps8.push({ x1: gx18, x2: gx28 })
+                }
+                if (gaps8.length === 0) {
                     root.animating8 = false
                     canvas.tick7 = 250
-                    root.scheduleQuoteWake8(t8 < 0 ? -t8 : T8 - t8)
+                    root.scheduleQuoteWake8(1000)
+                    ctx.globalAlpha = 1.0
+                    return
+                }
+
+                var qdt8 = now - canvas.quoteLastPaintNow
+                canvas.quoteLastPaintNow = now
+                canvas.quoteFieldT += (qdt8 > 0 && qdt8 < 220) ? qdt8 : 16
+                var qft8 = canvas.quoteFieldT
+                var qVis8 = function(px) {
+                    for (var vq8 = 0; vq8 < gaps8.length; vq8++)
+                        if (px >= gaps8[vq8].x1 - 2 && px <= gaps8[vq8].x2 + 2)
+                            return Math.max(0, Math.min(1, Math.min(
+                                    (px - gaps8[vq8].x1 + 2) / 6,
+                                    (gaps8[vq8].x2 + 2 - px) / 6)))
+                    return 0
+                }
+                var qDot8 = function(px, py, rg, rc, a) {
+                    if (a <= 0.01) return
+                    var v8 = qVis8(px)
+                    if (v8 <= 0.01) return
+                    ctx.globalAlpha = 0.30 * a * v8
+                    ctx.fillStyle = seal
+                    ctx.fillRect(px - rg, py - rg, rg * 2, rg * 2)
+                    ctx.globalAlpha = 0.92 * a * v8
+                    ctx.fillStyle = "#ffffff"
+                    ctx.fillRect(px - rc, py - rc, rc * 2, rc * 2)
+                }
+                var qGapFor8 = function(seed) {
+                    var gapWeight8 = function(gp8) {
+                        return 10 + Math.max(0, gp8.x2 - gp8.x1 - 28)
+                    }
+                    var total8 = 0
+                    for (var wg8 = 0; wg8 < gaps8.length; wg8++)
+                        total8 += gapWeight8(gaps8[wg8])
+                    if (total8 <= 0)
+                        return gaps8[Math.min(gaps8.length - 1, Math.floor(hash(seed) * gaps8.length))]
+                    var pick8 = hash(seed) * total8
+                    for (wg8 = 0; wg8 < gaps8.length; wg8++) {
+                        var w8 = gapWeight8(gaps8[wg8])
+                        if (pick8 < w8) return gaps8[wg8]
+                        pick8 -= w8
+                    }
+                    return gaps8[gaps8.length - 1]
+                }
+                var qDrift8 = function(i) {
+                    var r18 = hash(i * 3 + 1), r28 = hash(i * 3 + 2), r38 = hash(i * 3 + 3)
+                    var bf8 = hash(i * 5 + 7)
+                    var gp8d = qGapFor8(i * 5 + 11)
+                    var gapW8 = Math.max(1, gp8d.x2 - gp8d.x1)
+                    var pad8 = Math.min(6, Math.max(2, gapW8 * 0.18))
+                    var span8 = Math.max(1, gapW8 - pad8 * 2)
+                    var xBase8 = gp8d.x1 + pad8 + bf8 * span8
+                    var xMove8 = Math.min(20, Math.max(1.5, gapW8 * 0.14))
+                    var xFine8 = Math.min(7, Math.max(0.8, gapW8 * 0.06))
+                    var x8 = xBase8
+                           + xMove8 * Math.sin(qft8 / (1250 + 650 * r18) + 6.283 * r28)
+                           + xFine8 * Math.sin(qft8 / (460 + 220 * r38) + r18 * 5.0)
+                    x8 = Math.max(gp8d.x1 + 2, Math.min(gp8d.x2 - 2, x8))
+                    return { x: x8,
+                             y: cy + (height / 2 - 5) * 0.82 * Math.sin(qft8 / (980 + 520 * r38) + 6.283 * r18)
+                                + 3.0 * Math.sin(qft8 / (380 + 180 * r28) + r38 * 4.0) }
+                }
+                var paintQuoteAmbient8 = function(fromIdx, alpha) {
+                    if (alpha <= 0.01) return
+                    var blinkSlot8 = Math.floor(qft8 / 900)
+                    var blinkPhase8 = (qft8 % 900) / 900
+                    for (var fa8 = fromIdx; fa8 < root.ambientParticleCount8; fa8++) {
+                        var d8 = qDrift8(fa8)
+                        var blink8 = hash(fa8 * 19 + blinkSlot8 * 23) > 0.94
+                                  ? Math.sin(blinkPhase8 * Math.PI) * 0.75
+                                  : 0
+                        var tw8 = 0.48 + 0.26 * Math.sin(qft8 / 640 + fa8 * 1.3) + blink8
+                        var sz8 = 1.18 + 0.24 * Math.sin(qft8 / 820 + fa8 * 2.1) + blink8 * 0.55
+                        qDot8(d8.x, d8.y, sz8, sz8 * 0.4, alpha * tw8)
+                    }
+                }
+                var paintQuoteFreeAmbient8 = function(alpha) {
+                    if (alpha <= 0.01) return
+                    var freeBlinkSlot8 = Math.floor(qft8 / 920)
+                    var freeBlinkPhase8 = (qft8 % 920) / 920
+                    for (var ff8 = 0; ff8 < root.ambientFreeCount8; ff8++) {
+                        var d8f = qDrift8(1000 + ff8)
+                        var blink8f = hash(ff8 * 29 + freeBlinkSlot8 * 31) > 0.86
+                                   ? Math.sin(freeBlinkPhase8 * Math.PI) * 1.15
+                                   : 0
+                        var tw8f = 0.40 + 0.24 * Math.sin(qft8 / 680 + ff8 * 1.7) + blink8f
+                        var sz8f = 1.05 + 0.20 * Math.sin(qft8 / 860 + ff8 * 2.3) + blink8f * 0.58
+                        qDot8(d8f.x, d8f.y, sz8f, sz8f * 0.4, alpha * tw8f)
+                    }
+                }
+
+                var quoteOpen8 = t8 >= 0 && t8 < END8
+                if (canvas.quoteAmbientFade < 0.72)
+                    canvas.quoteAmbientFade = 0.72
+                canvas.quoteAmbientFade += (1.0 - canvas.quoteAmbientFade) * root.ambientRiseStep8
+                if (!quoteOpen8) {
+                    canvas.quoteRecruited = 0
+                    paintQuoteAmbient8(0, 0.72 * canvas.quoteAmbientFade)
+                    root.animating8 = true
+                    canvas.tick7 = root.ambientIdleTick8
                     ctx.globalAlpha = 1.0
                     return
                 }
@@ -1211,22 +1338,8 @@ Item {
                     r8a = r8a * r8a * (3 - 2 * r8a)
                     q8 *= 1 - r8a
                 }
-                canvas.tick7 = (q8 >= 0.999 && t8 < 9800) ? 33 : 16
-
-                var gaps8 = []
-                for (var gi8 = 0; gi8 + 1 < runs.length; gi8++) {
-                    var gx18 = root.layout.runRightEdge(runs[gi8].e)
-                    var gx28 = root.layout.runLeftEdge(runs[gi8 + 1].s)
-                    if (gx28 - gx18 < 10 || !isFinite(gx18) || !isFinite(gx28)) continue
-                    gaps8.push({ x1: gx18, x2: gx28 })
-                }
-                if (gaps8.length === 0) {
-                    root.animating8 = false
-                    canvas.tick7 = 250
-                    root.scheduleQuoteWake8(1000)
-                    ctx.globalAlpha = 1.0
-                    return
-                }
+                var hold8 = q8 >= 0.999
+                canvas.tick7 = (t8 < 3200 || t8 > 9400) ? 24 : 33
 
                 var iW18 = -1, iW28 = -1
                 for (var wi8 = 0; wi8 < gaps8.length; wi8++) {
@@ -1319,31 +1432,17 @@ Item {
                         qB8 = gwB8 > 0 ? alien8(gwB8, 87) : null
                     }
 
-                    var aM8 = [], aGC8 = [], aGR8 = [], aHF8 = [], aP18 = [], aF18 = [], aP28 = [], aF28 = []
+                    var aM8 = [], aGC8 = [], aGR8 = []
                     var mk8 = function(gg8, m8k) {
                         if (!gg8) return
                         for (var di8 = 0; di8 < gg8.pts.length; di8++) {
-                            var sp8 = (m8k * 4000 + di8) * 13.7 + sd8
                             aM8.push(m8k); aGC8.push(gg8.pts[di8][0]); aGR8.push(gg8.pts[di8][1])
-                            aHF8.push(hash(sp8 + 5))
-                            aP18.push(700 + 500 * hash(sp8 + 1)); aF18.push(6.283 * hash(sp8 + 2))
-                            aP28.push(600 + 500 * hash(sp8 + 3)); aF28.push(6.283 * hash(sp8 + 4))
                         }
                     }
                     mk8(qA8, 0); mk8(qB8, 1)
 
-                    var freeN8 = aM8.length ? Math.max(20, Math.min(40, Math.round(aM8.length * 0.25))) : 80
-                    for (var fi8 = 0; fi8 < freeN8; fi8++) {
-                        var sf8 = (9000 + fi8) * 13.7 + sd8
-                        aM8.push(2); aGC8.push(0); aGR8.push(0)
-                        aHF8.push(hash(sf8 + 5))
-                        aP18.push(700 + 500 * hash(sf8 + 1)); aF18.push(6.283 * hash(sf8 + 2))
-                        aP28.push(600 + 500 * hash(sf8 + 3)); aF28.push(6.283 * hash(sf8 + 4))
-                    }
-
                     canvas.quoteSwarm = {
-                        key: key8, n: aM8.length, m: aM8, gc: aGC8, gr: aGR8, hf: aHF8,
-                        p1: aP18, f1: aF18, p2: aP28, f2: aF28,
+                        key: key8, n: aM8.length, m: aM8, gc: aGC8, gr: aGR8,
                         px: new Array(aM8.length), py: new Array(aM8.length),
                         pv: new Array(aM8.length), pg: new Array(aM8.length),
                         pc: new Array(aM8.length),
@@ -1367,16 +1466,14 @@ Item {
                 mkGeo8(0, iW18, qs8.colsA, qs8.rowsA, qs8.hasA)
                 mkGeo8(1, iW28, qs8.colsB, qs8.rowsB, qs8.hasB)
 
-                var fx18 = gaps8[0].x1
-                var fx28 = gaps8[gaps8.length - 1].x2
-                var fw8 = fx28 - fx18
-                var wy8 = (height / 2 - 5) * 0.9
-                var hold8 = q8 >= 0.999
                 var N8 = qs8.n
-                var MM8 = qs8.m, GC8 = qs8.gc, GR8 = qs8.gr, HF8 = qs8.hf
-                var P18 = qs8.p1, F18 = qs8.f1, P28 = qs8.p2, F28 = qs8.f2
+                var MM8 = qs8.m, GC8 = qs8.gc, GR8 = qs8.gr
                 var PX8 = qs8.px, PY8 = qs8.py, PV8 = qs8.pv, PG8 = qs8.pg, PC8 = qs8.pc
                 var gA8 = geo8[0], gB8 = geo8[1]
+                canvas.quoteRecruited = Math.min(N8, root.ambientParticleCount8)
+                paintQuoteAmbient8(canvas.quoteRecruited,
+                                   0.72 * canvas.quoteAmbientFade * (q8 > 0.05 ? root.ambientQuoteFade8 : 1.0))
+                paintQuoteFreeAmbient8(0.55 * canvas.quoteAmbientFade)
 
                 for (var i8 = 0; i8 < N8; i8++) {
                     var m88 = MM8[i8]
@@ -1389,26 +1486,22 @@ Item {
                         PC8[i8] = g88.cell * 0.30
                         continue
                     }
-                    var px8 = fx18 + HF8[i8] * fw8 + 60 * Math.sin(now / P18[i8] + F18[i8])
-                    var py8 = cy + wy8 * Math.sin(now / P28[i8] + F28[i8])
-                    var rg8 = 2.4, rc8 = 1.05
+                    var d8t = qDrift8(i8)
+                    var px8 = d8t.x
+                    var py8 = d8t.y
+                    var rg8 = 1.3, rc8 = 0.5
                     if (g88 && q8 > 0) {
                         px8 += (g88.ox + GC8[i8] * g88.cell - px8) * q8
                         py8 += (g88.oy + GR8[i8] * g88.cell - py8) * q8
-                        rg8 += (g88.cell * 0.62 - 2.4) * q8
-                        rc8 += (g88.cell * 0.30 - 1.05) * q8
+                        if (q8 > 0.98) {
+                            px8 += 0.4 * Math.sin(now / 240 + i8)
+                            py8 += 0.4 * Math.cos(now / 300 + i8 * 1.7)
+                        }
+                        rg8 += (g88.cell * 0.62 - rg8) * q8
+                        rc8 += (g88.cell * 0.30 - rc8) * q8
                     }
 
-                    var vis8 = 0
-                    for (var vg8 = 0; vg8 < gaps8.length; vg8++) {
-                        if (px8 >= gaps8[vg8].x1 - 2 && px8 <= gaps8[vg8].x2 + 2) {
-                            vis8 = Math.max(0, Math.min(1, Math.min(
-                                    (px8 - gaps8[vg8].x1 + 2) / 6,
-                                    (gaps8[vg8].x2 + 2 - px8) / 6)))
-                            break
-                        }
-                    }
-                    PX8[i8] = px8; PY8[i8] = py8; PV8[i8] = vis8; PG8[i8] = rg8; PC8[i8] = rc8
+                    PX8[i8] = px8; PY8[i8] = py8; PV8[i8] = qVis8(px8); PG8[i8] = rg8; PC8[i8] = rc8
                 }
 
                 var drawR8
