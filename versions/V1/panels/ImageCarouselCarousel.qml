@@ -40,15 +40,22 @@ PanelWindow {
     // ── open / style gating ──
     function syncOpen() {
         if (root.imagePickerVisible && active) {
+            panel.layoutSettled = false
+            panel.filterText    = ""
             if (!imagesLoaded) {
-                panel.layoutSettled = false
-                panel.filterText    = ""
                 panel.imageArray    = []
                 panel.selectedIndex = 0
-                currentProc.running = false; currentProc.running = true
+            } else if (panel.imageArray.length > 0) {
+                Qt.callLater(function() {
+                    if (root.imagePickerVisible && panel.active && panel.imagesLoaded) {
+                        panel.layoutSettled = true
+                        carousel.forceActiveFocus()
+                    }
+                })
             }
+            currentProc.running = false; currentProc.running = true
         } else {
-            panel.imagesLoaded  = false; panel.scanDone = false
+            panel.scanDone = false
             panel.layoutSettled = false
         }
     }
@@ -394,7 +401,7 @@ PanelWindow {
 
                 Loader {
                     anchors.fill: parent
-                    active: slice.nearby
+                    active: panel.ready && slice.nearby
                     sourceComponent: sliceVisualComponent
                 }
 
