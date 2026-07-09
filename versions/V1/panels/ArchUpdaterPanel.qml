@@ -119,11 +119,18 @@ PanelWindow {
         return m
     }
 
-    // ── OK-only update policy ──
-    // The main button installs ONLY verified repo/system OK packages, via pacman.
-    // AUR packages are never part of a pacman transaction, so WARN/AUR is skipped
-    // automatically; system packages that are not OK are held back with --ignore
-    // (keeps the upgrade whole — no partial-upgrade risk, unlike a name allowlist).
+    // ── Full-repo update policy ──
+    // AUR packages are never part of a pacman transaction. For official repo
+    // packages, the safe boundary is all-or-nothing: if any repo package is not
+    // scanned and OK, block the entire system upgrade. Never filter packages out
+    // of pacman's transaction from this UI, because that can create an unsupported
+    // partial upgrade.
+    readonly property int repoUpdatePackages: {
+        var n = 0, u = root.archUpdates || []
+        for (var i = 0; i < u.length; i++)
+            if (u[i].source !== "aur") n++
+        return n
+    }
     readonly property int repoOkPackages: {
         var n = 0, r = root.archGateResults || []
         for (var i = 0; i < r.length; i++)
@@ -137,16 +144,21 @@ PanelWindow {
         return n
     }
     readonly property int btnCount: aurReviewPackages > 0 ? 3 : 2
-    // NOT gated on degraded: repo updates are trusted via pacman/GPG independently
-    // of the AUR blacklist, so a degraded AUR feed must not block repo upgrades.
-    readonly property bool canUpdate: repoOkPackages > 0 && root.archGateState !== "scanning"
-    function systemIgnoreList() {
-        var out = [], r = root.archGateResults || []
-        for (var i = 0; i < r.length; i++)
-            if (r[i].repo !== "aur" && r[i].verdict !== "OK"
-                && /^[a-zA-Z0-9@._+-]+$/.test(r[i].pkg))
-                out.push(r[i].pkg)
-        return out
+    readonly property bool repoGateComplete: (root.archGateResults || []).length === (root.archUpdates || []).length
+    readonly property bool repoGateAllowsFullUpgrade: repoUpdatePackages > 0
+        && repoGateComplete
+        && repoOkPackages === repoUpdatePackages
+        && (root.archGateState === "clean" || root.archGateState === "warn")
+        && !root.archGateDegraded
+    readonly property bool canUpdate: repoGateAllowsFullUpgrade
+    readonly property string repoBlockReason: {
+        if (repoUpdatePackages === 0) return "No pacman updates"
+        if (root.archGateState === "scanning") return "Scanning packages"
+        if (!repoGateComplete) return "Repo upgrade blocked: scan incomplete"
+        if (root.archGateDegraded) return "Repo upgrade blocked: protection limited"
+        if (root.archGateFail > 0 || root.archGateState === "blocked") return "Repo upgrade blocked: package blocked"
+        if (repoOkPackages !== repoUpdatePackages) return "Repo upgrade blocked: unverified package"
+        return ""
     }
     function shellQuote(value) {
         return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
@@ -536,7 +548,7 @@ PanelWindow {
             }
 
             // ── escalation: a FAIL means the INSTALLED copy is on the list, i.e.
-            // possibly already compromised — --ignore only freezes that version ──
+            // possibly already compromised; the full repo upgrade stays blocked ──
             UiText {
                 visible: root.archGateFail > 0
                 width: parent.width
@@ -712,7 +724,7 @@ PanelWindow {
                     }
                 }
 
-                // Update — OK-only repo/system via pacman; AUR is never installed here.
+                // Update — full repo/system transaction via pacman; AUR is never installed here.
                 Rectangle {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
@@ -722,13 +734,12 @@ PanelWindow {
                     Behavior on color { ColorAnimation { duration: 120 } }
                     UiText {
                         anchors.centerIn: parent
-                        text: archPanel.repoOkPackages === 0
-                            ? "No pacman updates"
-                            : (archPanel.aurReviewPackages > 0 || root.archGateFail > 0)
-                                ? "Update " + archPanel.repoOkPackages + " OK only"
-                                : "Update " + archPanel.repoOkPackages
+                        text: archPanel.canUpdate
+                            ? "Full repo upgrade (" + archPanel.repoUpdatePackages + ")"
+                            : archPanel.repoBlockReason
                         color: root.paper
                         font.family: root.mono; font.pixelSize: 11
+                        elide: Text.ElideRight
                     }
                     MouseArea {
                         id: updateMa
@@ -737,20 +748,15 @@ PanelWindow {
                         enabled: archPanel.canUpdate
                         cursorShape: archPanel.canUpdate ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
-                            // OK-only: pacman never touches AUR, so WARN/AUR is skipped
-                            // automatically; non-OK SYSTEM packages are held back with
-                            // --ignore (whole upgrade, no partial-upgrade risk). Names
-                            // are regex-validated before interpolation.
-                            var ig = archPanel.systemIgnoreList();
-                            var ign = ig.length ? " --ignore " + ig.join(",") : "";
-                            var prompt = "Update " + archPanel.repoOkPackages + " verified repo packages only?";
+                            // Full repository upgrade only. If the gate is not fully OK
+                            // for every official repo package, canUpdate is false and
+                            // no pacman process can be launched from this button.
+                            var prompt = "Run full repository upgrade for " + archPanel.repoUpdatePackages + " pacman packages?";
                             if (archPanel.aurReviewPackages > 0)
                                 prompt += " " + archPanel.aurReviewPackages + " AUR review packages will be skipped.";
-                            if (root.archGateDegraded)
-                                prompt += " (security feed degraded)";
                             var updateCommand = archPanel.themedGumConfirmEnv()
                                 + " gum confirm " + archPanel.shellQuote(prompt)
-                                + " && sudo pacman -Syu" + ign;
+                                + " && sudo pacman -Syu";
                             panelUpdateRunner.command = ["bash", "-c",
                                 "omarchy-launch-floating-terminal-with-presentation "
                                     + archPanel.shellQuote(updateCommand)];

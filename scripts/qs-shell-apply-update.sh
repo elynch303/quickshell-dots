@@ -3,7 +3,8 @@
 #
 # Topology: the live bar dir is a *copy* of versions/<V>/ from the deploy clone
 # at ~/.local/share/quickshell-dots by default (override with QS_SHELL_REPO).
-# Updating = pull that repo, redeploy the installed version, restart the bar.
+# Updating = read the checked state, verify the immutable target commit, deploy
+# exactly that commit's version payload, restart the bar.
 #
 # MUST be launched DETACHED from the bar (the QML button uses `setsid`), because
 # this script restarts the bar.
@@ -22,6 +23,7 @@ DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 [ "$DEST" != "/" ] && DEST="${DEST%/}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
+SCHEMA_VERSION=2
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
 # or wiped by hygiene tools, and the backup is the rollback's last-resort restore.
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell/backups"
@@ -38,16 +40,39 @@ if ! flock -n 9; then
   exit 0
 fi
 
-# Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
-# loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
-# is mid-run, so no live stage can be hit.
-rm -rf "$(dirname "$DEST")"/.qs-stage.* 2>/dev/null || true
-
 # State contract: never delete the state file; "up to date" is behind:0 (atomic).
 clear_state() {
   local t
   t="$(mktemp -p "$STATE_DIR")" || return 0
-  printf '{"behind": 0, "checked": "%s"}\n' "$(date -Is)" > "$t" && mv "$t" "$STATE" || rm -f "$t"
+  if printf '{"schemaVersion": %d, "behind": 0, "checked": "%s"}\n' "$SCHEMA_VERSION" "$(date -Is)" > "$t" \
+      && mv "$t" "$STATE"; then
+    return 0
+  fi
+  rm -f "$t"
+}
+
+is_commit_hash() {
+  [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
+}
+
+read_pending_state() {
+  local parsed
+  [ -r "$STATE" ] || fail "No pending shell update state."
+  parsed="$(jq -r --argjson schema "$SCHEMA_VERSION" '
+    if .schemaVersion == $schema
+       and ((.behind // 0) > 0)
+       and (.repository | type == "string")
+       and (.upstreamRef | type == "string")
+       and (.baseCommit | type == "string")
+       and (.targetCommit | type == "string")
+       and (.version | type == "string")
+    then [.repository, .upstreamRef, .baseCommit, .targetCommit, .version] | @tsv
+    else empty end
+  ' "$STATE" 2>/dev/null)" || fail "Could not read shell update state."
+  [ -n "$parsed" ] || fail "Shell update state is missing immutable target data."
+  IFS=$'\t' read -r state_repo state_upstream state_base state_target state_version <<< "$parsed"
+  is_commit_hash "$state_base" || fail "Stored base commit is invalid."
+  is_commit_hash "$state_target" || fail "Stored target commit is invalid."
 }
 
 bar_pids() {
@@ -123,43 +148,44 @@ ver="V1"
 
 [ -d "$REPO/.git" ] || fail "Repo not found at $REPO"
 cd "$REPO"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "Repo is not a valid git checkout."
+head_commit="$(git rev-parse 'HEAD^{commit}' 2>/dev/null)" || fail "Repo HEAD is not a commit."
+read_pending_state
+[ "$state_repo" = "$repo_root" ] || fail "Pending update belongs to a different repo."
+[ "$state_version" = "$ver" ] || fail "Pending update targets '$state_version', but installed version is '$ver'."
+
+current_base="$head_commit"
+if [ -f "$DEST/.qsrise-commit" ]; then
+  deployed_commit="$(tr -d '[:space:]' < "$DEST/.qsrise-commit" 2>/dev/null || true)"
+  if is_commit_hash "$deployed_commit" && git cat-file -e "$deployed_commit^{commit}" 2>/dev/null; then
+    current_base="$deployed_commit"
+  fi
+fi
+[ "$current_base" = "$state_base" ] || fail "Pending update is stale — refresh the shell update check first."
 
 # 1. Don't disturb a repo the user is mid-edit in.
 [ -z "$(git status --porcelain)" ] || \
   fail "Repo has uncommitted changes — commit or stash in $REPO first."
 
-# 2. Fast-forward when possible. The working tree is already verified clean
-#    above, so the only thing a divergence can cost here is local *commits*.
+# 2. Refresh refs, then prove that the stored immutable target is still a valid
+#    commit from the expected upstream. Never install the moving branch tip.
 git fetch --quiet origin || fail "Could not reach origin (offline?)."
 upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" \
   || fail "No upstream tracking branch in $REPO."
-if git merge-base --is-ancestor HEAD "$upstream"; then
-  git pull --ff-only --quiet || fail "git pull failed in $REPO."
-elif [ -z "$(git merge-base HEAD "$upstream" 2>/dev/null)" ]; then
-  # No common ancestor ⇒ upstream history was rewritten (e.g. a maintenance
-  # force-push). A FULL rewrite (new root) also leaves any genuine local commit
-  # without a common ancestor, so "no merge-base" alone does NOT prove a pure
-  # consumer. Auto-heal ONLY when HEAD carries no commits beyond the PRE-fetch
-  # upstream tip (origin reflog @{1}); otherwise refuse — and if we cannot prove
-  # it (no reflog), refuse too (fail closed). So real local work is never reset.
-  # Recovery, should the proof ever be wrong, is git's own reflog (HEAD@{1});
-  # we deliberately do NOT pin a named backup ref — that would keep the
-  # rewritten-away history (e.g. a privacy scrub) reachable forever instead of
-  # letting it gc.
-  prev="$(git rev-parse --verify --quiet "$upstream@{1}" 2>/dev/null || true)"
-  if [ -n "$prev" ] && [ "$(git rev-list --count "$prev..HEAD" 2>/dev/null || echo 1)" -eq 0 ]; then
-    note "Shell update" "Re-aligned with upstream history."
-    git reset --quiet --hard "$upstream" || fail "Could not re-align to $upstream."
-  else
-    fail "Local branch has its own commits and cannot fast-forward — resolve manually (git status in $REPO)."
-  fi
-else
-  # A shared ancestor exists but local has its own commits on top ⇒ this could
-  # be real local work. Refuse rather than silently discard it.
-  fail "Local branch has unmerged commits — resolve manually (git status in $REPO)."
-fi
+[ "$upstream" = "$state_upstream" ] || fail "Upstream changed since check — refresh first."
+git cat-file -e "$state_base^{commit}" 2>/dev/null || fail "Stored base commit is not available locally."
+git cat-file -e "$state_target^{commit}" 2>/dev/null || fail "Stored target commit is not available locally."
+git merge-base --is-ancestor "$state_base" "$state_target" 2>/dev/null || \
+  fail "Stored target is not a fast-forward from the checked base."
+git merge-base --is-ancestor "$state_target" "$state_upstream" 2>/dev/null || \
+  fail "Stored target is no longer reachable from $state_upstream."
+git cat-file -e "$state_target:versions/$ver" 2>/dev/null || \
+  fail "Version '$ver' missing at stored target commit."
 
-[ -d "$REPO/versions/$ver" ] || fail "Version '$ver' missing in repo after pull."
+# Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
+# loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
+# is mid-run, and provenance has already been validated.
+rm -rf "$(dirname "$DEST")"/.qs-stage.* 2>/dev/null || true
 
 # 3. Always back up the live dir before overwriting (protects un-synced edits).
 mkdir -p "$BACKUP_ROOT"
@@ -175,12 +201,31 @@ ls -1dt "$BACKUP_ROOT"/bar.* 2>/dev/null | tail -n +4 | xargs -r rm -rf
 #    The bar watches the `bar` config dir specifically, so a sibling .qs-stage.*
 #    dir is ignored. Clean the stage on any exit.
 stage="$(mktemp -d -p "$(dirname "$DEST")" .qs-stage.XXXXXX)"
-trap 'rm -rf "$stage" 2>/dev/null || true' EXIT
-cp -r "$REPO/versions/$ver/." "$stage/"
+companion=""
+cleanup() {
+  [ -n "${stage:-}" ] && rm -rf "$stage" 2>/dev/null || true
+  [ -n "${companion:-}" ] && rm -rf "$companion" 2>/dev/null || true
+}
+trap cleanup EXIT
+git archive "$state_target:versions/$ver" | tar -x -C "$stage" || \
+  fail "Could not stage version '$ver' from stored target commit."
 if [ -f "$backup/quotes.txt" ]; then
   cp -p "$backup/quotes.txt" "$stage/quotes.txt"
 fi
 printf '%s\n' "$ver" > "$stage/.qsrise"
+printf '%s\n' "$state_target" > "$stage/.qsrise-commit"
+
+companion_paths=()
+for p in scripts systemd; do
+  if git cat-file -e "$state_target:$p" 2>/dev/null; then
+    companion_paths+=("$p")
+  fi
+done
+if [ "${#companion_paths[@]}" -gt 0 ]; then
+  companion="$(mktemp -d -p "$STATE_DIR" companion.XXXXXX)" || fail "Could not create companion stage."
+  git archive "$state_target" "${companion_paths[@]}" | tar -x -C "$companion" || \
+    fail "Could not stage companion files from stored target commit."
+fi
 
 # Stop the bar before swapping, and WAIT for it to actually exit (don't trust a
 # fixed sleep). Prefer Quickshell's registered config path over command-line
@@ -217,18 +262,19 @@ trap 'rollback' ERR
 
 mv "$DEST" "$old"        # atomic rename (same FS)
 mv "$stage" "$DEST"      # atomic rename (same FS)
+stage=""
 trap - ERR
 rm -rf "$old" 2>/dev/null || true
-trap - EXIT              # $stage was renamed into place; nothing left to clean
 
 # 5. Mark up-to-date via an atomic state write (never delete).
 clear_state
 
 # 5b. Companion pieces (helper scripts, systemd units): refresh them from the
-#     pulled repo so a bar update is complete on its own — no manual install.sh
-#     re-run. Best-effort: a hiccup here never blocks the applied update.
-if [ -f "$REPO/scripts/qs-shell-post-update.sh" ]; then
-  bash "$REPO/scripts/qs-shell-post-update.sh" "$REPO" >/dev/null 2>&1 || \
+#     same stored target commit so a bar update is complete on its own — no
+#     manual install.sh re-run. Best-effort: a hiccup here never blocks the
+#     already-applied update.
+if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
+  bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || \
     note "Shell update" "Companion refresh incomplete — re-run install.sh if a widget misses its helper."
 fi
 
@@ -241,4 +287,4 @@ if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
   setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
 fi
 
-note "Shell updated" "Now on the latest '$ver'. Backup kept at $backup"
+note "Shell updated" "Now on reviewed '$ver' at ${state_target:0:12}. Backup kept at $backup"
