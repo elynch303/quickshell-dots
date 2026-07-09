@@ -97,6 +97,8 @@ PanelWindow {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
                 "CACHE=$HOME/.cache/quickshell-theme-picker; mkdir -p \"$CACHE\";",
+                "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\";",
+                "thumb_for() { local s=\"$1\" k m o; k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && printf '%s' \"$o\" || printf '%s' \"$s\"; };",
                 "for d in ~/.local/share/omarchy/themes/* ~/.config/omarchy/themes/*; do",
                 "  [ -d \"$d\" ] || continue;",
                 "  name=$(basename \"$d\");",
@@ -106,15 +108,18 @@ PanelWindow {
                 "  [ -z \"$prev\" ] && continue;",
                 "  ext=\"${prev##*.}\"; link=\"$CACHE/$name.$ext\";",
                 "  [ -L \"$link\" ] || ln -sf \"$prev\" \"$link\";",
-                "  printf '%s\\t%s\\t%s\\n' \"$link\" \"$prev\" \"$d\";",
+                "  thumb=$(thumb_for \"$link\");",
+                "  printf '%s\\t%s\\t%s\\n' \"$link\" \"$thumb\" \"$d\";",
                 "done | sort -u"
             ].join(" ")]
         } else {
-            return ["bash", "-c",
+            return ["bash", "-c", [
+                "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\";",
+                "thumb_for() { local s=\"$1\" k m o; k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && printf '%s' \"$o\" || printf '%s' \"$s\"; };",
                 "find -L ~/.config/omarchy/current/theme/backgrounds -maxdepth 1 -type f " +
                 "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) " +
-                "2>/dev/null | sort | while read f; do printf '%s\\t%s\\n' \"$f\" \"$f\"; done"
-            ]
+                "2>/dev/null | sort | while read f; do thumb=$(thumb_for \"$f\"); printf '%s\\t%s\\n' \"$f\" \"$thumb\"; done"
+            ].join(" ")]
         }
     }
 
@@ -190,18 +195,55 @@ PanelWindow {
     }
 
     // ── background pre-warm (shared 512px cache; niced; after open settles) ──
-    Process { id: warmProc; command: [] }
+    Process {
+        id: warmProc
+        command: []
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: panel.applyThumbRows(this.text)
+        }
+    }
     Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
+    function applyThumbRows(text) {
+        var t = String(text || "").trim()
+        if (!t) return
+        var rows = t.split("\n")
+        var thumbs = {}
+        for (var r = 0; r < rows.length; r++) {
+            var cols = rows[r].split("\t")
+            if (cols.length >= 2 && cols[0] && cols[1]) thumbs[cols[0]] = cols[1]
+        }
+        var changed = false
+        var next = []
+        for (var i = 0; i < imageArray.length; i++) {
+            var img = imageArray[i]
+            var thumb = img && thumbs[img.filePath] ? thumbs[img.filePath] : ""
+            if (thumb && thumb !== img.thumbnailPath) {
+                next.push({
+                    filePath: img.filePath,
+                    fileName: img.fileName,
+                    thumbnailPath: thumb,
+                    dir: img.dir || ""
+                })
+                changed = true
+            } else {
+                next.push(img)
+            }
+        }
+        if (changed) panel.imageArray = next
+    }
     function warmAll() {
         var srcs = []
         for (var i = 0; i < imageArray.length; i++)
             if (imageArray[i].filePath) srcs.push(imageArray[i].filePath)
         if (srcs.length === 0) return
         warmProc.command = ["bash", "-c",
-            "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
-            "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); " +
-            "o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
-            "nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1'",
+            "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; " +
+            "if ! command -v magick >/dev/null 2>&1; then for s in \"$@\"; do printf '%s\\t%s\\n' \"$s\" \"$s\"; done; exit 0; fi; " +
+            "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
+            "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] || printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
+            "if [ -s \"$tmp\" ]; then nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; fi; " +
+            "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && printf '%s\\t%s\\n' \"$s\" \"$o\" || printf '%s\\t%s\\n' \"$s\" \"$s\"; done",
             "warm"].concat(srcs)
         warmProc.running = false; warmProc.running = true
     }
@@ -327,27 +369,9 @@ PanelWindow {
                 readonly property bool selected:   matched && index === panel.selectedIndex
                 readonly property bool nearby:     matched && Math.abs(relIdx) <= 14
 
-                // shared 512px thumbnail cache (no full-size decode → no stutter)
-                property string thumbPath: ""
-                Process {
-                    id: thumbProc
-                    command: []
-                    stdout: StdioCollector {
-                        onStreamFinished: { var p = this.text.trim(); if (p) slice.thumbPath = "file://" + p }
-                    }
-                }
-                function ensureThumb() {
-                    if (thumbPath || !panel.ready || !nearby || !imgData) return
-                    thumbProc.command = ["bash", "-c",
-                        "s=" + panel.shq(imgData.filePath) + "; D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; " +
-                        "k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; " +
-                        "if command -v magick >/dev/null 2>&1; then [ -f \"$o\" ] || nice -n 10 magick \"$s\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$o\" >/dev/null 2>&1; fi; " +
-                        "[ -f \"$o\" ] && echo \"$o\" || echo \"$s\""]
-                    thumbProc.running = false; thumbProc.running = true
-                }
-                onNearbyChanged: if (nearby) ensureThumb()
-                Component.onCompleted: ensureThumb()
-                Connections { target: panel; function onReadyChanged() { if (panel.ready) slice.ensureThumb() } }
+                // shared 512px thumbnail cache. The scan/warm worker owns path
+                // resolution so delegates don't spawn per-item shell processes.
+                readonly property string thumbPath: imgData ? "file://" + (imgData.thumbnailPath || imgData.filePath) : ""
 
                 visible: nearby
                 x: selected ? carousel.previewX
@@ -368,62 +392,76 @@ PanelWindow {
                 readonly property real botRight: panel.skew >= 0 ? width - skAbs : width
                 readonly property real botLeft:  panel.skew >= 0 ? 0 : skAbs
 
-                Item {
-                    id: maskShape; anchors.fill: parent
-                    visible: false; layer.enabled: true
-                    Shape {
-                        anchors.fill: parent; antialiasing: true
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            fillColor: "white"; strokeColor: "transparent"
-                            startX: slice.topLeft; startY: 0
-                            PathLine { x: slice.topRight; y: 0 }
-                            PathLine { x: slice.botRight; y: slice.height }
-                            PathLine { x: slice.botLeft;  y: slice.height }
-                            PathLine { x: slice.topLeft;  y: 0 }
+                Loader {
+                    anchors.fill: parent
+                    active: slice.nearby
+                    sourceComponent: sliceVisualComponent
+                }
+
+                Component {
+                    id: sliceVisualComponent
+
+                    Item {
+                        anchors.fill: parent
+
+                        Item {
+                            id: maskShape; anchors.fill: parent
+                            visible: false; layer.enabled: true
+                            Shape {
+                                anchors.fill: parent; antialiasing: true
+                                preferredRendererType: Shape.CurveRenderer
+                                ShapePath {
+                                    fillColor: "white"; strokeColor: "transparent"
+                                    startX: slice.topLeft; startY: 0
+                                    PathLine { x: slice.topRight; y: 0 }
+                                    PathLine { x: slice.botRight; y: slice.height }
+                                    PathLine { x: slice.botLeft;  y: slice.height }
+                                    PathLine { x: slice.topLeft;  y: 0 }
+                                }
+                            }
+                        }
+
+                        Item {
+                            anchors.fill: parent; layer.enabled: true; layer.smooth: true
+                            layer.effect: MultiEffect {
+                                maskEnabled: true; maskSource: maskShape
+                                maskThresholdMin: 0.3; maskSpreadAtMin: 0.3
+                            }
+                            Image {
+                                anchors.fill: parent
+                                source: (panel.ready && slice.nearby) ? slice.thumbPath : ""
+                                fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
+                                sourceSize.width:  panel.expandedW
+                                sourceSize.height: panel.expandedH
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                color: Qt.rgba(panel.dimColor.r, panel.dimColor.g, panel.dimColor.b, slice.selected ? 0 : 0.42)
+                                Behavior on color { ColorAnimation { duration: 200 } }
+                            }
+                        }
+
+                        Shape {
+                            anchors.fill: parent; antialiasing: true
+                            preferredRendererType: Shape.CurveRenderer
+                            ShapePath {
+                                fillColor: "transparent"
+                                strokeColor: slice.selected ? panel.selBorder : panel.unselBorder
+                                strokeWidth: slice.selected ? 3 : 1
+                                Behavior on strokeColor { ColorAnimation { duration: 150 } }
+                                startX: slice.topLeft; startY: 0
+                                PathLine { x: slice.topRight; y: 0 }
+                                PathLine { x: slice.botRight; y: slice.height }
+                                PathLine { x: slice.botLeft;  y: slice.height }
+                                PathLine { x: slice.topLeft;  y: 0 }
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            onClicked: slice.selected ? panel.applySelected() : (panel.selectedIndex = index)
                         }
                     }
-                }
-
-                Item {
-                    anchors.fill: parent; layer.enabled: true; layer.smooth: true
-                    layer.effect: MultiEffect {
-                        maskEnabled: true; maskSource: maskShape
-                        maskThresholdMin: 0.3; maskSpreadAtMin: 0.3
-                    }
-                    Image {
-                        anchors.fill: parent
-                        source: (panel.ready && slice.nearby) ? slice.thumbPath : ""
-                        fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
-                        sourceSize.width:  panel.expandedW
-                        sourceSize.height: panel.expandedH
-                    }
-                    Rectangle {
-                        anchors.fill: parent
-                        color: Qt.rgba(panel.dimColor.r, panel.dimColor.g, panel.dimColor.b, slice.selected ? 0 : 0.42)
-                        Behavior on color { ColorAnimation { duration: 200 } }
-                    }
-                }
-
-                Shape {
-                    anchors.fill: parent; antialiasing: true
-                    preferredRendererType: Shape.CurveRenderer
-                    ShapePath {
-                        fillColor: "transparent"
-                        strokeColor: slice.selected ? panel.selBorder : panel.unselBorder
-                        strokeWidth: slice.selected ? 3 : 1
-                        Behavior on strokeColor { ColorAnimation { duration: 150 } }
-                        startX: slice.topLeft; startY: 0
-                        PathLine { x: slice.topRight; y: 0 }
-                        PathLine { x: slice.botRight; y: slice.height }
-                        PathLine { x: slice.botLeft;  y: slice.height }
-                        PathLine { x: slice.topLeft;  y: 0 }
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                    onClicked: slice.selected ? panel.applySelected() : (panel.selectedIndex = index)
                 }
             }
         }
@@ -434,7 +472,7 @@ PanelWindow {
         visible: panel.ready
         z: 500
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom; anchors.bottomMargin: 32
+        anchors.top: carousel.bottom; anchors.topMargin: 18
         width: root.evenW(Math.min(panel.expandedW + 96, Math.max(320, parent.width - 48)))
         spacing: 5
 
