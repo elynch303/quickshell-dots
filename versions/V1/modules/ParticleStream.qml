@@ -14,14 +14,31 @@ Item {
     property string monitor: ""      // this bar's output (for monitor-focus pulses)
     readonly property bool reactorMode7: mode === 7
     readonly property bool ambientField7: mode === 7
-    readonly property int ambientParticleCount7: 44
-    readonly property int ambientIdleTick7: 120
+    readonly property int reactorFrameTick7: 33
+    readonly property int reactorDormantTick7: 500
+    readonly property int maxPulseCount7: 8
+    readonly property int maxSweepParticleCount7: 36
+    readonly property int ambientParticleCount7: 36
+    readonly property int ambientIdleTick7: 250
     readonly property real ambientTextFade7: 0.34
     readonly property real ambientFadeStep7: 0.025
     readonly property real ambientRiseStep7: 0.04
 
     opacity: active ? 1.0 : 0.0
     Behavior on opacity { NumberAnimation { duration: 500; easing.type: Easing.InOutCubic } }
+
+    function requestFrame() {
+        if (!active || !visible || width <= 0 || height <= 0) return
+        canvas.requestPaint()
+    }
+
+    function setReactorFastTick7() {
+        canvas.tick7 = reactorFrameTick7
+    }
+
+    function setDormantTick7() {
+        canvas.tick7 = reactorDormantTick7
+    }
 
     // ── event impulses for the mode-7 reactor ──
     // tiny bounded queue; each pulse has a fixed lifetime and is pruned on push/paint
@@ -31,6 +48,12 @@ Item {
     property int lastWsId: -1
     property int pendingWsId: -1
     property int pendingWsDir: 1
+    property int pendingWsSeq7: 0
+    property int activeWsSeq7: 0
+    property int queuedWsId7: -1
+    property int queuedWsDir7: 1
+    property int queuedWsSeq7: 0
+    property int queuedWsAttempts7: 0
     property string activeAddr7: ""
     property string pendingUrgentAddr7: ""
     property string pendingUrgentCls7: ""
@@ -83,7 +106,7 @@ Item {
             aiWindowRootPid7 = ""
             var ws7 = Hyprland.focusedWorkspace
             lastWsId = ws7 && ws7.id > 0 ? ws7.id : -1
-            canvas.tick7 = 16
+            root.setReactorFastTick7()
             Qt.callLater(function() { root.announceReactorArmed7() })
         }
         if (mode === 8) {
@@ -95,7 +118,7 @@ Item {
             quoteWake8.stop()
             canvas.quoteSwarm = null
         }
-        canvas.requestPaint()
+        root.requestFrame()
     }
 
     onActiveChanged: {
@@ -119,14 +142,14 @@ Item {
             warnQueueTimer.stop()
         } else if (reactorMode7) {
             animating7 = ambientField7
-            canvas.tick7 = ambientField7 ? ambientIdleTick7 : 16
-            canvas.requestPaint()
+            canvas.tick7 = ambientField7 ? ambientIdleTick7 : reactorFrameTick7
+            root.requestFrame()
             Qt.callLater(function() { root.announceReactorArmed7() })
         } else if (mode === 8) {
             animating8 = true
             quoteWake8.stop()
             canvas.tick7 = 16
-            canvas.requestPaint()
+            root.requestFrame()
         }
     }
 
@@ -151,7 +174,7 @@ Item {
             if (!root.active || root.mode !== 8) return
             root.animating8 = true
             canvas.tick7 = 16
-            canvas.requestPaint()
+            root.requestFrame()
         }
     }
 
@@ -198,7 +221,7 @@ Item {
             if (active && mode === 8) {
                 animating8 = true
                 canvas.tick7 = 16
-                canvas.requestPaint()
+                root.requestFrame()
             }
         }
     }
@@ -229,24 +252,81 @@ Item {
         opts = opts || ({})
         if (opts.life !== undefined) p.life = opts.life
         if (opts.gain !== undefined) p.gain = opts.gain
-        if (opts.count !== undefined) p.count = opts.count
-        if (ps.length < 8) ps.push(p)
+        if (opts.count !== undefined)
+            p.count = Math.min(root.maxSweepParticleCount7, Math.max(1, opts.count))
+        if (ps.length < root.maxPulseCount7) ps.push(p)
         pulses = ps
         animating7 = true
-        canvas.tick7 = 16
-        canvas.requestPaint()
+        root.setReactorFastTick7()
+        root.requestFrame()
     }
 
     function workspaceLabel(n) {
         return n === 0 ? "EMPTY" : (n === 1 ? "1 APP" : n + " APPS")
     }
 
+    function workspaceIdFromV2Event7(data) {
+        var s = String(data || "").trim()
+        if (s === "") return -1
+        var first = s.split(",")[0]
+        var id = parseInt(first)
+        return isFinite(id) && id > 0 ? id : -1
+    }
+
+    function handleWorkspaceV2Event7(data) {
+        var id = workspaceIdFromV2Event7(data)
+        if (id <= 0) return
+        var prev = lastWsId
+        lastWsId = id
+        if (!active || !reactorMode7) return
+        if (prev === id) return
+        requestWorkspaceText(id, prev > 0 && id < prev ? -1 : 1)
+    }
+
     function requestWorkspaceText(id, dir) {
         if (!active || !reactorMode7 || id <= 0) return
-        pendingWsId = id
-        pendingWsDir = dir
-        wsCountProc.running = false
-        wsCountProc.running = true
+        pendingWsSeq7++
+        queuedWsId7 = id
+        queuedWsDir7 = dir
+        queuedWsSeq7 = pendingWsSeq7
+        queuedWsAttempts7 = 0
+        flushWorkspaceText7()
+    }
+
+    function flushWorkspaceText7() {
+        if (!active || !reactorMode7 || queuedWsId7 <= 0) return
+        var ok = pushText("WS " + queuedWsId7, "", queuedWsDir7, "short", true, { wsSeq: queuedWsSeq7 })
+        if (ok) {
+            activeWsSeq7 = queuedWsSeq7
+            pendingWsId = queuedWsId7
+            pendingWsDir = queuedWsDir7
+            wsRetryTimer.stop()
+            wsCountProc.seq = activeWsSeq7
+            queuedWsId7 = -1
+            queuedWsAttempts7 = 0
+            wsCountProc.running = false
+            wsCountProc.running = true
+            return
+        }
+        queuedWsAttempts7++
+        if (queuedWsAttempts7 <= 12) wsRetryTimer.restart()
+    }
+
+    function updateWorkspaceText7(seq, label) {
+        if (seq !== activeWsSeq7 || label === "") return
+        var now = Date.now()
+        var ps = pulses.slice(0)
+        for (var i = ps.length - 1; i >= 0; i--) {
+            var p = ps[i]
+            if (p && p.k === "text" && p.wsSeq === seq && now - p.t < pulseLife7(p)) {
+                p.r = label
+                p.grid = null
+                ps[i] = p
+                pulses = ps
+                root.requestFrame()
+                return
+            }
+        }
     }
 
     function eventAddr7(data) {
@@ -381,16 +461,6 @@ Item {
 
     Connections {
         target: Hyprland
-        function onFocusedWorkspaceChanged() {
-            var f = Hyprland.focusedWorkspace
-            var id = f ? f.id : -1
-            if (id > 0 && root.lastWsId > 0 && id !== root.lastWsId) {
-                // Quickshell's Hyprland.workspace mirror can be stale here; read the
-                // compositor's own snapshot once per switch for the visible app count.
-                root.requestWorkspaceText(id, id > root.lastWsId ? 1 : -1)
-            }
-            if (id > 0) root.lastWsId = id
-        }
         function onFocusedMonitorChanged() {
             var m = Hyprland.focusedMonitor
             if (m && root.monitor !== "" && m.name === root.monitor)
@@ -443,15 +513,29 @@ Item {
                     urgentProbe7.stop()
                 }
             }
+            else if (event.name === "workspacev2") {
+                root.handleWorkspaceV2Event7(event.data)
+            }
         }
+    }
+
+    Timer {
+        id: wsRetryTimer
+        interval: 250
+        repeat: false
+        running: false
+        onTriggered: root.flushWorkspaceText7()
     }
 
     Process {
         id: wsCountProc
+        property int seq: 0
         command: ["hyprctl", "workspaces", "-j"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
+                var seq = wsCountProc.seq
+                if (seq !== root.activeWsSeq7) return
                 var id = root.pendingWsId
                 if (id <= 0) return
                 var n = -1
@@ -464,7 +548,7 @@ Item {
                         }
                     }
                 } catch (e) {}
-                root.pushText("WS " + id, n >= 0 ? root.workspaceLabel(n) : "", root.pendingWsDir, "short")
+                if (n >= 0) root.updateWorkspaceText7(seq, root.workspaceLabel(n))
             }
         }
     }
@@ -605,7 +689,7 @@ Item {
         if (pushText(ev.l, ev.r, 1, "long")) lastReactorTs7 = ev.ts
     }
 
-    function pushText(l, r, dir, profile, force) {
+    function pushText(l, r, dir, profile, force, meta) {
         if (!active || !reactorMode7) return false
         l = sanitize7(l, 64); r = sanitize7(r, 28)
         if (l === "" && r === "") return false
@@ -621,15 +705,18 @@ Item {
             else if (!wn && pulses[i].w) return false
         }
         var lifeL = Math.min(9500, 4500 + l.length * 55)
-        ps.push({ t: tnow, k: "text", d: dir === undefined ? 1 : dir, l: l, r: r, w: wn,
-                  two: !wn && !sh && l.length > 24,
-                  life: wn ? 10000 : (sh ? 4200 : lifeL), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
-                  r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700),
-                  fade: wn ? 1100 : (sh ? 750 : 900) })
+        var pulse = { t: tnow, k: "text", d: dir === undefined ? 1 : dir, l: l, r: r, w: wn,
+                      two: !wn && !sh && l.length > 24,
+                      life: wn ? 10000 : (sh ? 4200 : lifeL), s0: sh ? 900 : 1500, s1: sh ? 1500 : 2300,
+                      r0: wn ? 8600 : (sh ? 3000 : lifeL - 1500), r1: wn ? 9400 : (sh ? 3600 : lifeL - 700),
+                      fade: wn ? 1100 : (sh ? 750 : 900) }
+        meta = meta || ({})
+        for (var mk in meta) pulse[mk] = meta[mk]
+        ps.push(pulse)
         pulses = ps
         animating7 = true
-        canvas.tick7 = 16
-        canvas.requestPaint()
+        root.setReactorFastTick7()
+        root.requestFrame()
         return true
     }
 
@@ -711,7 +798,7 @@ Item {
                 }
             }
             var last = recent[sig] || 0
-            if (armed7 && now - last > 8000) {
+            if (armed7 && now - last > 60000) {
                 recent[sig] = now
                 recentAiAnnounce7 = recent
                 pushAiModel7(tool, parts.model, parts.effort)
@@ -749,7 +836,7 @@ Item {
         } else if (kind === "win-close") {
             pushPulse("win", -1)
         } else if (kind === "monsweep" || kind === "sweep") {
-            pushPulse("monsweep", arg === "-1" ? -1 : 1, { life: 5200, gain: 0.82, count: 54 })
+            pushPulse("monsweep", arg === "-1" ? -1 : 1, { life: 5200, gain: 0.82, count: root.maxSweepParticleCount7 })
         } else if (kind === "pacman" || kind === "packages") {
             var parsedN = parseInt(arg || "3")
             var n = isFinite(parsedN) ? Math.max(1, parsedN) : 3
@@ -779,7 +866,7 @@ Item {
             warnQueue7 = []
             warnQueueTimer.stop()
             clearUrgent7()
-            canvas.requestPaint()
+            root.requestFrame()
         } else {
             pushText("REACTOR TEST", kind.toUpperCase(), 1, "short")
         }
@@ -1087,7 +1174,7 @@ Item {
         running: root.active && ((root.reactorMode7 && root.animating7)
                                  || (root.mode === 8 && root.animating8)
                                  || (!root.reactorMode7 && root.mode !== 8))
-        onTriggered: canvas.requestPaint()
+        onTriggered: root.requestFrame()
     }
 
     Canvas {
@@ -1505,7 +1592,7 @@ Item {
                 }
                 if (gaps7.length === 0) {
                     root.animating7 = false
-                    canvas.tick7 = 250
+                    root.setDormantTick7()
                     ctx.globalAlpha = 1.0
                     return
                 }
@@ -1625,7 +1712,7 @@ Item {
                         return
                     }
                     root.animating7 = false
-                    canvas.tick7 = 250
+                    root.setDormantTick7()
                     ctx.globalAlpha = 1.0
                     return
                 }
@@ -1817,7 +1904,8 @@ Item {
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
                 root.animating7 = root.ambientField7 ? true : alive7
-                canvas.tick7 = alive7 ? 16 : (root.ambientField7 ? root.ambientIdleTick7 : 250)
+                canvas.tick7 = alive7 ? root.reactorFrameTick7
+                                      : (root.ambientField7 ? root.ambientIdleTick7 : root.reactorDormantTick7)
                 ctx.globalAlpha = 1.0
                 return
             }

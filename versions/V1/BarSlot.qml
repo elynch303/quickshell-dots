@@ -813,15 +813,29 @@ PanelWindow {
             }
         }
 
-        // ── gap particle animation (flows in the split gaps when barAnim > 0) ──
-        ParticleStream {
+        // ── gap particle animation (flows in split gaps only when enabled) ──
+        Item {
+            id: particleLayer
             anchors.fill: parent
             z: 1                          // above the section pills, below the widgets
-            theme:  barSlot.root
-            layout: island
-            mode:   barSlot.root.barAnim
-            active: barSlot.root.barAnim > 0 && island.runs.length > 1
-            monitor: barSlot.screen ? barSlot.screen.name : ""
+            visible: barSlot.root.barAnim > 0 && island.runs.length > 1
+
+            LazyLoader {
+                active: particleLayer.visible
+
+                ParticleStream {
+                    parent: particleLayer
+                    x: 0
+                    y: 0
+                    width: particleLayer.width
+                    height: particleLayer.height
+                    theme:  barSlot.root
+                    layout: island
+                    mode:   barSlot.root.barAnim
+                    active: true
+                    monitor: barSlot.screen ? barSlot.screen.name : ""
+                }
+            }
         }
 
         // ── region models (physical L→R order) ──
