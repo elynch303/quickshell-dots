@@ -41,10 +41,8 @@ Item {
 
     // colour shared by the drawn battery body, fill and nub
     readonly property color battColor:
-        full ? root.seal
-        : charging ? root.indigo
-        : (low ? root.seal
-        : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.7))
+        (charging || full) ? root.indigo
+        : root.seal
 
     implicitWidth:  hasBattery ? (row.implicitWidth + 18) : 0
     implicitHeight: 28
@@ -152,7 +150,7 @@ Item {
                 // charging bolt overlay — clear "is charging" cue
                 Canvas {
                     id: bolt
-                    visible: rootMod.charging && !rootMod.full
+                    visible: rootMod.charging || rootMod.full
                     anchors.centerIn: parent
                     width: 6
                     height: 8
@@ -194,11 +192,7 @@ Item {
         UiText {
             anchors.verticalCenter: parent.verticalCenter
             text: rootMod.percent + "%"
-            color: {
-                if (rootMod.charging || rootMod.full) return rootMod.battColor
-                if (rootMod.low) return root.seal
-                return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
-            }
+            color: rootMod.battColor
             font.family: root.mono
             font.pixelSize: 12
             Behavior on color { ColorAnimation { duration: 200 } }

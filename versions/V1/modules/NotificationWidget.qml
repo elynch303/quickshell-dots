@@ -18,7 +18,7 @@ Item {
         text: "\uE7F4"   // notifications (bell)
         font.pixelSize: 16
         color: root.notifCount > 0
-            ? root.ink
+            ? root.seal
             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4)
         Behavior on color { ColorAnimation { duration: 150 } }
     }
