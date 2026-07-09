@@ -12,8 +12,8 @@ Item {
     opacity: root.modCpu ? 1 : 0
     Behavior on opacity      { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-    property int percent: 0
-    property var history: []
+    readonly property int percent: root.systemCpuPercent
+    readonly property var history: root.systemCpuHistory
     readonly property int maxSamples: 30
     readonly property string tooltipText: percent + "%"
 
@@ -134,36 +134,6 @@ Item {
             font.family: root.mono
             font.pixelSize: 12
         }
-    }
-
-    Process {
-        id: cpuProc
-        command: ["bash", "-c",
-            "read _ u1 n1 s1 i1 w1 q1 sq1 st1 _ < /proc/stat && " +
-            "sleep 0.5 && " +
-            "read _ u2 n2 s2 i2 w2 q2 sq2 st2 _ < /proc/stat && " +
-            "di=$(( (i2+w2)-(i1+w1) )) && " +
-            "dn=$(( (u2+n2+s2+q2+sq2+st2)-(u1+n1+s1+q1+sq1+st1) )) && " +
-            "dt=$((di+dn)) && " +
-            "echo $((dt>0?100*dn/dt:0))"
-        ]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var v = parseInt(this.text.trim())
-                if (!isNaN(v)) {
-                    rootMod.percent = Math.max(0, Math.min(100, v))
-                    var h = rootMod.history.slice()
-                    h.push(rootMod.percent / 100)
-                    if (h.length > rootMod.maxSamples) h.shift()
-                    rootMod.history = h
-                }
-            }
-        }
-    }
-
-    Timer {
-        interval: 2000; running: root.modCpu; repeat: true; triggeredOnStart: true
-        onTriggered: { cpuProc.running = false; cpuProc.running = true }
     }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }

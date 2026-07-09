@@ -19,7 +19,7 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    property int cpuPct: 0
+    readonly property int cpuPct: root.systemCpuPercent
     property string gpuDriver: ""
     property int gpuUtil: 0
     property int gpuTemp: 0
@@ -234,23 +234,16 @@ PanelWindow {
     Process {
         id: dataProc
         command: ["bash", "-c",
-            "read _ u1 n1 s1 i1 w1 q1 sq1 st1 _ < /proc/stat && " +
-            "sleep 0.5 && " +
-            "read _ u2 n2 s2 i2 w2 q2 sq2 st2 _ < /proc/stat && " +
-            "di=$(( (i2+w2)-(i1+w1) )) && " +
-            "dn=$(( (u2+n2+s2+q2+sq2+st2)-(u1+n1+s1+q1+sq1+st1) )) && " +
-            "dt=$((di+dn)) && " +
-            "echo CPU $((dt>0?100*dn/dt:0))%; " +
             "if command -v nvidia-smi &>/dev/null; then " +
             "  nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null | " +
             "  awk -F', ' '{printf \"GPU %s %s %s %s\\n\", $1, $2, $3, $4}'; " +
             "elif [ -f /sys/class/drm/card0/device/gpu_busy_percent ]; then " +
             "  read p < /sys/class/drm/card0/device/gpu_busy_percent; " +
-            "  t=$(cat /sys/class/drm/card0/device/hwmon/hwmon*/temp1_input 2>/dev/null | head -1); " +
             "  echo \"GPU $p 0 0 0\"; " +
             "elif [ -f /sys/class/hwmon/hwmon2/device/gpu_busy_percent ]; then " +
             "  read p < /sys/class/hwmon/hwmon2/device/gpu_busy_percent; " +
             "  echo \"GPU $p 0 0 0\"; " +
+            "else echo GPU none 0 0 0; " +
             "fi"
         ]
         stdout: StdioCollector {
@@ -258,10 +251,8 @@ PanelWindow {
                 var lines = this.text.trim().split("\n")
                 for (var i = 0; i < lines.length; i++) {
                     var parts = lines[i].trim().split(/\s+/)
-                    if (parts[0] === "CPU" && parts.length >= 2) {
-                        cpuPanel.cpuPct = parseInt(parts[1]) || 0
-                    } else if (parts[0] === "GPU" && parts.length >= 2) {
-                        cpuPanel.gpuDriver = "detected"
+                    if (parts[0] === "GPU" && parts.length >= 2) {
+                        cpuPanel.gpuDriver = parts[1] === "none" ? "none" : "detected"
                         cpuPanel.gpuUtil = parseInt(parts[1]) || 0
                         cpuPanel.gpuTemp = parseInt(parts[2]) || 0
                         cpuPanel.gpuMemUsed = parseInt(parts[3]) || 0

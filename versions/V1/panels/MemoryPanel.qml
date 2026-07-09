@@ -19,13 +19,13 @@ PanelWindow {
     readonly property int barBottom: 35
     readonly property int gap: 8
 
-    property int memTotal: 0
-    property int memAvail: 0
-    property int memFree: 0
-    property int memBuffers: 0
-    property int memCached: 0
-    readonly property int memUsed: Math.max(0, memTotal - memAvail)
-    readonly property int pct: memTotal > 0 ? Math.round(memUsed / memTotal * 100) : 0
+    readonly property int memTotal: root.systemMemTotalMiB
+    readonly property int memAvail: root.systemMemAvailMiB
+    readonly property int memFree: root.systemMemFreeMiB
+    readonly property int memBuffers: root.systemMemBuffersMiB
+    readonly property int memCached: root.systemMemCachedMiB
+    readonly property int memUsed: root.systemMemUsedMiB
+    readonly property int pct: root.systemMemPercent
     readonly property real usedGiB: memUsed / 1024
     readonly property real totalGiB: memTotal / 1024
 
@@ -185,33 +185,7 @@ PanelWindow {
     }
 
     Process {
-        id: memData
-        command: ["bash", "-c",
-            "awk '/MemTotal:/ {t=$2} /MemFree:/ {f=$2} /MemAvailable:/ {a=$2} /Buffers:/ {b=$2} /^Cached:/ {c=$2} END{printf \"%d %d %d %d %d\", t/1024, a/1024, f/1024, b/1024, c/1024}' /proc/meminfo"
-        ]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var parts = this.text.trim().split(/\s+/)
-                if (parts.length >= 5) {
-                    memPanel.memTotal = parseInt(parts[0]) || 0
-                    memPanel.memAvail = parseInt(parts[1]) || 0
-                    memPanel.memFree = parseInt(parts[2]) || 0
-                    memPanel.memBuffers = parseInt(parts[3]) || 0
-                    memPanel.memCached = parseInt(parts[4]) || 0
-                }
-            }
-        }
-    }
-
-    Process {
         id: btopRunner
         command: ["bash", "-c", "omarchy-launch-floating-terminal-with-presentation 'btop'"]
-    }
-
-    onVisibleChanged: {
-        if (visible) {
-            memData.running = false
-            memData.running = true
-        }
     }
 }

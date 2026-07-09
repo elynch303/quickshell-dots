@@ -705,6 +705,101 @@ Item {
         onTriggered: theme.refreshAiUsage(theme.aiUsageVisible)
     }
 
+    // ── Central system telemetry ──
+    // One ShellRoot-level sampler feeds all monitor BarSlots. This replaces
+    // per-widget bash/awk polling for CPU and memory, so adding monitors does not
+    // multiply these status process chains.
+    property int systemCpuPercent: 0
+    property var systemCpuHistory: []
+    readonly property int systemCpuMaxSamples: 30
+    property real _systemCpuPrevIdle: -1
+    property real _systemCpuPrevTotal: -1
+
+    property int systemMemTotalMiB: 0
+    property int systemMemAvailMiB: 0
+    property int systemMemFreeMiB: 0
+    property int systemMemBuffersMiB: 0
+    property int systemMemCachedMiB: 0
+    readonly property int systemMemUsedMiB: Math.max(0, systemMemTotalMiB - systemMemAvailMiB)
+    readonly property int systemMemPercent: systemMemTotalMiB > 0
+        ? Math.max(0, Math.min(100, Math.round(systemMemUsedMiB / systemMemTotalMiB * 100)))
+        : 0
+    readonly property real systemMemUsedGiB: systemMemUsedMiB / 1024
+    readonly property real systemMemTotalGiB: systemMemTotalMiB / 1024
+
+    function parseSystemCpu(text) {
+        var lines = String(text || "").split("\n")
+        if (lines.length === 0 || lines[0].indexOf("cpu ") !== 0) return
+        var parts = lines[0].trim().split(/\s+/)
+        if (parts.length < 8) return
+
+        var idle = parseFloat(parts[4]) + parseFloat(parts[5])
+        var total = 0
+        for (var i = 1; i < parts.length; i++) {
+            var v = parseFloat(parts[i])
+            if (!isNaN(v)) total += v
+        }
+        if (isNaN(idle) || isNaN(total) || total <= 0) return
+
+        if (_systemCpuPrevTotal >= 0 && total > _systemCpuPrevTotal) {
+            var totalDelta = total - _systemCpuPrevTotal
+            var idleDelta = idle - _systemCpuPrevIdle
+            var busy = totalDelta > 0 ? Math.round((totalDelta - idleDelta) / totalDelta * 100) : 0
+            systemCpuPercent = Math.max(0, Math.min(100, busy))
+
+            var h = systemCpuHistory.slice()
+            h.push(systemCpuPercent / 100)
+            if (h.length > systemCpuMaxSamples) h.shift()
+            systemCpuHistory = h
+        }
+
+        _systemCpuPrevIdle = idle
+        _systemCpuPrevTotal = total
+    }
+
+    function parseSystemMem(text) {
+        var total = 0, avail = 0, free = 0, buffers = 0, cached = 0
+        var lines = String(text || "").split("\n")
+        for (var i = 0; i < lines.length; i++) {
+            var parts = lines[i].trim().split(/\s+/)
+            if (parts.length < 2) continue
+            var value = parseInt(parts[1])
+            if (isNaN(value)) continue
+            if (parts[0] === "MemTotal:") total = value
+            else if (parts[0] === "MemAvailable:") avail = value
+            else if (parts[0] === "MemFree:") free = value
+            else if (parts[0] === "Buffers:") buffers = value
+            else if (parts[0] === "Cached:") cached = value
+        }
+        if (total <= 0) return
+        systemMemTotalMiB = Math.round(total / 1024)
+        systemMemAvailMiB = Math.round(avail / 1024)
+        systemMemFreeMiB = Math.round(free / 1024)
+        systemMemBuffersMiB = Math.round(buffers / 1024)
+        systemMemCachedMiB = Math.round(cached / 1024)
+    }
+
+    FileView {
+        id: systemCpuFile
+        path: "/proc/stat"
+        onLoaded: theme.parseSystemCpu(systemCpuFile.text())
+    }
+
+    FileView {
+        id: systemMemFile
+        path: "/proc/meminfo"
+        onLoaded: theme.parseSystemMem(systemMemFile.text())
+    }
+
+    Timer {
+        interval: (theme.modCpu || theme.cpuVisible || theme.modMemory || theme.memVisible) ? 2000 : 10000
+        running: true; repeat: true; triggeredOnStart: true
+        onTriggered: {
+            systemCpuFile.reload()
+            systemMemFile.reload()
+        }
+    }
+
     // ── Memory panel state ──
     property bool memVisible: false
     onMemVisibleChanged: popupOpened("memVisible")

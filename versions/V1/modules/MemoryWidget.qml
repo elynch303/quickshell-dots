@@ -13,10 +13,11 @@ Item {
 
     Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-    property int percent: 0
-    property real usedGiB: 0.0
-    property real totalGiB: 0.0
-    readonly property string tooltipText: usedGiB.toFixed(1) + "/" + totalGiB.toFixed(0) + " GB"
+    readonly property int percent: root.systemMemPercent
+    readonly property real usedGiB: root.systemMemUsedGiB
+    readonly property real totalGiB: root.systemMemTotalGiB
+    readonly property string usedLabel: String(Math.round(usedGiB)).padStart(2, '0') + "G"
+    readonly property string tooltipText: usedGiB.toFixed(1) + "/" + totalGiB.toFixed(0) + "G"
 
     Rectangle {
         x: 0; anchors.verticalCenter: parent.verticalCenter
@@ -94,7 +95,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
 
             UiText {
-                text: String(Math.round(rootMod.usedGiB)).padStart(2, '0') + "G"
+                text: rootMod.usedLabel
                 color: root.seal
                 font.family: root.mono
                 font.pixelSize: 12
@@ -154,34 +155,11 @@ Item {
         UiText {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.compactMemory
-            text: String(Math.round(rootMod.usedGiB)) + "G"
+            text: rootMod.usedLabel
             color: root.seal
             font.family: root.mono
             font.pixelSize: 12
         }
-    }
-
-    Process {
-        id: memProc
-        command: ["bash", "-c", "awk '/MemTotal:/ {t=$2} /MemAvailable:/ {a=$2} END{printf \"%.0f %.0f\\n\", t, a}' /proc/meminfo"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var parts = this.text.trim().split(/\s+/)
-                if (parts.length < 2) return
-                var totalKB = parseFloat(parts[0])
-                var availKB = parseFloat(parts[1])
-                if (isNaN(totalKB) || isNaN(availKB) || totalKB <= 0) return
-                var usedKB = Math.max(0, totalKB - availKB)
-                rootMod.totalGiB = totalKB / (1024 * 1024)
-                rootMod.usedGiB  = usedKB  / (1024 * 1024)
-                rootMod.percent  = Math.max(0, Math.min(100, Math.round(usedKB / totalKB * 100)))
-            }
-        }
-    }
-
-    Timer {
-        interval: 3000; running: root.modMemory; repeat: true; triggeredOnStart: true
-        onTriggered: { memProc.running = false; memProc.running = true }
     }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
