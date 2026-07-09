@@ -34,12 +34,76 @@ PanelWindow {
     property int  selectedIndex: 0
     property string filterText:  ""
     property string currentImage: ""
+    property string loadedMode:   ""
+
+    property var    wallpaperImageArray: []
+    property int    wallpaperSelectedIndex: 0
+    property string wallpaperCurrentImage: ""
+    property string wallpaperLastScan: ""
+    property bool   wallpaperImagesLoaded: false
+    property bool   wallpaperScanDone: false
+
+    property var    themeImageArray: []
+    property int    themeSelectedIndex: 0
+    property string themeCurrentImage: ""
+    property string themeLastScan: ""
+    property bool   themeImagesLoaded: false
+    property bool   themeScanDone: false
 
     visible: root.imagePickerVisible && active
 
     // ── open / style gating ──
+    function modeKey() { return root.imagePickerMode === "theme" ? "theme" : "wallpaper" }
+    function scanCachePathFor(mode) {
+        return Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (mode === "theme" ? "theme" : "wallpaper")
+    }
+    function saveModeState() {
+        if (panel.loadedMode === "theme") {
+            panel.themeImageArray = panel.imageArray
+            panel.themeSelectedIndex = panel.selectedIndex
+            panel.themeCurrentImage = panel.currentImage
+            panel.themeLastScan = panel._lastScan
+            panel.themeImagesLoaded = panel.imagesLoaded
+            panel.themeScanDone = panel.scanDone
+        } else if (panel.loadedMode === "wallpaper") {
+            panel.wallpaperImageArray = panel.imageArray
+            panel.wallpaperSelectedIndex = panel.selectedIndex
+            panel.wallpaperCurrentImage = panel.currentImage
+            panel.wallpaperLastScan = panel._lastScan
+            panel.wallpaperImagesLoaded = panel.imagesLoaded
+            panel.wallpaperScanDone = panel.scanDone
+        }
+    }
+    function restoreModeState(mode) {
+        if (mode === "theme") {
+            panel.imageArray = panel.themeImageArray || []
+            panel.selectedIndex = Math.max(0, Math.min(panel.themeSelectedIndex, Math.max(0, panel.imageArray.length - 1)))
+            panel.currentImage = panel.themeCurrentImage
+            panel._lastScan = panel.themeLastScan
+            panel.imagesLoaded = panel.themeImagesLoaded && panel.imageArray.length > 0
+            panel.scanDone = panel.themeScanDone
+        } else {
+            panel.imageArray = panel.wallpaperImageArray || []
+            panel.selectedIndex = Math.max(0, Math.min(panel.wallpaperSelectedIndex, Math.max(0, panel.imageArray.length - 1)))
+            panel.currentImage = panel.wallpaperCurrentImage
+            panel._lastScan = panel.wallpaperLastScan
+            panel.imagesLoaded = panel.wallpaperImagesLoaded && panel.imageArray.length > 0
+            panel.scanDone = panel.wallpaperScanDone
+        }
+        panel.loadedMode = mode
+    }
+    function startCurrentForMode(mode) {
+        currentProc.requestMode = mode
+        currentProc.running = false
+        currentProc.running = true
+    }
     function syncOpen() {
+        var mode = panel.modeKey()
         if (root.imagePickerVisible && active) {
+            if (panel.loadedMode !== mode) {
+                panel.saveModeState()
+                panel.restoreModeState(mode)
+            }
             panel.layoutSettled = false
             panel.filterText    = ""
             if (!imagesLoaded) {
@@ -53,8 +117,9 @@ PanelWindow {
                     }
                 })
             }
-            currentProc.running = false; currentProc.running = true
+            panel.startCurrentForMode(mode)
         } else {
+            panel.saveModeState()
             panel.scanDone = false
             panel.layoutSettled = false
         }
@@ -62,13 +127,15 @@ PanelWindow {
     Connections {
         target: root
         function onImagePickerVisibleChanged() { panel.syncOpen() }
+        function onImagePickerModeChanged()    { panel.syncOpen() }
         function onPickerStyleChanged()         { panel.syncOpen() }
     }
 
     // step 1: current image
     Process {
         id: currentProc
-        command: panel.isThemeMode
+        property string requestMode: "wallpaper"
+        command: requestMode === "theme"
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
                "name=$(cat ~/.config/omarchy/current/theme.name 2>/dev/null || true); " +
@@ -77,12 +144,17 @@ PanelWindow {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
+                var mode = currentProc.requestMode
+                if (mode !== panel.modeKey() || !root.imagePickerVisible || !panel.active) return
                 panel.currentImage = this.text.trim()
                 // instant: paint from the cached scan while we refresh live
+                cacheProc.requestMode = mode
+                cacheProc.command = ["cat", panel.scanCachePathFor(mode)]
                 cacheProc.running = false; cacheProc.running = true
                 // live refresh — tee the output into the cache for next time
-                var cmd = panel.buildScanCmd()
-                cmd[2] = cmd[2] + " | tee " + panel.shq(panel.scanCachePath)
+                var cmd = panel.buildScanCmd(mode)
+                cmd[2] = cmd[2] + " | tee " + panel.shq(panel.scanCachePathFor(mode))
+                scanProc.requestMode = mode
                 scanProc.command = cmd
                 scanProc.running = false; scanProc.running = true
             }
@@ -92,15 +164,16 @@ PanelWindow {
     // step 2: scan images (fast glob, same as the other pickers)
     Process {
         id: scanProc
+        property string requestMode: "wallpaper"
         command: []
         stdout: StdioCollector {
             waitForEnd: true
-            onStreamFinished: panel.applyScan(text, false)
+            onStreamFinished: panel.applyScan(text, false, scanProc.requestMode)
         }
     }
 
-    function buildScanCmd() {
-        if (isThemeMode) {
+    function buildScanCmd(mode) {
+        if (mode === "theme") {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
                 "CACHE=$HOME/.cache/quickshell-theme-picker; mkdir -p \"$CACHE\";",
@@ -175,9 +248,10 @@ PanelWindow {
 
     // ── scan-result cache → instant (re)open: paint last result immediately,
     // refresh live in the background, only reassign if the list actually changed ──
-    readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isThemeMode ? "theme" : "wallpaper")
     property string _lastScan: ""
-    function applyScan(text, fromCache) {
+    function applyScan(text, fromCache, mode) {
+        mode = mode || panel.modeKey()
+        if (mode !== panel.modeKey() || panel.loadedMode !== mode || !root.imagePickerVisible || !panel.active) return
         var t = String(text || "")
         if (fromCache && !t.trim()) return   // cache empty → wait for live scan; live empty → fall through to empty-state
         if (fromCache && panel.imagesLoaded) return          // live scan already won
@@ -187,8 +261,9 @@ PanelWindow {
         panel.imageArray    = images
         panel.selectedIndex = Model.indexForSelectedImage(images, panel.currentImage)
         panel.imagesLoaded  = images.length > 0; panel.scanDone = true
+        panel.saveModeState()
         Qt.callLater(function() {
-            if (root.imagePickerVisible && panel.active) {
+            if (root.imagePickerVisible && panel.active && panel.modeKey() === mode && panel.loadedMode === mode) {
                 panel.layoutSettled = true
                 if (panel.imageArray.length > 0) carousel.forceActiveFocus()   // keep Esc-catcher focused when empty
                 if (!fromCache) warmTimer.restart()
@@ -197,8 +272,9 @@ PanelWindow {
     }
     Process {
         id: cacheProc
-        command: ["cat", panel.scanCachePath]
-        stdout: StdioCollector { onStreamFinished: panel.applyScan(this.text, true) }
+        property string requestMode: "wallpaper"
+        command: []
+        stdout: StdioCollector { onStreamFinished: panel.applyScan(this.text, true, cacheProc.requestMode) }
     }
 
     // ── background pre-warm (shared 512px cache; niced; after open settles) ──
