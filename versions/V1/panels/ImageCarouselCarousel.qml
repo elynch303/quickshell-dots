@@ -438,8 +438,8 @@ PanelWindow {
                                 anchors.fill: parent
                                 source: (panel.ready && slice.nearby) ? slice.thumbPath : ""
                                 fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
-                                sourceSize.width:  panel.expandedW
-                                sourceSize.height: panel.expandedH
+                                sourceSize.width:  slice.selected ? panel.expandedW : panel.sliceW
+                                sourceSize.height: slice.selected ? panel.expandedH : panel.sliceH
                             }
                             Rectangle {
                                 anchors.fill: parent
