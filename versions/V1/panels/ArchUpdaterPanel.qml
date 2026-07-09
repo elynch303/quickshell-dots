@@ -673,7 +673,7 @@ PanelWindow {
 
                             Rectangle {
                                 anchors.bottom: parent.bottom
-                                width: parent.width; height: 1
+                                width: parent.width - 16; height: 1
                                 color: root.sep
                                 visible: index < root.archUpdates.length - 1
                             }
