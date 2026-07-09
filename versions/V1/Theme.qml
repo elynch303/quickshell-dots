@@ -908,8 +908,94 @@ Item {
     property bool modNetwork:    true
     property string networkMode: "none"   // mirrored from NetworkWidget: wifi/ethernet/none
     property bool omarchyUpdateAvail: false   // mirrored from UpdateWidget (6h poll)
-    property bool notifSilenced: false        // mirrored from NotificationSilenceWidget (DND)
-    property string voxState: "idle"          // mirrored from VoxtypeWidget: idle/recording/transcribing
+    // Centralized status indicators. These live on Theme so BarSlot-per-monitor
+    // widgets don't each spawn their own status poller.
+    property bool hypridleAwake: false        // hypridle absent/off → stay-awake indicator
+    property bool notifSilenced: false        // mako do-not-disturb mode
+    property bool screenRecording: false
+    property int screenRecordingElapsed: 0
+    property string voxState: "idle"          // idle/recording/transcribing
+    property string voxHint: ""
+    property bool voxAvailable: true
+    readonly property bool _statusPollingWanted: modStatus || barAnim === 7
+    readonly property bool _voxActive: voxState === "recording" || voxState === "transcribing"
+
+    function refreshStatusIndicators() {
+        if (statusProc.running) return
+        statusProc.running = true
+    }
+    function refreshVoxtypeStatus() {
+        if (!voxAvailable && !modStatus && barAnim !== 7) return
+        if (voxProc.running) return
+        voxProc.running = true
+    }
+
+    Process {
+        id: statusProc
+        command: ["bash", "-c",
+            "idle=OFF; pgrep -x hypridle >/dev/null && idle=ON; " +
+            "dnd=OFF; makoctl mode 2>/dev/null | grep -q 'do-not-disturb' && dnd=ON; " +
+            "pid=$(pgrep -f '^gpu-screen-recorder' | head -1); " +
+            "if [ -n \"$pid\" ]; then et=$(ps -o etimes= -p \"$pid\" 2>/dev/null | tr -d ' '); rec=\"REC ${et:-0}\"; else rec=\"OFF 0\"; fi; " +
+            "printf 'IDLE %s\\nDND %s\\nREC %s\\n' \"$idle\" \"$dnd\" \"$rec\""
+        ]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var lines = this.text.trim().split("\n")
+                for (var i = 0; i < lines.length; i++) {
+                    var parts = lines[i].trim().split(/\s+/)
+                    if (parts.length < 2) continue
+                    if (parts[0] === "IDLE") {
+                        theme.hypridleAwake = parts[1] === "OFF"
+                    } else if (parts[0] === "DND") {
+                        theme.notifSilenced = parts[1] === "ON"
+                    } else if (parts[0] === "REC") {
+                        theme.screenRecording = parts[1] === "REC"
+                        theme.screenRecordingElapsed = theme.screenRecording ? (parseInt(parts[2]) || 0) : 0
+                    }
+                }
+            }
+        }
+    }
+    Timer {
+        interval: theme.screenRecording ? 1000 : 1500
+        running: theme._statusPollingWanted
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: theme.refreshStatusIndicators()
+    }
+
+    Process {
+        id: voxProc
+        command: ["bash", "-c",
+            "if command -v voxtype >/dev/null 2>&1; then " +
+            "timeout 1 voxtype status --extended --format json 2>/dev/null | jq -r '[(.class // .alt // \"idle\"), ((.tooltip // \"\") | split(\"\\n\")[0])] | @tsv' 2>/dev/null; " +
+            "else echo 'MISSING'; fi"
+        ]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var parts = this.text.trim().split("\t")
+                if (parts[0] === "MISSING") {
+                    theme.voxAvailable = false
+                    theme.voxState = "idle"
+                    theme.voxHint = ""
+                    return
+                }
+                theme.voxAvailable = true
+                theme.voxState = parts[0] || "idle"
+                theme.voxHint = parts[1] || ""
+            }
+        }
+    }
+    Timer {
+        interval: theme._voxActive ? 1000 : (theme.voxAvailable ? 10000 : 60000)
+        running: theme._statusPollingWanted
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: theme.refreshVoxtypeStatus()
+    }
     // battery presence (laptop) — drives the Battery indicator tile's visibility (shown only
     // where a battery exists, like Brightness uses hasBacklight). Direct UPower check, event-driven.
     readonly property bool hasBattery: UPower.displayDevice !== null && UPower.displayDevice.isLaptopBattery

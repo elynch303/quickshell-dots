@@ -6,8 +6,7 @@ Item {
     id: rootMod
     required property var root
 
-    property bool silenced: false
-    onSilencedChanged: root.notifSilenced = silenced   // mirror for the swarm reactor
+    readonly property bool silenced: root.notifSilenced
 
     visible: silenced
     implicitWidth: silenced ? 20 : 0
@@ -24,20 +23,10 @@ Item {
     }
 
     Process {
-        id: dndProc
-        command: ["bash", "-c", "makoctl mode 2>/dev/null | grep -q 'do-not-disturb' && echo ON || echo OFF"]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: { rootMod.silenced = this.text.trim() === "ON" }
-        }
+        id: toggleProc
+        command: ["bash", "-c", "omarchy-toggle-notification-silencing"]
+        onExited: root.refreshStatusIndicators()
     }
-
-    Timer {
-        interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { dndProc.running = false; dndProc.running = true }
-    }
-
-    Process { id: toggleProc; command: ["bash", "-c", "omarchy-toggle-notification-silencing"] }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
@@ -49,7 +38,6 @@ Item {
         onClicked: {
             tip.hide()
             toggleProc.running = false; toggleProc.running = true
-            Qt.callLater(function() { dndProc.running = false; dndProc.running = true })
         }
     }
 }

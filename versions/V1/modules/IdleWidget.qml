@@ -7,7 +7,7 @@ Item {
     required property var root
 
     // "stay awake" mode active when hypridle is NOT running
-    property bool awake: false
+    readonly property bool awake: root.hypridleAwake
 
     visible: awake
     implicitWidth: awake ? 20 : 0
@@ -25,21 +25,10 @@ Item {
     }
 
     Process {
-        id: idleProc
-        command: ["bash", "-c", "pgrep -x hypridle >/dev/null && echo ON || echo OFF"]
-        running: false
-        stdout: StdioCollector {
-            // hypridle ON → normal idle; OFF → stay-awake mode (show icon)
-            onStreamFinished: { rootMod.awake = this.text.trim() === "OFF" }
-        }
+        id: toggleProc
+        command: ["bash", "-c", "omarchy-toggle-idle"]
+        onExited: root.refreshStatusIndicators()
     }
-
-    Timer {
-        interval: 2000; running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { idleProc.running = false; idleProc.running = true }
-    }
-
-    Process { id: toggleProc; command: ["bash", "-c", "omarchy-toggle-idle"] }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
@@ -51,7 +40,6 @@ Item {
         onClicked: {
             tip.hide()
             toggleProc.running = false; toggleProc.running = true
-            Qt.callLater(function() { idleProc.running = false; idleProc.running = true })
         }
     }
 }

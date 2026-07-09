@@ -219,10 +219,13 @@ PanelWindow {
         root.notifVisible = false
     }
 
-    // ── poll cadence: fast while open, slow when closed (badge still updates) ──
+    // ── poll cadence: fast while open, much slower when closed.
+    // Opening the panel still triggers an immediate refresh below; the closed
+    // cadence only keeps the badge/history roughly warm without parsing mako
+    // JSON every few seconds in idle.
     Timer {
-        interval: notifPanel.visible ? 1500 : 3500
-        running: true; repeat: true; triggeredOnStart: true
+        interval: notifPanel.visible ? 1500 : 10000
+        running: notifPanel.cacheLoaded; repeat: true; triggeredOnStart: true
         onTriggered: notifPanel.poll()
     }
 

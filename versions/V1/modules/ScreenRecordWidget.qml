@@ -6,8 +6,8 @@ Item {
     id: rootMod
     required property var root
 
-    property bool recording: false
-    property int  elapsed:   0   // seconds
+    readonly property bool recording: root.screenRecording
+    readonly property int  elapsed:   root.screenRecordingElapsed   // seconds
 
     visible: implicitWidth > 0.5
     implicitWidth: recording ? row.implicitWidth + 6 : 0
@@ -58,35 +58,10 @@ Item {
     }
 
     Process {
-        id: recProc
-        command: ["bash", "-c",
-            "PID=$(pgrep -f '^gpu-screen-recorder' | head -1); " +
-            "if [ -n \"$PID\" ]; then echo \"REC $(ps -o etimes= -p $PID 2>/dev/null | tr -d ' ')\"; else echo OFF; fi"
-        ]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var t = this.text.trim()
-                if (t.indexOf("REC") === 0) {
-                    rootMod.recording = true
-                    rootMod.elapsed = parseInt(t.split(" ")[1]) || 0
-                } else {
-                    rootMod.recording = false
-                    rootMod.elapsed = 0
-                }
-            }
-        }
+        id: toggleProc
+        command: ["bash", "-c", "omarchy-capture-screenrecording --stop-recording"]
+        onExited: root.refreshStatusIndicators()
     }
-
-    Timer {
-        // poll fast only while recording (live elapsed); slow when idle — just detects an
-        // externally-started recording within ~2s. Cuts the always-on 1s idle poll (F7-class).
-        interval: rootMod.recording ? 1000 : 2000
-        running: true; repeat: true; triggeredOnStart: true
-        onTriggered: { recProc.running = false; recProc.running = true }
-    }
-
-    Process { id: toggleProc; command: ["bash", "-c", "omarchy-capture-screenrecording --stop-recording"] }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }
 
@@ -98,7 +73,6 @@ Item {
         onClicked: {
             tip.hide()
             toggleProc.running = false; toggleProc.running = true
-            Qt.callLater(function() { recProc.running = false; recProc.running = true })
         }
     }
 }
