@@ -14,7 +14,9 @@ Item {
     property string monitor: ""      // this bar's output (for monitor-focus pulses)
     readonly property bool reactorMode7: mode === 7
     readonly property bool ambientField7: mode === 7
-    readonly property int reactorFrameTick7: 33
+    readonly property int reactorFrameTick7: 16
+    readonly property int reactorAiFrameTick7: 16
+    readonly property int reactorHoldTick7: 16
     readonly property int reactorDormantTick7: 500
     readonly property int maxPulseCount7: 8
     readonly property int maxSweepParticleCount7: 36
@@ -61,6 +63,8 @@ Item {
     property var recentAiAnnounce7: ({})
     property var recentOpen7: ({})
     property var pendingAiOpen7: ({})
+    readonly property int aiGlobalDedupeMs7: 12000
+    readonly property int aiRootDedupeMs7: 60000
     property bool armedIntroShown7: false
     property double lastReactorTs7: 0
     property bool reactorFeedBaselined7: false
@@ -686,7 +690,12 @@ Item {
         var now = Date.now()
         if (ev.ts > now + 300000 || ev.ts <= lastReactorTs7) return
         if (!armed7 || !active || !reactorMode7) return
-        if (pushText(ev.l, ev.r, 1, "long")) lastReactorTs7 = ev.ts
+        if (String(ev.l || "").trim().toUpperCase() === "AI") {
+            var tm = aiParts7(ev.r)
+            if (pushAiModel7(tm.tool, tm.model, tm.effort)) lastReactorTs7 = ev.ts
+        } else if (pushText(ev.l, ev.r, 1, "long")) {
+            lastReactorTs7 = ev.ts
+        }
     }
 
     function pushText(l, r, dir, profile, force, meta) {
@@ -765,14 +774,50 @@ Item {
         return sanitize7(e, 8)
     }
 
-    function pushAiModel7(tool, model, effort) {
+    function pruneRecentAiAnnounce7(now) {
+        var recent = recentAiAnnounce7 || ({})
+        var changed = false
+        for (var k in recent) {
+            if (!(recent[k] > 0) || now - recent[k] > aiRootDedupeMs7) {
+                delete recent[k]
+                changed = true
+            }
+        }
+        if (changed) recentAiAnnounce7 = recent
+        return recent
+    }
+
+    function pushAiModel7(tool, model, effort, rootPid) {
         var t = sanitize7(tool, 16)
         var e = cleanAiEffort7(effort, t)
         var m = cleanAiModel7(model, e !== "" ? 18 : 28)
         if (t === "") return
         if (m === "") m = "ACTIVE"
         if (e !== "") m = sanitize7(m + " + " + e, 28)
-        pushText(t, m, 1, "long")
+
+        var now = Date.now()
+        var recent = pruneRecentAiAnnounce7(now)
+        var visualSig = t + "|" + m
+        var globalSig = "model|" + visualSig
+        var rootText = String(rootPid || "").trim()
+        var rootSig = rootText !== "" ? "root|" + rootText + "|" + visualSig : ""
+        var lastGlobal = recent[globalSig] || 0
+        var lastRoot = rootSig !== "" ? (recent[rootSig] || 0) : 0
+        if ((lastGlobal > 0 && now - lastGlobal < aiGlobalDedupeMs7)
+                || (lastRoot > 0 && now - lastRoot < aiRootDedupeMs7)) {
+            recentAiAnnounce7 = recent
+            return false
+        }
+
+        if (!pushText(t, m, 1, "long", false, { ai: true })) {
+            recentAiAnnounce7 = recent
+            return false
+        }
+
+        recent[globalSig] = now
+        if (rootSig !== "") recent[rootSig] = now
+        recentAiAnnounce7 = recent
+        return true
     }
 
     function handleAiWindowProbe7(raw) {
@@ -787,24 +832,7 @@ Item {
             var tool = sanitize7(parts.tool, 16)
             if (rootPid === "" || tool === "") continue
 
-            var sig = rootPid + "|" + tool + "|" + cleanAiModel7(parts.model, 28) + "|" + cleanAiEffort7(parts.effort, tool)
-            var now = Date.now()
-            var recent = recentAiAnnounce7 || ({})
-            var pruned = false
-            for (var k in recent) {
-                if (!(recent[k] > 0) || now - recent[k] > 60000) {
-                    delete recent[k]
-                    pruned = true
-                }
-            }
-            var last = recent[sig] || 0
-            if (armed7 && now - last > 60000) {
-                recent[sig] = now
-                recentAiAnnounce7 = recent
-                pushAiModel7(tool, parts.model, parts.effort)
-            } else if (pruned) {
-                recentAiAnnounce7 = recent
-            }
+            if (armed7) pushAiModel7(tool, parts.model, parts.effort, rootPid)
             return
         }
     }
@@ -1723,6 +1751,8 @@ Item {
                 }
 
                 var alive7 = false
+                var fastPulse7 = false
+                var fastTick7 = root.reactorHoldTick7
                 var livePs7 = []
                 for (var pi7 = 0; pi7 < ps7.length; pi7++) {
                     var p = ps7[pi7]
@@ -1732,10 +1762,14 @@ Item {
                     if (p.k === "monsweep") {
                         var lifeM = p.life || 3400
                         if (age >= lifeM) continue
-                        alive7 = true; sweep7(p, age, lifeM, p.d, p.gain || 0.55, p.count || 30)
+                        alive7 = true; fastPulse7 = true
+                        fastTick7 = Math.min(fastTick7, root.reactorFrameTick7)
+                        sweep7(p, age, lifeM, p.d, p.gain || 0.55, p.count || 30)
                     } else if (p.k === "win") {
                         if (age >= 1600) continue
                         alive7 = true
+                        fastPulse7 = true
+                        fastTick7 = Math.min(fastTick7, root.reactorFrameTick7)
                         var tw7 = age / 1600
                         var ew7 = tw7 * tw7 * (3 - 2 * tw7)
                         var aw7 = Math.sin(Math.min(1, tw7) * Math.PI)
@@ -1868,6 +1902,10 @@ Item {
                         var enter7 = Math.max(0, 1 - age / p.s0); enter7 = enter7 * enter7
                         var leave7 = age > p.r1 ? (age - p.r1) / (p.life - p.r1) : 0; leave7 = leave7 * leave7
                         var shift7 = p.d * (fx2 - fx1) * 0.45 * (leave7 - enter7)
+                        if (age < p.s1 || age > p.r0 || p.w) {
+                            fastPulse7 = true
+                            fastTick7 = Math.min(fastTick7, (p.ai && !p.w) ? root.reactorAiFrameTick7 : root.reactorFrameTick7)
+                        }
                         var sdT = p.t % 86400000
                         var Ptot = G.pts.length
                         var af7 = root.ambientField7
@@ -1904,7 +1942,7 @@ Item {
                 }
                 if (livePs7.length !== ps7.length) root.pulses = livePs7
                 root.animating7 = root.ambientField7 ? true : alive7
-                canvas.tick7 = alive7 ? root.reactorFrameTick7
+                canvas.tick7 = alive7 ? (fastPulse7 ? fastTick7 : root.reactorHoldTick7)
                                       : (root.ambientField7 ? root.ambientIdleTick7 : root.reactorDormantTick7)
                 ctx.globalAlpha = 1.0
                 return
