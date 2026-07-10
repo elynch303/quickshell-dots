@@ -1485,6 +1485,11 @@ Item {
     onArchVisibleChanged: popupOpened("archVisible")
     property var archUpdates: []
     property int archRefreshTick: 0
+    property string archScanId: ""
+    property int archScanCheckedEpoch: 0
+    property string archScanHash: ""
+    property int archScanSystemCount: 0
+    readonly property int archScanMaxAge: 900
 
     // ── Arch security gate (pre-install verdict per package) ──
     // idle | scanning | clean | warn | blocked | degraded

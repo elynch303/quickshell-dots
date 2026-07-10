@@ -174,13 +174,13 @@ install_theme_updater() {
 }
 
 # ── 1. dependencies ─────────────────────────────────────────────
-need=(qs git jq curl)
+need=(qs git jq curl checkupdates)
 opt=(wpctl pactl pamixer brightnessctl upower powerprofilesctl bluetoothctl iwctl makoctl hypridle)
 miss=()
 for b in "${need[@]}"; do command -v "$b" >/dev/null 2>&1 || miss+=("$b"); done
 if ((${#miss[@]})); then
   err "Missing required: ${miss[*]}"
-  warn "On Arch:  sudo pacman -S quickshell git jq curl"
+  warn "On Arch:  sudo pacman -S quickshell git jq curl pacman-contrib"
   exit 1
 fi
 optmiss=()
@@ -195,7 +195,7 @@ if ((${#fontmiss[@]})); then
   warn "Missing fonts: ${fontmiss[*]}"
   warn "The bar needs these to display icons correctly."
   if [[ -z "$WANT_VERSION" ]]; then
-    read -p "Install missing fonts? [Y/n] " ans </dev/tty || ans=""   # no tty → empty, not unset (set -u)
+    read -r -p "Install missing fonts? [Y/n] " ans </dev/tty || ans=""   # no tty → empty, not unset (set -u)
     case "${ans,,}" in n|no) err "Fonts required — aborting."; exit 1 ;; esac
   fi
   if [[ "$fonts" != *"JetBrainsMono Nerd"* ]]; then
@@ -223,7 +223,7 @@ trap cleanup_install EXIT
 info "Downloading…"
 git clone --depth 1 "$REPO_URL" "$tmp/repo" >/dev/null 2>&1
 
-mapfile -t versions < <(cd "$tmp/repo/versions" && ls -d */ | sed 's#/##')
+mapfile -t versions < <(find "$tmp/repo/versions" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
 ((${#versions[@]})) || { err "No versions found in repo"; exit 1; }
 
 # ── 3. choose version ───────────────────────────────────────────
@@ -275,6 +275,8 @@ info "Installed '${c_b}$choice${c_0}' → $DEST"
 if [[ -f "$tmp/repo/scripts/qs-arch-security-gate.sh" ]]; then
   mkdir -p "$HOME/.local/bin"
   install -m 755 "$tmp/repo/scripts/qs-arch-security-gate.sh" "$HOME/.local/bin/qs-arch-security-gate.sh"
+  install -m 755 "$tmp/repo/scripts/qs-arch-update-check.sh" "$HOME/.local/bin/qs-arch-update-check.sh"
+  install -m 755 "$tmp/repo/scripts/qs-arch-apply-update.sh" "$HOME/.local/bin/qs-arch-apply-update.sh"
   if [[ -f "$tmp/repo/scripts/qs-aur-blacklist-fetch.sh" ]]; then
     install -m 755 "$tmp/repo/scripts/qs-aur-blacklist-fetch.sh" "$HOME/.local/bin/qs-aur-blacklist-fetch.sh"
     mkdir -p "$HOME/.config/systemd/user"
@@ -339,7 +341,7 @@ esac
 do_claude="$WANT_CLAUDE"
 if [[ -z "$do_claude" ]]; then
   if [[ -t 0 || -e /dev/tty ]]; then
-    read -p "Install the AI usage backend for the quota widget (Claude + Codex + OpenCode, 0 tokens)? [y/N] " ans </dev/tty || ans=""
+    read -r -p "Install the AI usage backend for the quota widget (Claude + Codex + OpenCode, 0 tokens)? [y/N] " ans </dev/tty || ans=""
     case "${ans,,}" in y|yes) do_claude="yes" ;; *) do_claude="no" ;; esac
   else
     do_claude="no"

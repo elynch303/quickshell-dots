@@ -70,12 +70,7 @@ Item {
 
     function doRefresh() {
         var cmd = [
-            "bash", "-c",
-            // checkupdates (temp-synced DB, no root, no partial-upgrade risk) sees
-            // pending updates without a `pacman -Sy`; fall back to -Qu if missing.
-            "{ if command -v checkupdates &>/dev/null; then checkupdates 2>/dev/null; else LC_ALL=C pacman -Qu 2>/dev/null; fi; } | while read n o _ v; do echo \"S|\"$n\"|\"$o\"|\"$v; done; " +
-            "if command -v paru &>/dev/null; then timeout 30 paru -Qum 2>/dev/null | while read n o _ v; do echo \"A|\"$n\"|\"$o\"|\"$v; done; " +
-            "elif command -v yay &>/dev/null; then timeout 30 yay -Qum 2>/dev/null | while read n o _ v; do echo \"A|\"$n\"|\"$o\"|\"$v; done; fi"
+            "bash", Quickshell.env("HOME") + "/.local/bin/qs-arch-update-check.sh"
         ]
         rootMod.refreshing = true
         refreshWatchdog.restart()
@@ -88,15 +83,31 @@ Item {
         var lines = text.trim().split("\n")
         var updates = []
         var sysCount = 0; var aCount = 0
+        var sawMeta = false
         for (var i = 0; i < lines.length; i++) {
             var parts = lines[i].split("|")
             if (parts.length >= 4) {
                 var src = parts[0]
+                if (src === "M") {
+                    sawMeta = true
+                    root.archScanId = parts[1] || ""
+                    root.archScanCheckedEpoch = parseInt(parts[2] || "0")
+                    root.archScanHash = parts[3] || ""
+                    root.archScanSystemCount = parseInt(parts[4] || "0")
+                    continue
+                }
+                if (src !== "S" && src !== "A") continue
                 var entry = {name: parts[1], oldVer: parts[2], newVer: parts[3], source: src === "S" ? "system" : "aur"}
                 updates.push(entry)
                 if (src === "S") sysCount++
                 else if (src === "A") aCount++
             }
+        }
+        if (!sawMeta) {
+            root.archScanId = ""
+            root.archScanCheckedEpoch = 0
+            root.archScanHash = ""
+            root.archScanSystemCount = 0
         }
         rootMod.systemCount = sysCount
         rootMod.aurCount = aCount

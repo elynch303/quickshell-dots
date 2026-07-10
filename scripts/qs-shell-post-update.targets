@@ -1,6 +1,8 @@
 # Relative to $HOME. qs-shell-apply-update.sh backs these paths up before the
 # post-update companion runs and restores them if the companion transaction fails.
 .local/bin/qs-arch-security-gate.sh
+.local/bin/qs-arch-update-check.sh
+.local/bin/qs-arch-apply-update.sh
 .local/bin/qs-aur-blacklist-fetch.sh
 .local/share/qs-aur-blacklist.txt
 .local/share/qs-aur-blacklist.txt.meta.json

@@ -19,6 +19,8 @@ set -uo pipefail
 #   2. KNOWN_INFECTED array embedded in the Atomic Arch scanner script
 PLAIN_LIST="${QS_AUR_BLACKLIST_LIST:-$HOME/.local/share/qs-aur-blacklist.txt}"
 META="${QS_AUR_BLACKLIST_META:-$PLAIN_LIST.meta.json}"   # written by the fetcher
+SCAN_STATE="${QS_ARCH_UPDATE_STATE:-$HOME/.cache/qs-arch-updates.json}"
+GATE_STATE="${QS_ARCH_GATE_STATE:-$HOME/.cache/qs-arch-gate.json}"
 if [ -n "${QS_AUR_BLACKLIST:-}" ]; then
   BLACKLIST_SRC="$QS_AUR_BLACKLIST"
 else
@@ -39,7 +41,7 @@ load_local() {
   [ -r "$BLACKLIST_SRC" ] || return 0
   awk '/^KNOWN_INFECTED=\(/{f=1;next} /^[[:space:]]*\)/{f=0} f' "$BLACKLIST_SRC" \
     | tr -d '\042\047' \
-    | tr ' \t' '\n\n' \
+    | tr '[:blank:]' '\n' \
     | grep -E '^[a-zA-Z0-9][a-zA-Z0-9@._+-]*$'
 }
 load_plain() {
@@ -93,6 +95,43 @@ $meta_pending  && degraded=true                            # a large jump is qua
 $stale         && degraded=true                            # protection list is too old
 $mirror_mismatch && degraded=true                          # feeds diverged → protection uncertain
 
+tmpdir="$(mktemp -d -p "${TMPDIR:-/tmp}" qs-arch-gate.XXXXXX)" || exit 1
+trap 'rm -rf "$tmpdir"' EXIT
+rows="$tmpdir/rows.tsv"
+system_canon="$tmpdir/system.canon"
+system_sorted="$tmpdir/system.sorted"
+: > "$rows"
+: > "$system_canon"
+
+while IFS='|' read -r pkg repo old new || [ -n "${pkg:-}" ]; do
+  [ -n "$pkg" ] || continue
+  # Not a valid pkgname (spaces, shell noise, broken framing) → skip the line.
+  # The QML side counts answers vs. candidates and fail-closes on a mismatch.
+  case "$pkg" in *[!a-zA-Z0-9@._+-]*) continue ;; esac
+  [ "$repo" = "aur" ] || repo="system"
+  printf '%s\t%s\t%s\t%s\n' "$pkg" "$repo" "$old" "$new" >> "$rows"
+  if [ "$repo" = "system" ]; then
+    printf '%s|%s|%s\n' "$pkg" "$old" "$new" >> "$system_canon"
+  fi
+done
+
+LC_ALL=C sort "$system_canon" > "$system_sorted"
+system_hash="$(sha256sum "$system_sorted" | awk '{print $1}')"
+system_count="$(wc -l < "$system_canon" | tr -d ' ')"
+input_count="$(wc -l < "$rows" | tr -d ' ')"
+scan_id=""
+scan_hash=""
+scan_count=""
+if command -v jq >/dev/null 2>&1 && [ -r "$SCAN_STATE" ]; then
+  scan_tsv="$(jq -er '[.scanId, .systemHash, (.systemCount | tostring)] | @tsv' "$SCAN_STATE" 2>/dev/null || true)"
+  if [ -n "$scan_tsv" ]; then
+    IFS=$'\t' read -r scan_id scan_hash scan_count <<< "$scan_tsv"
+  fi
+fi
+if [ -z "$scan_id" ] || [ "$scan_hash" != "$system_hash" ] || [ "$scan_count" != "$system_count" ]; then
+  degraded=true
+fi
+
 # --- JSON emitter (printf-based, minimal escaping; no jq dependency) ------
 jstr() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
 emit() { # pkg repo old new verdict reason
@@ -105,14 +144,13 @@ printf '{"meta":"gate","blacklist":%d,"degraded":%s,"list_date":"%s","stale":%s,
   "$blacklist_count" "$degraded" "$list_date" "$stale" "$mirrors_agree" "$mirror_mismatch"
 
 # --- 4. Classify each update candidate -----------------------------------
-while IFS='|' read -r pkg repo old new || [ -n "$pkg" ]; do
+ok_count=0
+warn_count=0
+fail_count=0
+while IFS=$'\t' read -r pkg repo old new || [ -n "${pkg:-}" ]; do
   [ -n "$pkg" ] || continue
-  # Not a valid pkgname (spaces, shell noise, broken framing) → skip the line.
-  # The QML side counts answers vs. candidates and fail-closes on a mismatch.
-  case "$pkg" in *[!a-zA-Z0-9@._+-]*) continue ;; esac
-  [ "$repo" = "aur" ] || repo="system"
-
   if [ -n "${INFECTED[$pkg]:-}" ]; then
+    fail_count=$((fail_count + 1))
     emit "$pkg" "$repo" "$old" "$new" "FAIL" "On Atomic Arch known-infected list"
     continue
   fi
@@ -120,10 +158,46 @@ while IFS='|' read -r pkg repo old new || [ -n "$pkg" ]; do
   if [ "$repo" = "aur" ]; then
     # AUR is the Atomic Arch entry vector (orphan takeover -> malicious PKGBUILD).
     # Not blocked, but flagged for a manual PKGBUILD look.
+    warn_count=$((warn_count + 1))
     emit "$pkg" "$repo" "$old" "$new" "WARN" "AUR package — review PKGBUILD before building"
   else
+    ok_count=$((ok_count + 1))
     emit "$pkg" "$repo" "$old" "$new" "OK" ""
   fi
-done
+done < "$rows"
+
+if command -v jq >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$GATE_STATE")" 2>/dev/null || true
+  gate_tmp="$(mktemp -p "$(dirname "$GATE_STATE")" .qs-arch-gate.XXXXXX 2>/dev/null || true)"
+  if [ -n "$gate_tmp" ]; then
+    if jq -nc \
+        --argjson schema 1 \
+        --arg scanId "$scan_id" \
+        --arg checked "$(date -Is)" \
+        --arg systemHash "$system_hash" \
+        --argjson systemCount "$system_count" \
+        --argjson inputCount "$input_count" \
+        --argjson ok "$ok_count" \
+        --argjson warn "$warn_count" \
+        --argjson fail "$fail_count" \
+        --argjson degraded "$degraded" \
+        '{
+          schemaVersion: $schema,
+          scanId: $scanId,
+          checked: $checked,
+          systemHash: $systemHash,
+          systemCount: $systemCount,
+          inputCount: $inputCount,
+          ok: $ok,
+          warn: $warn,
+          fail: $fail,
+          degraded: $degraded
+        }' > "$gate_tmp"; then
+      mv -f "$gate_tmp" "$GATE_STATE" 2>/dev/null || rm -f "$gate_tmp"
+    else
+      rm -f "$gate_tmp"
+    fi
+  fi
+fi
 
 exit 0

@@ -144,8 +144,22 @@ PanelWindow {
         return n
     }
     readonly property int btnCount: aurReviewPackages > 0 ? 3 : 2
+    property int nowEpoch: Math.floor(Date.now() / 1000)
+    Timer {
+        interval: 30000
+        running: root.archVisible
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: archPanel.nowEpoch = Math.floor(Date.now() / 1000)
+    }
+    readonly property bool repoScanFresh: root.archScanCheckedEpoch > 0
+        && (nowEpoch - root.archScanCheckedEpoch) >= 0
+        && (nowEpoch - root.archScanCheckedEpoch) <= root.archScanMaxAge
+    readonly property bool repoScanMatchesUpdates: root.archScanSystemCount === repoUpdatePackages
     readonly property bool repoGateComplete: (root.archGateResults || []).length === (root.archUpdates || []).length
     readonly property bool repoGateAllowsFullUpgrade: repoUpdatePackages > 0
+        && repoScanFresh
+        && repoScanMatchesUpdates
         && repoGateComplete
         && repoOkPackages === repoUpdatePackages
         && (root.archGateState === "clean" || root.archGateState === "warn")
@@ -153,6 +167,8 @@ PanelWindow {
     readonly property bool canUpdate: repoGateAllowsFullUpgrade
     readonly property string repoBlockReason: {
         if (repoUpdatePackages === 0) return "No pacman updates"
+        if (!repoScanFresh) return "Repo upgrade blocked: refresh scan"
+        if (!repoScanMatchesUpdates) return "Repo upgrade blocked: scan drift"
         if (root.archGateState === "scanning") return "Scanning packages"
         if (!repoGateComplete) return "Repo upgrade blocked: scan incomplete"
         if (root.archGateDegraded) return "Repo upgrade blocked: protection limited"
@@ -727,7 +743,8 @@ PanelWindow {
                     }
                 }
 
-                // Update — full repo/system transaction via pacman; AUR is never installed here.
+                // Update — full repo/system transaction via the checked apply helper;
+                // AUR is never installed here.
                 Rectangle {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
@@ -751,15 +768,20 @@ PanelWindow {
                         enabled: archPanel.canUpdate
                         cursorShape: archPanel.canUpdate ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
-                            // Full repository upgrade only. If the gate is not fully OK
-                            // for every official repo package, canUpdate is false and
-                            // no pacman process can be launched from this button.
+                            // Full repository upgrade only. The helper revalidates the
+                            // checked scan, gate verdict and a fresh checkupdates scan
+                            // before it can launch sudo pacman -Syu.
                             var prompt = "Run full repository upgrade for " + archPanel.repoUpdatePackages + " pacman packages?";
                             if (archPanel.aurReviewPackages > 0)
                                 prompt += " " + archPanel.aurReviewPackages + " AUR review packages will be skipped.";
+                            var applyScript = Quickshell.env("HOME") + "/.local/bin/qs-arch-apply-update.sh";
                             var updateCommand = archPanel.themedGumConfirmEnv()
                                 + " gum confirm " + archPanel.shellQuote(prompt)
-                                + " && sudo pacman -Syu";
+                                + " && " + archPanel.shellQuote(applyScript)
+                                + " " + archPanel.shellQuote(root.archScanId)
+                                + " " + archPanel.shellQuote(root.archScanHash)
+                                + " " + archPanel.shellQuote(root.archScanSystemCount)
+                                + " " + archPanel.shellQuote(root.archScanCheckedEpoch);
                             panelUpdateRunner.command = ["bash", "-c",
                                 "omarchy-launch-floating-terminal-with-presentation "
                                     + archPanel.shellQuote(updateCommand)];

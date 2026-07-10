@@ -55,6 +55,8 @@ mkdir -p "$bin" "$qsbin" "$units"
 
 # ── ArchUpdater security gate + weekly blacklist refresh ───────
 put "$repo/scripts/qs-arch-security-gate.sh" "$bin/qs-arch-security-gate.sh" 755 || rc=1
+put "$repo/scripts/qs-arch-update-check.sh" "$bin/qs-arch-update-check.sh" 755 || rc=1
+put "$repo/scripts/qs-arch-apply-update.sh" "$bin/qs-arch-apply-update.sh" 755 || rc=1
 if put "$repo/scripts/qs-aur-blacklist-fetch.sh" "$bin/qs-aur-blacklist-fetch.sh" 755; then
   put "$repo/systemd/qs-aur-blacklist-fetch.service" "$units/qs-aur-blacklist-fetch.service" 644 || rc=1
   put "$repo/systemd/qs-aur-blacklist-fetch.timer"   "$units/qs-aur-blacklist-fetch.timer"   644 || rc=1
