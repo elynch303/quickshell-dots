@@ -15,7 +15,6 @@ Item {
     readonly property bool reactorMode7: mode === 7
     readonly property bool ambientField7: mode === 7
     readonly property int reactorFrameTick7: 16
-    readonly property int reactorAiFrameTick7: 16
     readonly property int reactorHoldTick7: 16
     readonly property int reactorDormantTick7: 500
     readonly property int maxPulseCount7: 8
@@ -59,12 +58,7 @@ Item {
     property string activeAddr7: ""
     property string pendingUrgentAddr7: ""
     property string pendingUrgentCls7: ""
-    property string aiWindowRootPid7: ""
-    property var recentAiAnnounce7: ({})
     property var recentOpen7: ({})
-    property var pendingAiOpen7: ({})
-    readonly property int aiGlobalDedupeMs7: 12000
-    readonly property int aiRootDedupeMs7: 60000
     property bool armedIntroShown7: false
     property double lastReactorTs7: 0
     property bool reactorFeedBaselined7: false
@@ -97,17 +91,12 @@ Item {
             urgentAddr = ""
             urgentCls = ""
             urgentNags = 0
-            aiWindowRootPid7 = ""
-            recentAiAnnounce7 = ({})
             recentOpen7 = ({})
-            pendingAiOpen7 = ({})
             urgentProbe7.stop()
-            aiOpenProbe7.stop()
         } else {
             pulses = []
             animating7 = ambientField7
             armedIntroShown7 = false
-            aiWindowRootPid7 = ""
             var ws7 = Hyprland.focusedWorkspace
             lastWsId = ws7 && ws7.id > 0 ? ws7.id : -1
             root.setReactorFastTick7()
@@ -135,13 +124,8 @@ Item {
             urgentAddr = ""
             urgentCls = ""
             urgentNags = 0
-            aiWindowRootPid7 = ""
-            recentAiAnnounce7 = ({})
-            aiWindowProbe7.running = false
             recentOpen7 = ({})
-            pendingAiOpen7 = ({})
             urgentProbe7.stop()
-            aiOpenProbe7.stop()
             warnQueue7 = []
             warnQueueTimer.stop()
         } else if (reactorMode7) {
@@ -354,64 +338,6 @@ Item {
         return ""
     }
 
-    function pidForAddr7(addr) {
-        if (addr === "") return ""
-        try {
-            var tls = Hyprland.toplevels.values
-            for (var i = 0; i < tls.length; i++) {
-                var o = tls[i].lastIpcObject
-                if (o && String(o.address || "").replace(/^0x/, "").toLowerCase() === addr) {
-                    var p = Number(o.pid || 0)
-                    return p > 0 ? String(Math.floor(p)) : ""
-                }
-            }
-        } catch (e) {}
-        return ""
-    }
-
-    function requestAiForAddr7(addr) {
-        if (!armed7 || !active || !reactorMode7 || !ownsGlobalHelpers7) return false
-        var pid = pidForAddr7(addr)
-        if (pid === "") return false
-        aiWindowRootPid7 = pid
-        aiWindowProbe7.running = false
-        aiWindowProbe7.stderrText = ""
-        aiWindowProbe7.running = true
-        return true
-    }
-
-    function scheduleAiOpenProbe7(addr) {
-        if (!armed7 || !active || !reactorMode7 || !ownsGlobalHelpers7 || addr === "") return
-        var q = pendingAiOpen7
-        q[addr] = 4
-        pendingAiOpen7 = q
-        aiOpenProbe7.restart()
-    }
-
-    function probePendingAiOpen7() {
-        if (aiWindowProbe7.running) {
-            aiOpenProbe7.restart()
-            return
-        }
-        var q = pendingAiOpen7
-        var again = false
-        for (var addr in q) {
-            if (!(q[addr] > 0)) {
-                delete q[addr]
-                continue
-            }
-            requestAiForAddr7(addr)
-            q[addr] = q[addr] - 1
-            if (q[addr] > 0) again = true
-            else delete q[addr]
-            break
-        }
-        for (var left in q)
-            if (q[left] > 0) again = true
-        pendingAiOpen7 = q
-        if (again && active && reactorMode7) aiOpenProbe7.restart()
-    }
-
     function rememberOpen7(addr) {
         if (addr === "") return
         var ro = recentOpen7
@@ -455,14 +381,6 @@ Item {
         onTriggered: root.commitUrgent7()
     }
 
-    Timer {
-        id: aiOpenProbe7
-        interval: 900
-        repeat: false
-        running: false
-        onTriggered: root.probePendingAiOpen7()
-    }
-
     Connections {
         target: Hyprland
         function onFocusedMonitorChanged() {
@@ -474,7 +392,6 @@ Item {
             if (event.name === "openwindow") {
                 var openAddr = root.eventAddr7(event.data)
                 root.rememberOpen7(openAddr)
-                root.scheduleAiOpenProbe7(openAddr)
                 root.pushPulse("win", 1)
             }
             else if (event.name === "closewindow") {
@@ -691,9 +608,10 @@ Item {
         if (ev.ts > now + 300000 || ev.ts <= lastReactorTs7) return
         if (!armed7 || !active || !reactorMode7) return
         if (String(ev.l || "").trim().toUpperCase() === "AI") {
-            var tm = aiParts7(ev.r)
-            if (pushAiModel7(tm.tool, tm.model, tm.effort)) lastReactorTs7 = ev.ts
-        } else if (pushText(ev.l, ev.r, 1, "long")) {
+            lastReactorTs7 = ev.ts
+            return
+        }
+        if (pushText(ev.l, ev.r, 1, "long")) {
             lastReactorTs7 = ev.ts
         }
     }
@@ -734,116 +652,6 @@ Item {
         return { l: parts[0] || "", r: parts.length > 1 ? parts.slice(1).join("|") : "" }
     }
 
-    function aiParts7(arg) {
-        var parts = String(arg || "").split("|")
-        return { tool: parts[0] || "",
-                 model: parts.length > 1 ? parts[1] : "",
-                 effort: parts.length > 2 ? parts.slice(2).join(" ") : "" }
-    }
-
-    function aiProbeParts7(arg) {
-        var parts = String(arg || "").split("|")
-        return { rootPid: parts[0] || "",
-                 tool: parts.length > 1 ? parts[1] : "",
-                 model: parts.length > 2 ? parts[2] : "",
-                 effort: parts.length > 3 ? parts.slice(3).join(" ") : "" }
-    }
-
-    function cleanAiModel7(model, cap) {
-        var m = String(model || "")
-        m = m.replace(/\([^)]*\)/g, "")
-             .replace(/^models\//i, "")
-             .replace(/_/g, "-")
-             .trim()
-        m = m.replace(/^claude-(opus|sonnet|haiku)-([0-9]+)-([0-9]+)/i, "$1 $2.$3")
-             .replace(/^claude-(fable|mythos)-([0-9]+)/i, "$1 $2")
-             .replace(/^(opus|sonnet|haiku)-([0-9]+)-([0-9]+)/i, "$1 $2.$3")
-             .replace(/^(fable|mythos)-([0-9]+)/i, "$1 $2")
-             .replace(/^claude-/i, "")
-        return sanitize7(m, cap || 28)
-    }
-
-    function cleanAiEffort7(effort, tool) {
-        var e = String(effort || "").trim().toLowerCase()
-        if (e === "" || e === "none" || e === "default") return ""
-        if (tool === "CLAUDE" && (e === "xhigh" || e === "ultrathink" || e === "ultra" || e === "ultraa"))
-            return "ULTRA"
-        if (e === "high") return "HIGH"
-        if (e === "medium" || e === "med") return "MED"
-        if (e === "low" || e === "minimal") return "LOW"
-        return sanitize7(e, 8)
-    }
-
-    function pruneRecentAiAnnounce7(now) {
-        var recent = recentAiAnnounce7 || ({})
-        var changed = false
-        for (var k in recent) {
-            if (!(recent[k] > 0) || now - recent[k] > aiRootDedupeMs7) {
-                delete recent[k]
-                changed = true
-            }
-        }
-        if (changed) recentAiAnnounce7 = recent
-        return recent
-    }
-
-    function pushAiModel7(tool, model, effort, rootPid) {
-        var t = sanitize7(tool, 16)
-        var e = cleanAiEffort7(effort, t)
-        var m = cleanAiModel7(model, e !== "" ? 18 : 28)
-        if (t === "") return
-        if (m === "") m = "ACTIVE"
-        if (e !== "") m = sanitize7(m + " + " + e, 28)
-
-        var now = Date.now()
-        var recent = pruneRecentAiAnnounce7(now)
-        var visualSig = t + "|" + m
-        var globalSig = "model|" + visualSig
-        var rootText = String(rootPid || "").trim()
-        var rootSig = rootText !== "" ? "root|" + rootText + "|" + visualSig : ""
-        var lastGlobal = recent[globalSig] || 0
-        var lastRoot = rootSig !== "" ? (recent[rootSig] || 0) : 0
-        if ((lastGlobal > 0 && now - lastGlobal < aiGlobalDedupeMs7)
-                || (lastRoot > 0 && now - lastRoot < aiRootDedupeMs7)) {
-            recentAiAnnounce7 = recent
-            return false
-        }
-
-        if (!pushText(t, m, 1, "long", false, { ai: true })) {
-            recentAiAnnounce7 = recent
-            return false
-        }
-
-        recent[globalSig] = now
-        if (rootSig !== "") recent[rootSig] = now
-        recentAiAnnounce7 = recent
-        return true
-    }
-
-    function handleAiWindowProbe7(raw) {
-        var lines = String(raw || "").split("\n")
-
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim()
-            if (line === "") continue
-
-            var parts = aiProbeParts7(line)
-            var rootPid = String(parts.rootPid || "").trim()
-            var tool = sanitize7(parts.tool, 16)
-            if (rootPid === "" || tool === "") continue
-
-            if (armed7) pushAiModel7(tool, parts.model, parts.effort, rootPid)
-            return
-        }
-    }
-
-    function logAiWindowProbeExit7(exitCode, stderrText) {
-        if (exitCode === 0) return
-        var err = String(stderrText || "").trim()
-        if (err.length > 260) err = err.slice(0, 260) + "..."
-        console.warn("Reactor AI probe failed (exit " + exitCode + ")" + (err !== "" ? ": " + err : ""))
-    }
-
     function runReactorTest(kind, arg) {
         if (!active || !reactorMode7) return
 
@@ -870,8 +678,7 @@ Item {
             var n = isFinite(parsedN) ? Math.max(1, parsedN) : 3
             pushText(n + (n === 1 ? " PACKAGE" : " PACKAGES") + " CHANGED", "PACMAN", 1, "long")
         } else if (kind === "ai" || kind === "model") {
-            var tm = aiParts7(arg || "CODEX|GPT-5.5|XHIGH")
-            pushAiModel7(tm.tool, tm.model, tm.effort)
+            return
         } else if (kind === "urgent") {
             if (!armed7) return
             urgentAddr = "__test__"
@@ -1130,46 +937,6 @@ Item {
         }
         if (aiOc7 >= aiQuotaWarn7 && !aiOcHot) { aiOcHot = true; warnCheck() }
         else if (aiOc7 < aiQuotaReset7) aiOcHot = false
-    }
-
-    // Probe only the focused window's process tree. This avoids background
-    // Claude/Codex terminals re-announcing while still catching long-running OpenCode.
-    readonly property string aiWindowProbeCommand:
-        "root_pid=\"$1\"; [[ \"$root_pid\" =~ ^[0-9]+$ ]] || exit 0; [ -d \"/proc/$root_pid\" ] || exit 0; " +
-        "model_arg() { printf '%s\\n' \"$1\" | sed -nE 's/.*(^|[[:space:]])(--model|-m)(=|[[:space:]]+)([^[:space:]]+).*/\\4/p' | head -n1; }; " +
-        "claude_latest_model() { find \"$HOME/.claude/projects\" -name '*.jsonl' -printf '%T@ %p\\n' 2>/dev/null | sort -nr 2>/dev/null | head -n 4 | cut -d' ' -f2- | while read -r f; do jq -r '.message.model // empty' \"$f\" 2>/dev/null; done | tail -n1; }; " +
-        "queue=\"$root_pid\"; seen=\"\"; while [ -n \"$queue\" ]; do next=\"\"; for pid in $queue; do " +
-        "case \" $seen \" in *\" $pid \"*) continue;; esac; seen=\"$seen $pid\"; " +
-        "[ -r \"/proc/$pid/comm\" ] || continue; comm=$(cat \"/proc/$pid/comm\" 2>/dev/null); args=$(tr '\\0' ' ' < \"/proc/$pid/cmdline\" 2>/dev/null); " +
-        "lc=${comm,,}; la=${args,,}; " +
-        "case \"$la\" in *claude-usage*|*codex-usage*|*opencode-usage*|*app-server*|*codex-linux-sandbox*|*--sandbox-policy-cwd*) ;; " +
-        "*) model=$(model_arg \"$args\"); " +
-        "if [[ \"$lc\" == \"claude\" || \"$la\" =~ (^|/|[[:space:]])claude([[:space:]]|$) ]]; then " +
-        "[ -n \"$model\" ] || model=$(claude_latest_model); " +
-        "[ -n \"$model\" ] || model=$(jq -r '.model // empty' \"$HOME/.claude/settings.json\" 2>/dev/null | sed 's/\\[[0-9;]*m//g' | head -n1); " +
-        "effort=$(jq -r '.effortLevel // empty' \"$HOME/.claude/settings.json\" 2>/dev/null | head -n1); " +
-        "echo \"$root_pid|CLAUDE|$model|$effort\"; exit 0; fi; " +
-        "if [[ \"$lc\" == \"codex\" || \"$la\" =~ (^|/|[[:space:]])codex([[:space:]]|$) ]]; then " +
-        "[ -n \"$model\" ] || model=$(sed -nE 's/^model[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p' \"$HOME/.codex/config.toml\" 2>/dev/null | head -n1); " +
-        "effort=$(sed -nE 's/^model_reasoning_effort[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\\1/p' \"$HOME/.codex/config.toml\" 2>/dev/null | head -n1); " +
-        "echo \"$root_pid|CODEX|$model|$effort\"; exit 0; fi; " +
-        "if [[ \"$lc\" == \"opencode\" || \"$la\" =~ (^|/|[[:space:]])opencode([/-]|[[:space:]]|$) || \"$la\" =~ opencode-ai || \"$la\" =~ opencode-linux || \"$la\" =~ /\\.local/share/opencode ]]; then " +
-        "[ -n \"$model\" ] || model=$(jq -r '._model // empty' \"$HOME/.cache/opencode-usage.json\" 2>/dev/null | head -n1); " +
-        "[ -n \"$model\" ] || model=$(jq -r '.recent[0].modelID // empty' \"$HOME/.local/state/opencode/model.json\" 2>/dev/null | head -n1); " +
-        "echo \"$root_pid|OPENCODE|$model|\"; exit 0; fi; ;; esac; " +
-        "for child in $(pgrep -P \"$pid\" 2>/dev/null); do next=\"$next $child\"; done; done; queue=\"$next\"; done"
-
-    Process {
-        id: aiWindowProbe7
-        property string stderrText: ""
-        command: ["bash", "-c", root.aiWindowProbeCommand, "ai-window-probe", root.aiWindowRootPid7]
-        onExited: (exitCode) => root.logAiWindowProbeExit7(exitCode, stderrText)
-        stdout: StdioCollector {
-            onStreamFinished: root.handleAiWindowProbe7(this.text)
-        }
-        stderr: StdioCollector {
-            onStreamFinished: aiWindowProbe7.stderrText = this.text
-        }
     }
 
     // pacman transaction finished (streaming log tail — no helper script)
@@ -1904,7 +1671,7 @@ Item {
                         var shift7 = p.d * (fx2 - fx1) * 0.45 * (leave7 - enter7)
                         if (age < p.s1 || age > p.r0 || p.w) {
                             fastPulse7 = true
-                            fastTick7 = Math.min(fastTick7, (p.ai && !p.w) ? root.reactorAiFrameTick7 : root.reactorFrameTick7)
+                            fastTick7 = Math.min(fastTick7, root.reactorFrameTick7)
                         }
                         var sdT = p.t % 86400000
                         var Ptot = G.pts.length
