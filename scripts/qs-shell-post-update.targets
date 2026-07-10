@@ -1,0 +1,24 @@
+# Relative to $HOME. qs-shell-apply-update.sh backs these paths up before the
+# post-update companion runs and restores them if the companion transaction fails.
+.local/bin/qs-arch-security-gate.sh
+.local/bin/qs-aur-blacklist-fetch.sh
+.local/share/qs-aur-blacklist.txt
+.local/share/qs-aur-blacklist.txt.meta.json
+.local/share/qs-aur-blacklist.txt.pending
+.config/quickshell/bin/qs-shell-check-update.sh
+.config/quickshell/bin/qs-shell-apply-update.sh
+.config/quickshell/bin/qs-theme-update-check.sh
+.config/quickshell/bin/qs-theme-apply-update.sh
+.config/systemd/user/qs-aur-blacklist-fetch.service
+.config/systemd/user/qs-aur-blacklist-fetch.timer
+.config/systemd/user/qs-shell-update-check.service
+.config/systemd/user/qs-shell-update-check.timer
+.config/systemd/user/opencode-usage.service
+.config/systemd/user/opencode-usage.timer
+.config/systemd/user/timers.target.wants/qs-aur-blacklist-fetch.timer
+.config/systemd/user/timers.target.wants/qs-shell-update-check.timer
+.config/systemd/user/timers.target.wants/opencode-usage.timer
+.cache/qs-theme-updates.json
+.local/bin/claude-usage
+.local/bin/codex-usage
+.local/bin/opencode-usage

@@ -7,9 +7,10 @@
 # repo's tracking branch against origin, scoped to the installed version.
 #
 # State contract: ~/.cache/qs-shell/update-available.json ALWAYS exists.
-#   "up to date" = {"schemaVersion": 2, "behind": 0}.
+#   "up to date" = {"schemaVersion": 3, "behind": 0}.
 #   Pending includes immutable provenance: repository, upstreamRef, baseCommit,
-#   targetCommit, version, summary and checked.
+#   targetCommit, full commit IDs, payload/companion tree IDs, version, summary
+#   and checked.
 # The bar's FileView only ever reads a complete file via atomic replace and never
 # depends on delete-detection.
 set -euo pipefail
@@ -18,7 +19,7 @@ REPO="${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}"
 DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
-SCHEMA_VERSION=2
+SCHEMA_VERSION=3
 mkdir -p "$STATE_DIR"
 
 # jq is required (and a hard dependency in install.sh). Warn once rather than
@@ -44,6 +45,10 @@ clear_state() {
     --arg c "$(date -Is)" \
     '{schemaVersion: $schema, behind: 0, checked: $c}')"
 }
+
+if [ -r "$STATE" ] && ! jq -e --argjson schema "$SCHEMA_VERSION" '.schemaVersion == $schema' "$STATE" >/dev/null 2>&1; then
+  clear_state
+fi
 
 is_commit_hash() {
   [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
@@ -91,10 +96,20 @@ if [ "${behind:-0}" -eq 0 ]; then
   clear_state
   exit 0
 fi
+payload_tree="$(git rev-parse "$target_commit:versions/$ver" 2>/dev/null)" || { clear_state; exit 0; }
+scripts_tree=""
+if git cat-file -e "$target_commit:scripts" 2>/dev/null; then
+  scripts_tree="$(git rev-parse "$target_commit:scripts" 2>/dev/null)" || scripts_tree=""
+fi
+systemd_tree=""
+if git cat-file -e "$target_commit:systemd" 2>/dev/null; then
+  systemd_tree="$(git rev-parse "$target_commit:systemd" 2>/dev/null)" || systemd_tree=""
+fi
 
 # Short changelog. `git log --max-count` (no `head` in the pipe) — so a large
 # commit count can't SIGPIPE git and trip pipefail before the state is written.
 summary="$(git log --max-count=8 --format='%s' "$base_commit..$target_commit" -- "${payload[@]}" | jq -R . | jq -s .)"
+commit_ids="$(git rev-list --reverse "$base_commit..$target_commit" | jq -R . | jq -s .)"
 
 write_state "$(jq -nc \
   --argjson schema  "$SCHEMA_VERSION" \
@@ -105,7 +120,13 @@ write_state "$(jq -nc \
   --arg     targetCommit "$target_commit" \
   --arg     version "$ver" \
   --argjson summary "$summary" \
+  --argjson commitIds "$commit_ids" \
+  --arg     payloadTree "$payload_tree" \
+  --arg     scriptsTree "$scripts_tree" \
+  --arg     systemdTree "$systemd_tree" \
   --arg     checked "$(date -Is)" \
   '{schemaVersion: $schema, behind: $behind, repository: $repository,
     upstreamRef: $upstreamRef, baseCommit: $baseCommit, targetCommit: $targetCommit,
-    version: $version, summary: $summary, checked: $checked}')"
+    version: $version, summary: $summary, commitIds: $commitIds,
+    payloadTree: $payloadTree, scriptsTree: $scriptsTree, systemdTree: $systemdTree,
+    checked: $checked}')"

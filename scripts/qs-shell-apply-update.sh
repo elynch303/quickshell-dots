@@ -23,7 +23,7 @@ DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 [ "$DEST" != "/" ] && DEST="${DEST%/}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
-SCHEMA_VERSION=2
+SCHEMA_VERSION=3
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
 # or wiped by hygiene tools, and the backup is the rollback's last-resort restore.
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell/backups"
@@ -43,12 +43,13 @@ fi
 # State contract: never delete the state file; "up to date" is behind:0 (atomic).
 clear_state() {
   local t
-  t="$(mktemp -p "$STATE_DIR")" || return 0
+  t="$(mktemp -p "$STATE_DIR")" || return 1
   if printf '{"schemaVersion": %d, "behind": 0, "checked": "%s"}\n' "$SCHEMA_VERSION" "$(date -Is)" > "$t" \
       && mv "$t" "$STATE"; then
     return 0
   fi
   rm -f "$t"
+  return 1
 }
 
 is_commit_hash() {
@@ -66,6 +67,12 @@ read_pending_state() {
        and (.baseCommit | type == "string")
        and (.targetCommit | type == "string")
        and (.version | type == "string")
+       and (.summary | type == "array")
+       and (.commitIds | type == "array")
+       and (.commitIds | all(type == "string"))
+       and (.payloadTree | type == "string")
+       and (.scriptsTree | type == "string")
+       and (.systemdTree | type == "string")
     then [.repository, .upstreamRef, .baseCommit, .targetCommit, .version] | @tsv
     else empty end
   ' "$STATE" 2>/dev/null)" || fail "Could not read shell update state."
@@ -142,6 +149,267 @@ stop_bar_instances() {
   return "$rc"
 }
 
+safe_companion_target() {
+  local rel="$1" part
+  [ -n "$rel" ] || return 1
+  [[ "$rel" != /* ]] || return 1
+  IFS=/ read -r -a parts <<< "$rel"
+  for part in "${parts[@]}"; do
+    [ -n "$part" ] || return 1
+    [ "$part" != "." ] || return 1
+    [ "$part" != ".." ] || return 1
+  done
+}
+
+trim_line() {
+  local s="$1"
+  s="${s%%#*}"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s\n' "$s"
+}
+
+backup_companion_targets() {
+  local targets="$1" raw rel src dst
+  [ -f "$targets" ] || return 0
+  companion_backup="$(mktemp -d -p "$STATE_DIR" companion-targets.XXXXXX)" || \
+    fail "Could not create companion rollback backup."
+  companion_backup_manifest="$companion_backup/manifest"
+  : > "$companion_backup_manifest" || fail "Could not create companion rollback manifest."
+
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    rel="$(trim_line "$raw")"
+    [ -n "$rel" ] || continue
+    safe_companion_target "$rel" || fail "Unsafe companion rollback target '$rel'."
+    src="$HOME/$rel"
+    dst="$companion_backup/root/$rel"
+    if [ -e "$src" ] || [ -L "$src" ]; then
+      mkdir -p "$(dirname "$dst")" || fail "Could not back up companion target '$rel'."
+      cp -a "$src" "$dst" || fail "Could not back up companion target '$rel'."
+      printf 'present\t%s\n' "$rel" >> "$companion_backup_manifest"
+    else
+      printf 'missing\t%s\n' "$rel" >> "$companion_backup_manifest"
+    fi
+  done < "$targets"
+}
+
+restore_companion_targets() {
+  local status rel dst src rc=0
+  [ -n "${companion_backup_manifest:-}" ] || return 0
+  [ -f "$companion_backup_manifest" ] || return 0
+
+  while IFS=$'\t' read -r status rel || [ -n "$status$rel" ]; do
+    [ -n "$rel" ] || continue
+    safe_companion_target "$rel" || continue
+    dst="$HOME/$rel"
+    src="$companion_backup/root/$rel"
+    rm -rf "$dst" 2>/dev/null || rc=1
+    if [ "$status" = "present" ] && { [ -e "$src" ] || [ -L "$src" ]; }; then
+      mkdir -p "$(dirname "$dst")" 2>/dev/null || rc=1
+      cp -a "$src" "$dst" 2>/dev/null || rc=1
+    fi
+  done < "$companion_backup_manifest"
+  return "$rc"
+}
+
+companion_systemd_units=(
+  qs-aur-blacklist-fetch.timer
+  qs-shell-update-check.timer
+  opencode-usage.timer
+)
+
+snapshot_companion_systemd() {
+  local unit enabled active
+  command -v systemctl >/dev/null 2>&1 || return 0
+  [ -n "${companion_backup:-}" ] || return 0
+  companion_systemd_snapshot="$companion_backup/systemd-state"
+  : > "$companion_systemd_snapshot" || fail "Could not snapshot companion systemd state."
+  for unit in "${companion_systemd_units[@]}"; do
+    enabled="$(systemctl --user is-enabled "$unit" 2>/dev/null || true)"
+    active="$(systemctl --user is-active "$unit" 2>/dev/null || true)"
+    printf '%s\t%s\t%s\n' "$unit" "${enabled:-unknown}" "${active:-unknown}" >> "$companion_systemd_snapshot"
+  done
+}
+
+restore_companion_systemd() {
+  local unit enabled active rc=0
+  [ -n "${companion_systemd_snapshot:-}" ] || return 0
+  [ -f "$companion_systemd_snapshot" ] || return 0
+  command -v systemctl >/dev/null 2>&1 || return 0
+
+  systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
+  while IFS=$'\t' read -r unit enabled active || [ -n "$unit$enabled$active" ]; do
+    [ -n "$unit" ] || continue
+    case "$enabled" in
+      enabled|enabled-runtime|linked|linked-runtime)
+        systemctl --user enable "$unit" >/dev/null 2>&1 || rc=1
+        ;;
+      disabled|disabled-runtime|masked|masked-runtime|bad|not-found)
+        systemctl --user disable "$unit" >/dev/null 2>&1 || rc=1
+        ;;
+    esac
+    case "$active" in
+      active|activating|reloading)
+        systemctl --user start "$unit" >/dev/null 2>&1 || rc=1
+        ;;
+      inactive|failed|deactivating)
+        systemctl --user stop "$unit" >/dev/null 2>&1 || rc=1
+        ;;
+    esac
+  done < "$companion_systemd_snapshot"
+  systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
+  return "$rc"
+}
+
+commit_companion_systemd() {
+  local units="$HOME/.config/systemd/user" unit rc=0
+  local changed_units=()
+  command -v systemctl >/dev/null 2>&1 || return 0
+
+  for unit in "${companion_systemd_units[@]}"; do
+    if [ -f "$units/$unit" ]; then
+      changed_units+=("$unit")
+    fi
+  done
+  if [ "${#changed_units[@]}" -gt 0 ]; then
+    systemctl --user daemon-reload >/dev/null 2>&1 || rc=1
+    for unit in "${changed_units[@]}"; do
+      systemctl --user enable --now "$unit" >/dev/null 2>&1 || rc=1
+    done
+    systemctl --user try-restart "${changed_units[@]}" >/dev/null 2>&1 || rc=1
+  fi
+  return "$rc"
+}
+
+check_stage_local_imports() {
+  local root="$1" file dir line rel rc=0
+  while IFS= read -r -d '' file; do
+    dir="$(dirname "$file")"
+    while IFS= read -r line || [ -n "$line" ]; do
+      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]*"\([^"]\+\)".*/\1/p')"
+      [ -n "$rel" ] || continue
+      case "$rel" in
+        :*|qrc:*) continue ;;
+      esac
+      [ -e "$dir/$rel" ] || rc=1
+    done < "$file"
+  done < <(find "$root" -name '*.qml' -type f -print0)
+  return "$rc"
+}
+
+check_stage_qs_imports() {
+  local root="$1" file line rel path rc=0
+  while IFS= read -r -d '' file; do
+    while IFS= read -r line || [ -n "$line" ]; do
+      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]\+qs\.\([A-Za-z0-9_.]\+\).*/\1/p')"
+      [ -n "$rel" ] || continue
+      path="${rel//./\/}"
+      [ -d "$root/$path" ] || rc=1
+      [ -f "$root/$path/qmldir" ] || rc=1
+    done < "$file"
+  done < <(find "$root" -name '*.qml' -type f -print0)
+  return "$rc"
+}
+
+run_quickshell_smoke() {
+  local qs_bin="$1" wrapper="$2" timeout_s="$3" platform="$4" out="$5" err="$6" rc=0
+  if [ -n "$platform" ]; then
+    QT_QPA_PLATFORM="$platform" timeout "$timeout_s" "$qs_bin" -p "$wrapper" --no-duplicate --no-color >"$out" 2>"$err" || rc=$?
+  else
+    timeout "$timeout_s" "$qs_bin" -p "$wrapper" --no-duplicate --no-color >"$out" 2>"$err" || rc=$?
+  fi
+  case "$rc" in
+    0|124|143) ;;
+    *) return 1 ;;
+  esac
+  grep -Fq "QS_SHELL_SMOKE_OK" "$out" "$err" 2>/dev/null || return 1
+  ! grep -Fq "QS_SHELL_SMOKE_FAIL" "$out" "$err" 2>/dev/null
+}
+
+smoke_stage() {
+  local root="$1" smoke out err qs_bin smoke_timeout smoke_platform wrapper target_url root_wrapper
+  [ -f "$root/shell.qml" ] || fail "Staged version '$ver' is missing shell.qml."
+  qs_bin="${QS_SHELL_QUICKSHELL_BIN:-}"
+  if [ -z "$qs_bin" ]; then
+    qs_bin="$(command -v quickshell 2>/dev/null || command -v qs 2>/dev/null || true)"
+  fi
+  [ -n "$qs_bin" ] || fail "quickshell is required for staged shell smoke."
+  command -v timeout >/dev/null 2>&1 || fail "timeout is required for staged shell smoke."
+  check_stage_local_imports "$root" || fail "Staged shell contains unresolved local QML imports."
+  check_stage_qs_imports "$root" || fail "Staged shell contains unresolved qs.* QML imports."
+
+  smoke="$(mktemp -d -p "$STATE_DIR" smoke.XXXXXX)" || fail "Could not create staged shell smoke directory."
+  wrapper="$smoke/file-url-smoke.qml"
+  target_url="file://$root/shell.qml"
+  target_url="${target_url//\\/\\\\}"
+  target_url="${target_url//\"/\\\"}"
+  cat > "$wrapper" <<'QML'
+import QtQuick
+
+QtObject {
+  property var component: null
+
+  Component.onCompleted: {
+    component = Qt.createComponent("__QS_SHELL_TARGET_URL__")
+    if (component.status === Component.Error) {
+      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
+    } else {
+      console.log("QS_SHELL_SMOKE_OK")
+    }
+  }
+}
+QML
+  sed -i "s|__QS_SHELL_TARGET_URL__|$target_url|" "$wrapper" || {
+    rm -rf "$smoke"
+    fail "Could not prepare staged shell smoke wrapper."
+  }
+  out="$smoke/file-url.out"
+  err="$smoke/file-url.err"
+  smoke_timeout="${QS_SHELL_SMOKE_TIMEOUT:-3}"
+  smoke_platform="${QS_SHELL_SMOKE_PLATFORM:-}"
+  if run_quickshell_smoke "$qs_bin" "$wrapper" "$smoke_timeout" "$smoke_platform" "$out" "$err"; then
+    rm -rf "$smoke"
+    return 0
+  fi
+
+  # Fallback for staged qs.* modules. The wrapper must live in the staged root
+  # so that root-relative module resolution can see <root>/modules/qmldir, but
+  # it must only load the component. Do not start the staged shell as a real
+  # Quickshell entry point and do not call createObject(): both can execute
+  # PanelWindow, Process, IPC and cache-writing side effects before the swap.
+  root_wrapper="$root/.qs-shell-smoke.qml"
+  cat > "$wrapper" <<'QML'
+import QtQuick
+
+QtObject {
+  property var component: null
+
+  Component.onCompleted: {
+    component = Qt.createComponent(Qt.resolvedUrl("shell.qml"))
+    if (component.status === Component.Error) {
+      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
+    } else {
+      console.log("QS_SHELL_SMOKE_OK")
+    }
+  }
+}
+QML
+  mv "$wrapper" "$root_wrapper" || {
+    rm -rf "$smoke"
+    fail "Could not prepare staged shell root smoke wrapper."
+  }
+  out="$smoke/root.out"
+  err="$smoke/root.err"
+  if run_quickshell_smoke "$qs_bin" "$root_wrapper" "$smoke_timeout" "$smoke_platform" "$out" "$err"; then
+    rm -f "$root_wrapper" || { rm -rf "$smoke"; fail "Could not clean staged shell smoke wrapper."; }
+    rm -rf "$smoke"
+    return 0
+  fi
+  rm -f "$root_wrapper"
+  rm -rf "$smoke"
+  fail "Staged shell Quickshell smoke failed."
+}
+
 ver="V1"
 [ -f "$DEST/.qsrise" ] && ver="$(tr -d '[:space:]' < "$DEST/.qsrise")"
 [ -n "$ver" ] || ver="V1"
@@ -182,6 +450,57 @@ git merge-base --is-ancestor "$state_target" "$state_upstream" 2>/dev/null || \
 git cat-file -e "$state_target:versions/$ver" 2>/dev/null || \
   fail "Version '$ver' missing at stored target commit."
 
+# Detect a state file where targetCommit was edited to a different reachable
+# commit: the immutable target must still match the stored full commit lineage,
+# payload tree and companion tree IDs that the check wrote for
+# baseCommit..targetCommit. Count and changelog remain UI consistency checks,
+# but are not trusted as provenance.
+payload=("versions/$ver/" "scripts/" "systemd/")
+state_behind="$(jq -r '.behind // empty' "$STATE" 2>/dev/null)" || fail "Could not read stored update count."
+[[ "$state_behind" =~ ^[0-9]+$ ]] || fail "Stored update count is invalid."
+actual_behind="$(git rev-list --count "$state_base..$state_target" -- "${payload[@]}" 2>/dev/null)" || \
+  fail "Could not verify stored update count."
+[ "$actual_behind" = "$state_behind" ] || fail "Stored target does not match the checked update count."
+summary_check="$(mktemp -p "$STATE_DIR" summary.XXXXXX)" || fail "Could not create summary check."
+if ! git log --max-count=8 --format='%s' "$state_base..$state_target" -- "${payload[@]}" \
+    | jq -R . | jq -s . > "$summary_check"; then
+  rm -f "$summary_check"
+  fail "Could not verify stored update summary."
+fi
+if ! jq -e --slurpfile actual "$summary_check" '.summary == $actual[0]' "$STATE" >/dev/null 2>&1; then
+  rm -f "$summary_check"
+  fail "Stored target does not match the checked update summary."
+fi
+rm -f "$summary_check"
+commit_ids_check="$(mktemp -p "$STATE_DIR" commits.XXXXXX)" || fail "Could not create commit lineage check."
+if ! git rev-list --reverse "$state_base..$state_target" | jq -R . | jq -s . > "$commit_ids_check"; then
+  rm -f "$commit_ids_check"
+  fail "Could not verify stored commit lineage."
+fi
+if ! jq -e --slurpfile actual "$commit_ids_check" '.commitIds == $actual[0]' "$STATE" >/dev/null 2>&1; then
+  rm -f "$commit_ids_check"
+  fail "Stored target does not match the checked commit lineage."
+fi
+rm -f "$commit_ids_check"
+state_payload_tree="$(jq -r '.payloadTree' "$STATE" 2>/dev/null)" || fail "Could not read stored payload tree."
+actual_payload_tree="$(git rev-parse "$state_target:versions/$ver" 2>/dev/null)" || \
+  fail "Could not verify stored payload tree."
+[ "$actual_payload_tree" = "$state_payload_tree" ] || fail "Stored target does not match the checked payload tree."
+state_scripts_tree="$(jq -r '.scriptsTree' "$STATE" 2>/dev/null)" || fail "Could not read stored scripts tree."
+actual_scripts_tree=""
+if git cat-file -e "$state_target:scripts" 2>/dev/null; then
+  actual_scripts_tree="$(git rev-parse "$state_target:scripts" 2>/dev/null)" || \
+    fail "Could not verify stored scripts tree."
+fi
+[ "$actual_scripts_tree" = "$state_scripts_tree" ] || fail "Stored target does not match the checked scripts tree."
+state_systemd_tree="$(jq -r '.systemdTree' "$STATE" 2>/dev/null)" || fail "Could not read stored systemd tree."
+actual_systemd_tree=""
+if git cat-file -e "$state_target:systemd" 2>/dev/null; then
+  actual_systemd_tree="$(git rev-parse "$state_target:systemd" 2>/dev/null)" || \
+    fail "Could not verify stored systemd tree."
+fi
+[ "$actual_systemd_tree" = "$state_systemd_tree" ] || fail "Stored target does not match the checked systemd tree."
+
 # Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
 # loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
 # is mid-run, and provenance has already been validated.
@@ -193,6 +512,7 @@ ts="$(date +%Y%m%d-%H%M%S)"
 backup="$BACKUP_ROOT/bar.$ts"
 cp -a "$DEST" "$backup"
 # keep only the 3 most recent backups
+# shellcheck disable=SC2012
 ls -1dt "$BACKUP_ROOT"/bar.* 2>/dev/null | tail -n +4 | xargs -r rm -rf
 
 # 4. Stage in $DEST's OWN parent directory — same filesystem by construction, so
@@ -202,9 +522,13 @@ ls -1dt "$BACKUP_ROOT"/bar.* 2>/dev/null | tail -n +4 | xargs -r rm -rf
 #    dir is ignored. Clean the stage on any exit.
 stage="$(mktemp -d -p "$(dirname "$DEST")" .qs-stage.XXXXXX)"
 companion=""
+companion_backup=""
+companion_backup_manifest=""
+companion_systemd_snapshot=""
 cleanup() {
   [ -n "${stage:-}" ] && rm -rf "$stage" 2>/dev/null || true
   [ -n "${companion:-}" ] && rm -rf "$companion" 2>/dev/null || true
+  [ -n "${companion_backup:-}" ] && rm -rf "$companion_backup" 2>/dev/null || true
 }
 trap cleanup EXIT
 git archive "$state_target:versions/$ver" | tar -x -C "$stage" || \
@@ -214,6 +538,8 @@ if [ -f "$backup/quotes.txt" ]; then
 fi
 printf '%s\n' "$ver" > "$stage/.qsrise"
 printf '%s\n' "$state_target" > "$stage/.qsrise-commit"
+printf '%s\n' "$state_payload_tree" > "$stage/.qsrise-payload-tree"
+smoke_stage "$stage"
 
 companion_paths=()
 for p in scripts systemd; do
@@ -225,6 +551,12 @@ if [ "${#companion_paths[@]}" -gt 0 ]; then
   companion="$(mktemp -d -p "$STATE_DIR" companion.XXXXXX)" || fail "Could not create companion stage."
   git archive "$state_target" "${companion_paths[@]}" | tar -x -C "$companion" || \
     fail "Could not stage companion files from stored target commit."
+  if [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
+    [ -f "$companion/scripts/qs-shell-post-update.targets" ] || \
+      fail "Companion post-update is missing rollback target manifest."
+    backup_companion_targets "$companion/scripts/qs-shell-post-update.targets"
+    snapshot_companion_systemd
+  fi
 fi
 
 # Stop the bar before swapping, and WAIT for it to actually exit (don't trust a
@@ -238,9 +570,18 @@ fi
 # Atomic swap with rollback. At every instant $DEST holds either the old or the
 # new tree in full; any failure restores a working bar and notifies.
 old="$DEST.old.$ts"
+swapped=0
 rollback() {
   local msg
-  if [ ! -e "$DEST" ]; then            # old tree was moved aside, swap-in failed → restore
+  if [ "${swapped:-0}" -eq 1 ]; then   # new tree is visible, later step failed → restore old
+    rm -rf "$DEST" 2>/dev/null || true
+    if [ -d "$old" ]; then
+      mv "$old" "$DEST" 2>/dev/null || cp -a "$backup" "$DEST" 2>/dev/null || true
+    else
+      cp -a "$backup" "$DEST" 2>/dev/null || true
+    fi
+    msg="Deploy failed — previous version restored."
+  elif [ ! -e "$DEST" ]; then          # old tree was moved aside, swap-in failed → restore
     if [ -d "$old" ]; then
       mv "$old" "$DEST" 2>/dev/null || cp -a "$backup" "$DEST" 2>/dev/null || true
     else
@@ -258,25 +599,36 @@ rollback() {
   fi
   note -u critical "Shell update failed" "$msg"
 }
+post_swap_fail() {
+  restore_companion_targets || note -u critical "Shell update rollback warning" "Could not fully restore companion files."
+  restore_companion_systemd || note -u critical "Shell update rollback warning" "Could not fully restore systemd user state."
+  rollback
+  exit 1
+}
 trap 'rollback' ERR
 
 mv "$DEST" "$old"        # atomic rename (same FS)
 mv "$stage" "$DEST"      # atomic rename (same FS)
 stage=""
+swapped=1
+trap 'post_swap_fail' ERR
+
+# 5. Companion pieces (helper scripts, systemd units): refresh them from the
+#     same stored target commit so a bar update is complete on its own — no
+#     manual install.sh re-run. This is part of the reviewed update transaction:
+#     a failure rolls back the visible deploy and leaves the pending state intact.
+if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
+  QS_SHELL_COMPANION_DEFER_SYSTEMD=1 bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || post_swap_fail
+  commit_companion_systemd || post_swap_fail
+fi
+
+# 5b. Mark up-to-date via an atomic state write (never delete), but only after
+#     every deploy and companion step has completed successfully.
+clear_state || post_swap_fail
+
 trap - ERR
 rm -rf "$old" 2>/dev/null || true
-
-# 5. Mark up-to-date via an atomic state write (never delete).
-clear_state
-
-# 5b. Companion pieces (helper scripts, systemd units): refresh them from the
-#     same stored target commit so a bar update is complete on its own — no
-#     manual install.sh re-run. Best-effort: a hiccup here never blocks the
-#     already-applied update.
-if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
-  bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || \
-    note "Shell update" "Companion refresh incomplete — re-run install.sh if a widget misses its helper."
-fi
+swapped=0
 
 # 6. Relaunch exactly how the user runs it. The Wayland session env is inherited
 #    via the chain bar → setsid → this script (so only ever call apply from the

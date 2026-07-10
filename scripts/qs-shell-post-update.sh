@@ -6,15 +6,17 @@
 # OUTSIDE the bar config dir — helper scripts and systemd user units — so a
 # bar update is complete on its own and never needs a manual install.sh re-run.
 #
-# Idempotent and defensive: a missing source file is skipped, a failing step
-# warns the caller via exit code but must never break the already-applied
-# update. Opt-in AI backends are refreshed only when installed or discoverable.
+# Idempotent and defensive: a missing source file is skipped, and failures are
+# reported via exit code so qs-shell-apply-update.sh can roll the whole update
+# transaction back. Opt-in AI backends are refreshed only when installed or
+# discoverable.
 set -uo pipefail
 
 repo="${1:-${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}}"
 bin="$HOME/.local/bin"
 qsbin="$HOME/.config/quickshell/bin"
 units="$HOME/.config/systemd/user"
+defer_systemd="${QS_SHELL_COMPANION_DEFER_SYSTEMD:-0}"
 
 # install via temp + rename: the target gets a NEW inode, so replacing a script
 # that is currently executing (e.g. the apply script calling us) is safe.
@@ -22,7 +24,11 @@ put() { # src dst mode
   local src="$1" dst="$2" mode="$3" t
   [ -f "$src" ] || return 0
   t="$(mktemp "$dst.XXXXXX")" || return 1
-  cp "$src" "$t" && chmod "$mode" "$t" && mv -f "$t" "$dst" || { rm -f "$t"; return 1; }
+  if cp "$src" "$t" && chmod "$mode" "$t" && mv -f "$t" "$dst"; then
+    return 0
+  fi
+  rm -f "$t"
+  return 1
 }
 
 seed_theme_state() {
@@ -39,6 +45,11 @@ seed_theme_state() {
   return 1
 }
 
+systemd_user() {
+  [ "$defer_systemd" = "1" ] && return 0
+  systemctl --user "$@" >/dev/null 2>&1 || true
+}
+
 rc=0
 mkdir -p "$bin" "$qsbin" "$units"
 
@@ -47,8 +58,8 @@ put "$repo/scripts/qs-arch-security-gate.sh" "$bin/qs-arch-security-gate.sh" 755
 if put "$repo/scripts/qs-aur-blacklist-fetch.sh" "$bin/qs-aur-blacklist-fetch.sh" 755; then
   put "$repo/systemd/qs-aur-blacklist-fetch.service" "$units/qs-aur-blacklist-fetch.service" 644 || rc=1
   put "$repo/systemd/qs-aur-blacklist-fetch.timer"   "$units/qs-aur-blacklist-fetch.timer"   644 || rc=1
-  systemctl --user daemon-reload >/dev/null 2>&1 || true
-  systemctl --user enable --now qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
+  systemd_user daemon-reload
+  systemd_user enable --now qs-aur-blacklist-fetch.timer
   # prime the list once so the gate is armed right away (keep an existing list)
   [ -s "$HOME/.local/share/qs-aur-blacklist.txt" ] || \
     "$bin/qs-aur-blacklist-fetch.sh" >/dev/null 2>&1 || true
@@ -76,9 +87,9 @@ fi
 # Re-arm both timers so refreshed unit files take effect now. Plain
 # enable --now is a no-op on an already-active timer, and a daemon-reload
 # alone can leave a monotonic timer "elapsed" with no next trigger.
-systemctl --user daemon-reload >/dev/null 2>&1 || true
-systemctl --user enable --now qs-shell-update-check.timer >/dev/null 2>&1 || true
-systemctl --user try-restart qs-shell-update-check.timer qs-aur-blacklist-fetch.timer >/dev/null 2>&1 || true
+systemd_user daemon-reload
+systemd_user enable --now qs-shell-update-check.timer
+systemd_user try-restart qs-shell-update-check.timer qs-aur-blacklist-fetch.timer
 
 # ── opt-in components: refresh only if the user installed them ──
 if [ -x "$bin/claude-usage" ]; then
@@ -99,8 +110,8 @@ if [ -x "$bin/opencode-usage" ] || { [ "$ai_backend_installed" -eq 1 ] && [ "$op
   put "$repo/scripts/opencode-usage" "$bin/opencode-usage" 755 || rc=1
   put "$repo/systemd/opencode-usage.service" "$units/opencode-usage.service" 644 || rc=1
   put "$repo/systemd/opencode-usage.timer"   "$units/opencode-usage.timer"   644 || rc=1
-  systemctl --user daemon-reload >/dev/null 2>&1 || true
-  systemctl --user enable --now opencode-usage.timer >/dev/null 2>&1 || true
+  systemd_user daemon-reload
+  systemd_user enable --now opencode-usage.timer
 fi
 
 exit "$rc"
