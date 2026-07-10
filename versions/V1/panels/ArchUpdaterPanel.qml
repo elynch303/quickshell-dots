@@ -180,11 +180,12 @@ PanelWindow {
             + " GUM_CONFIRM_UNSELECTED_BACKGROUND=" + shellQuote(hexColor(root.bg))
     }
 
-    // ── theme update = the accepted Omarchy path, shown in a visible terminal ──
-    // Theme updates use the same primitive as Omarchy (`git pull` in a visible
-    // terminal). Bulk updates intentionally target only clean themes; local-edits
-    // stay in the list for review because a plain git pull may abort or conflict.
+    // ── theme update = visible terminal, pinned to the checked commit ──
+    // The check script records baseCommit/targetCommit. The apply script refuses
+    // to move if the theme changed since the scan, if the upstream identity
+    // changed, or if the saved target is no longer reachable.
     readonly property string themeCheckScript: Quickshell.env("HOME") + "/.config/quickshell/bin/qs-theme-update-check.sh"
+    readonly property string themeApplyScript: Quickshell.env("HOME") + "/.config/quickshell/bin/qs-theme-apply-update.sh"
 
     function launchThemeTerminal(inner) {
         panelUpdateRunner.command = ["bash", "-c",
@@ -194,11 +195,21 @@ PanelWindow {
         panelUpdateRunner.running = true
     }
 
+    function isPinnedThemeUpdate(t) {
+        t = t || {}
+        return !root.themeUpdChecking
+            && t.state === "clean"
+            && t.behind > 0
+            && /^[A-Za-z0-9._-]+$/.test(t.name || "")
+            && typeof t.baseCommit === "string" && t.baseCommit.length > 0
+            && typeof t.targetCommit === "string" && t.targetCommit.length > 0
+    }
+
     function cleanThemeNames() {
         var out = [], list = root.themeUpdList || []
         for (var i = 0; i < list.length; i++) {
             var t = list[i] || {}
-            if (t.state === "clean" && t.behind > 0 && /^[A-Za-z0-9._-]+$/.test(t.name || ""))
+            if (isPinnedThemeUpdate(t))
                 out.push(t.name)
         }
         return out
@@ -207,28 +218,20 @@ PanelWindow {
         return cleanThemeNames().length
     }
     function updateAllThemes() {
+        if (root.themeUpdChecking) return
         var names = cleanThemeNames()
         if (names.length <= 0) return
-        if (root.themeUpdLocalEdits <= 0) {
-            launchThemeTerminal("omarchy-theme-update; " + shellQuote(themeCheckScript))
-            return
-        }
-        var parts = ["set +e"]
-        for (var i = 0; i < names.length; i++) {
-            var dir = Quickshell.env("HOME") + "/.config/omarchy/themes/" + names[i]
-            parts.push("printf '%s\\n' " + shellQuote("Updating: " + names[i]))
-            parts.push("git -C " + shellQuote(dir) + " pull")
-        }
-        parts.push(shellQuote(themeCheckScript))
-        launchThemeTerminal(parts.join("; "))
+        launchThemeTerminal("set +e; "
+            + shellQuote(themeApplyScript) + " --all; rc=$?; "
+            + shellQuote(themeCheckScript) + "; exit $rc")
     }
 
     function updateOneTheme(name) {
+        if (root.themeUpdChecking) return
         if (!/^[A-Za-z0-9._-]+$/.test(name)) return   // never build a command from a bad name
-        var dir = Quickshell.env("HOME") + "/.config/omarchy/themes/" + name
-        // plain `git -C <dir> pull` = Omarchy semantics for a single theme; the
-        // terminal shows any merge/conflict/auth just as omarchy-theme-update would.
-        launchThemeTerminal("git -C " + shellQuote(dir) + " pull; " + shellQuote(themeCheckScript))
+        launchThemeTerminal("set +e; "
+            + shellQuote(themeApplyScript) + " " + shellQuote(name) + "; rc=$?; "
+            + shellQuote(themeCheckScript) + "; exit $rc")
     }
 
     function viewThemeChanges(name) {
@@ -248,10 +251,10 @@ PanelWindow {
         launchThemeTerminal(inner)
     }
 
-    // Re-apply the CURRENT theme (a separate, explicit action). omarchy-theme-update
-    // (and a per-theme pull) only advance the theme's REPO; the live copy under
-    // current/theme is a generated copy, so it stays stale until re-applied. Reads
-    // the name from disk — no user-controlled string reaches the shell.
+    // Re-apply the CURRENT theme (a separate, explicit action). A pinned update
+    // only advances the theme's REPO; the live copy under current/theme is a
+    // generated copy, so it stays stale until re-applied. Reads the name from
+    // disk — no user-controlled string reaches the shell.
     function reapplyCurrentTheme() {
         var nameFile = Quickshell.env("HOME") + "/.config/omarchy/current/theme.name"
         var inner = "n=$(tr -d '[:space:]' < " + shellQuote(nameFile) + "); "
@@ -585,13 +588,13 @@ PanelWindow {
             // ── update list ──
             Item {
                 width: parent.width
-                height: Math.min(updatesCol.implicitHeight, 280)
+                height: Math.min(updatesCol.implicitHeight, 240)
                 Flickable {
                     id: packagesFlick
                     anchors.fill: parent
                     contentHeight: updatesCol.implicitHeight
                     clip: true
-                    interactive: updatesCol.implicitHeight > 280
+                    interactive: updatesCol.implicitHeight > 240
 
                 Column {
                     id: updatesCol
@@ -914,10 +917,9 @@ PanelWindow {
                                 readonly property string stateLabel: isUnreach ? "unreachable"
                                     : isLocalEdits ? ("blocked" + (localFileLabel !== "" ? ": " + localFileLabel : ""))
                                     : "clean"
-                                // a per-theme "update this" runs `git -C <dir> pull` (Omarchy
-                                // semantics). Offer it only for clean themes; local-edits have
-                                // predictable pull failures/conflicts and must be reviewed first.
-                                readonly property bool canPull: modelData.behind > 0 && isClean
+                                // A per-theme update is pinned to the commit saved by the last
+                                // scan. Local-edits/unreachable/old-schema rows stay review-only.
+                                readonly property bool canPull: archPanel.isPinnedThemeUpdate(modelData)
 
                                 width: parent.width
                                 height: 22
@@ -1023,11 +1025,11 @@ PanelWindow {
                     width: parent.width
                     spacing: 8
 
-                    // Update clean — bulk-pulls only themes that the checker marked
-                    // clean; blocked/local-edits stay untouched for review.
+                    // Update clean — applies only clean themes with a saved target
+                    // commit; blocked/local-edits stay untouched for review.
                     Rectangle {
                         readonly property int cleanCount: archPanel.cleanThemeUpdateCount()
-                        readonly property bool canApply: cleanCount > 0
+                        readonly property bool canApply: cleanCount > 0 && !root.themeUpdChecking
                         width: (parent.width - 8) / 2
                         height: 28; radius: root.tileRadius
                         opacity: canApply ? 1.0 : 0.45
@@ -1036,7 +1038,8 @@ PanelWindow {
                         Behavior on color { ColorAnimation { duration: 120 } }
                         UiText {
                             anchors.centerIn: parent
-                            text: parent.canApply ? (root.themeUpdLocalEdits > 0 ? "Update clean" : "Update all")
+                            text: root.themeUpdChecking ? "Checking…"
+                                                  : parent.canApply ? (root.themeUpdLocalEdits > 0 ? "Update clean" : "Update all")
                                                   : root.themeUpdOutdated > 0 ? "Review first" : "No updates"
                             color: root.paper
                             font.family: root.mono; font.pixelSize: 11

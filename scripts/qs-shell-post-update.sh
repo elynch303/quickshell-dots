@@ -64,8 +64,13 @@ put "$repo/systemd/qs-shell-update-check.timer"   "$units/qs-shell-update-check.
 
 # ── theme-update checker used by ArchUpdaterPanel ───────────────
 if [ -f "$repo/scripts/qs-theme-update-check.sh" ]; then
-  put "$repo/scripts/qs-theme-update-check.sh" "$qsbin/qs-theme-update-check.sh" 755 || rc=1
-  seed_theme_state || rc=1
+  if [ -f "$repo/scripts/qs-theme-apply-update.sh" ]; then
+    put "$repo/scripts/qs-theme-update-check.sh" "$qsbin/qs-theme-update-check.sh" 755 || rc=1
+    put "$repo/scripts/qs-theme-apply-update.sh" "$qsbin/qs-theme-apply-update.sh" 755 || rc=1
+    seed_theme_state || rc=1
+  else
+    rc=1
+  fi
 fi
 
 # Re-arm both timers so refreshed unit files take effect now. Plain

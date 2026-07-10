@@ -1602,8 +1602,9 @@ Item {
     // ── Theme Updater state (fed by ArchUpdaterPanel's FileView over
     //    ~/.cache/qs-theme-updates.json; the panel owns the check Process so it
     //    runs ONCE, not per-monitor). The bar/tooltip only read these counts;
-    //    the panel renders themeUpdList. Display-only: actual updates are
-    //    delegated to visible Omarchy terminal commands. ──
+    //    the panel renders themeUpdList. Theme updates run in a visible terminal
+    //    through qs-theme-apply-update.sh and are pinned to the checked target
+    //    commit. ──
     property int    themeUpdOutdated: 0
     property int    themeUpdLocalEdits: 0
     property int    themeUpdTotal: 0

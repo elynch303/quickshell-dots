@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# QS theme-update CHECK — the only custom piece of the theme updater. Omarchy has
-# no "which themes are outdated" signal; this provides it for the bar badge/panel.
-# The actual updating is delegated to the accepted Omarchy path (a visible
-# terminal running `omarchy-theme-update`, or a per-theme `git -C <dir> pull`) —
-# there is deliberately NO custom apply script and NO safe/review policy.
+# QS theme-update CHECK — read-only scan for the in-bar theme updater. Omarchy has
+# no "which themes are outdated" signal; this provides it for the bar badge/panel
+# and records the exact commits a later apply step is allowed to fast-forward to.
 #
 # Scope of THIS script: NO working-tree change, NO branch/HEAD change, NO commit.
 # It DOES `git fetch` themes whose remote moved (updates refs/remotes/* + downloads
@@ -15,7 +13,7 @@
 #      local remote-tracking ref => nothing moved, no fetch.
 #   2. `git fetch` only when the remote moved (needed for the behind-count).
 #
-# Neutral per-theme state (no policy, no gate — just what Omarchy's git pull would face):
+# Neutral per-theme state:
 #   clean        reachable, behind>0, no local tracked edits and no untracked file
 #                that an incoming tracked file would overwrite
 #   local-edits  reachable, behind>0, has tracked modifications or local commits
@@ -72,6 +70,38 @@ flock -n 9 || exit 0
 CURRENT_THEME=""
 [ -r "$CURRENT_FILE" ] && CURRENT_THEME="$(tr -d '[:space:]' < "$CURRENT_FILE" 2>/dev/null || true)"
 
+path_is_or_under() { # path prefix
+  local path="$1" prefix="$2"
+  [ "$path" = "$prefix" ] && return 0
+  [ -n "$prefix" ] || return 1
+  [ "${path:0:${#prefix}}" = "$prefix" ] && [ "${path:${#prefix}:1}" = "/" ]
+}
+
+path_collision_sample() { # incoming-z local-untracked-z
+  local incoming_file="$1" local_file="$2"
+  local -a incoming_paths=() local_paths=()
+  local incoming local_path count=0
+  local -A seen=()
+  mapfile -d '' -t incoming_paths < "$incoming_file" || true
+  mapfile -d '' -t local_paths < "$local_file" || true
+
+  for incoming in "${incoming_paths[@]}"; do
+    [ -n "$incoming" ] || continue
+    for local_path in "${local_paths[@]}"; do
+      [ -n "$local_path" ] || continue
+      if path_is_or_under "$incoming" "$local_path" || path_is_or_under "$local_path" "$incoming"; then
+        if [[ -z "${seen[$local_path]+x}" ]]; then
+          printf '%q\n' "$local_path"
+          seen[$local_path]=1
+          count=$((count + 1))
+          [ "$count" -ge 5 ] && return 0
+        fi
+      fi
+    done
+  done
+  return 0
+}
+
 # ── per-theme worker ─────────────────────────────────────────────
 # Runs in its own bash (no -e inherited); never hangs (every network call under
 # `timeout`) and ALWAYS emits exactly one JSON file, even on odd repos.
@@ -102,21 +132,34 @@ check_one() {
 
   emit() { # emit <state> <behind> [reason] [files-json]
     local reason="${3:-}" files_json="${4:-[]}"
+    local target_commit="${remote_sha:-${local_track:-}}"
     jq -n --arg name "$name" --arg state "$1" --argjson behind "$2" \
           --arg reason "$reason" --argjson files "$files_json" \
+          --arg head "${head:-}" \
+          --arg remote "${remote:-}" \
+          --arg remoteUrl "${remote_url:-}" \
+          --arg upstreamRef "${merge_ref:-}" \
+          --arg trackingRef "${track_ref:-}" \
+          --arg baseCommit "${base_commit:-}" \
+          --arg targetCommit "$target_commit" \
           --argjson current "$( [ "$name" = "${CURRENT_THEME:-}" ] && echo true || echo false )" \
           '{name:$name, state:$state, behind:$behind, current:$current,
-            reason:$reason, files:$files}' > "$out" 2>/dev/null
+            reason:$reason, files:$files,
+            head:$head, remote:$remote, remoteUrl:$remoteUrl,
+            upstreamRef:$upstreamRef, trackingRef:$trackingRef,
+            baseCommit:$baseCommit, targetCommit:$targetCommit}' > "$out" 2>/dev/null
   }
 
   # upstream wiring (branch.<head>.remote/.merge). No upstream => not listable.
-  local head remote merge_ref rbranch track_ref
+  local head remote merge_ref rbranch track_ref base_commit remote_url
   head="$("${tg[@]}" symbolic-ref --quiet --short HEAD 2>/dev/null)"    || { emit no-upstream 0; return 0; }
   remote="$("${tg[@]}" config "branch.$head.remote" 2>/dev/null)"       || { emit no-upstream 0; return 0; }
   merge_ref="$("${tg[@]}" config "branch.$head.merge" 2>/dev/null)"     || { emit no-upstream 0; return 0; }
   rbranch="${merge_ref#refs/heads/}"
   track_ref="refs/remotes/$remote/$rbranch"
   "${tg[@]}" rev-parse --verify --quiet "$track_ref" >/dev/null 2>&1    || { emit no-upstream 0; return 0; }
+  base_commit="$("${tg[@]}" rev-parse HEAD 2>/dev/null)"                || { emit no-upstream 0; return 0; }
+  remote_url="$("${tg[@]}" remote get-url "$remote" 2>/dev/null || true)"
 
   # stage 1: ls-remote — did the remote move since our last fetch?
   local remote_sha local_track reach="ok"
@@ -133,9 +176,12 @@ check_one() {
   behind="$("${tg[@]}" rev-list --count "HEAD..$track_ref" 2>/dev/null || echo 0)"
   ahead="$("${tg[@]}" rev-list --count "$track_ref..HEAD" 2>/dev/null || echo 0)"
   tracked_dirty="$("${tg[@]}" status --porcelain 2>/dev/null | grep -cv '^??\|^$' || true)"
-  "${tg[@]}" diff --name-only --diff-filter=ACMRT "HEAD..$track_ref" 2>/dev/null | sort -u > "$out.incoming" || : > "$out.incoming"
-  "${tg[@]}" ls-files --others --exclude-standard 2>/dev/null | sort -u > "$out.untracked" || : > "$out.untracked"
-  untracked_collision_files="$(comm -12 "$out.incoming" "$out.untracked" | head -n 5)" || untracked_collision_files=""
+  "${tg[@]}" diff -z --name-only --diff-filter=ACMRT "HEAD..$track_ref" 2>/dev/null > "$out.incoming.z" || : > "$out.incoming.z"
+  # Deliberately no --exclude-standard: ignored untracked files are still local
+  # data, and git can silently overwrite them when an incoming commit starts
+  # tracking the same path, or a file/directory prefix of that path.
+  "${tg[@]}" ls-files -z --others 2>/dev/null > "$out.untracked.z" || : > "$out.untracked.z"
+  untracked_collision_files="$(path_collision_sample "$out.incoming.z" "$out.untracked.z")" || untracked_collision_files=""
   untracked_collision="$(printf '%s\n' "$untracked_collision_files" | sed '/^$/d' | head -n 1)" || untracked_collision=""
   tracked_dirty_files="$(
     { "${tg[@]}" diff --name-only 2>/dev/null; "${tg[@]}" diff --cached --name-only 2>/dev/null; } \
@@ -145,9 +191,10 @@ check_one() {
   if [ "$reach" = "unreachable" ]; then emit unreachable "${behind:-0}"; return 0; fi
 
   # neutral state: local commits OR tracked modifications => local-edits (a plain
-  # git pull may merge/conflict). An untracked file is also local-edits when the
-  # incoming update tracks the same path, because git pull would abort rather than
-  # overwrite it.
+  # git pull may merge/conflict). Any untracked file is also local-edits when the
+  # incoming update tracks the same path or a file/directory prefix of it; ignored
+  # untracked files are included because git may otherwise overwrite them without
+  # the usual warning.
   local state="clean"
   { [ "${ahead:-0}" -gt 0 ] || [ "${tracked_dirty:-0}" -gt 0 ] || [ -n "$untracked_collision" ]; } && state="local-edits"
   reason=""
@@ -166,7 +213,7 @@ check_one() {
   emit "$state" "${behind:-0}" "$reason" "$files_json"
   return 0
 }
-export -f check_one
+export -f path_is_or_under path_collision_sample check_one
 export NET_TIMEOUT FETCH_TIMEOUT CURRENT_THEME
 
 # ── enumerate themes (omarchy detection rule: non-symlink dir with .git) ──
@@ -183,7 +230,11 @@ total=${#dirs[@]}
 write_state() { # $1 = complete JSON
   local t
   t="$(mktemp -p "$(dirname "$STATE")" .qs-theme-updates.XXXXXX)" || return 1
-  printf '%s\n' "$1" > "$t" && mv "$t" "$STATE" || { rm -f "$t"; return 1; }
+  if printf '%s\n' "$1" > "$t" && mv "$t" "$STATE"; then
+    return 0
+  fi
+  rm -f "$t"
+  return 1
 }
 
 if [ "$total" -eq 0 ]; then
@@ -197,6 +248,7 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 rc=0
+# shellcheck disable=SC2016
 printf '%s\0' "${dirs[@]}" \
   | timeout "$BUDGET" xargs -0 -P "$JOBS" -I{} bash -c 'check_one "$1" "$2"' _ {} "$tmpdir" \
   || rc=$?
@@ -232,7 +284,9 @@ state="$(jq -s --arg checked "$(date -Is)" --argjson total "$total" --argjson de
     currentStale: (([ .[] | select(.current and .behind > 0) ] | length) > 0),
     themes:    ([ .[] | select(.behind > 0 or .state == "unreachable") ]
                 | sort_by([(.state == "unreachable" | tostring), (.state == "local-edits" | tostring), .name])
-                | map({name, behind, state, current, reason, files})) }
+                | map({name, behind, state, current, reason, files,
+                       head, remote, remoteUrl, upstreamRef, trackingRef,
+                       baseCommit, targetCommit})) }
 ' "$tmpdir"/*.json)"
 
 write_state "$state"

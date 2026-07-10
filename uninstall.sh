@@ -89,11 +89,12 @@ if compgen -G "$unitdir/qs-shell-update-check.*" >/dev/null 2>&1 || [[ -e "$qsbi
 fi
 
 # 1c.1 remove the theme update checker, if installed (idempotent).
-if [[ -e "$qsbindir/qs-theme-update-check.sh" || -e "$HOME/.cache/qs-theme-updates.json" ]]; then
+if [[ -e "$qsbindir/qs-theme-update-check.sh" || -e "$qsbindir/qs-theme-apply-update.sh" || -e "$HOME/.cache/qs-theme-updates.json" ]]; then
   rm -f "$qsbindir"/qs-theme-update-check.sh \
+        "$qsbindir"/qs-theme-apply-update.sh \
         "$HOME/.cache/qs-theme-updates.json" \
         "$HOME/.cache/qs-theme-update.lock"
-  info "Removed theme update checker (script, cache, lock)"
+  info "Removed theme update helpers (scripts, cache, lock)"
 fi
 
 # 1d. remove the ArchUpdater security gate (script, fetch timer, list)

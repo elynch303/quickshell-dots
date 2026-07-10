@@ -144,10 +144,10 @@ install_shell_updater() {
   info "Shell self-updater installed (badge appears when this repo has updates)"
 }
 
-# ── theme update checker (read-only badge/panel signal) ─────────
-# Installs the helper the ArchUpdaterPanel runs on demand. It only checks theme
-# remotes and writes ~/.cache/qs-theme-updates.json; actual updates stay delegated
-# to Omarchy's visible terminal commands.
+# ── theme update helpers (checked state + pinned apply) ─────────
+# Installs the helpers the ArchUpdaterPanel runs on demand. The check helper
+# records exact base/target commits; the apply helper only fast-forwards to the
+# recorded target after revalidating the repo and upstream identity.
 install_theme_updater() {
   local src="$1"
   local bindst="$HOME/.config/quickshell/bin"
@@ -155,9 +155,14 @@ install_theme_updater() {
   local t
 
   [[ -f "$src/scripts/qs-theme-update-check.sh" ]] || return 0
+  [[ -f "$src/scripts/qs-theme-apply-update.sh" ]] || {
+    err "Theme update apply helper missing — themes tab update action would be incomplete"
+    return 1
+  }
 
   mkdir -p "$bindst"
   install -m 755 "$src/scripts/qs-theme-update-check.sh" "$bindst/qs-theme-update-check.sh"
+  install -m 755 "$src/scripts/qs-theme-apply-update.sh" "$bindst/qs-theme-apply-update.sh"
   if [[ ! -e "$state" ]]; then
     mkdir -p "$(dirname "$state")"
     t="$(mktemp -p "$(dirname "$state")" .qs-theme-updates.XXXXXX)"
@@ -165,7 +170,7 @@ install_theme_updater() {
     mv "$t" "$state"
   fi
 
-  info "Theme update checker installed (panel check uses Omarchy theme repos)"
+  info "Theme update helpers installed (panel applies only checked theme commits)"
 }
 
 # ── 1. dependencies ─────────────────────────────────────────────
@@ -282,8 +287,8 @@ if [[ -f "$tmp/repo/scripts/qs-arch-security-gate.sh" ]]; then
   info "ArchUpdater security gate installed (weekly blacklist refresh)"
 fi
 
-# ── 4c. Theme update checker (panel "Check themes" helper) ─────
-install_theme_updater "$tmp/repo" || warn "Theme update checker setup incomplete — the bar is fine; the themes tab just cannot scan yet."
+# ── 4c. Theme update helpers (panel "Check themes" + pinned apply) ─────
+install_theme_updater "$tmp/repo" || warn "Theme update helpers setup incomplete — the bar is fine; the themes tab just cannot apply updates yet."
 
 # ── 5. theme hook (live color updates on Omarchy theme switch) ──
 hookdst="$HOME/.config/omarchy/hooks/theme-set.d"
