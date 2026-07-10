@@ -914,6 +914,10 @@ Item {
     property bool notifSilenced: false        // mako do-not-disturb mode
     property bool screenRecording: false
     property int screenRecordingElapsed: 0
+    property string _screenRecordingPid: ""
+    property string _screenRecordingElapsedProbePid: ""
+    property int _screenRecordingBaseElapsed: 0
+    property real _screenRecordingBaseMs: 0
     property string voxState: "idle"          // idle/recording/transcribing
     property string voxHint: ""
     property bool voxAvailable: true
@@ -921,8 +925,36 @@ Item {
     readonly property bool _voxActive: voxState === "recording" || voxState === "transcribing"
 
     function refreshStatusIndicators() {
-        if (statusProc.running) return
-        statusProc.running = true
+        if (!idleProc.running) idleProc.running = true
+        if (!dndProc.running) dndProc.running = true
+        if (!recordingPidProc.running) recordingPidProc.running = true
+    }
+    function setScreenRecordingPid(pid) {
+        pid = String(pid || "").trim()
+        if (pid === _screenRecordingPid) return
+
+        _screenRecordingPid = pid
+        if (pid === "") {
+            screenRecording = false
+            screenRecordingElapsed = 0
+            _screenRecordingBaseElapsed = 0
+            _screenRecordingBaseMs = 0
+            _screenRecordingElapsedProbePid = ""
+            return
+        }
+
+        screenRecording = true
+        screenRecordingElapsed = 0
+        _screenRecordingBaseElapsed = 0
+        _screenRecordingBaseMs = Date.now()
+        _screenRecordingElapsedProbePid = pid
+        recordingElapsedProc.command = ["ps", "-o", "etimes=", "-p", pid]
+        recordingElapsedProc.running = false
+        recordingElapsedProc.running = true
+    }
+    function updateScreenRecordingElapsed() {
+        if (!screenRecording || _screenRecordingBaseMs <= 0) return
+        screenRecordingElapsed = _screenRecordingBaseElapsed + Math.floor((Date.now() - _screenRecordingBaseMs) / 1000)
     }
     function refreshVoxtypeStatus() {
         if (!voxAvailable && !modStatus && barAnim !== 7) return
@@ -931,39 +963,73 @@ Item {
     }
 
     Process {
-        id: statusProc
-        command: ["bash", "-c",
-            "idle=OFF; pgrep -x hypridle >/dev/null && idle=ON; " +
-            "dnd=OFF; makoctl mode 2>/dev/null | grep -q 'do-not-disturb' && dnd=ON; " +
-            "pid=$(pgrep -f '^gpu-screen-recorder' | head -1); " +
-            "if [ -n \"$pid\" ]; then et=$(ps -o etimes= -p \"$pid\" 2>/dev/null | tr -d ' '); rec=\"REC ${et:-0}\"; else rec=\"OFF 0\"; fi; " +
-            "printf 'IDLE %s\\nDND %s\\nREC %s\\n' \"$idle\" \"$dnd\" \"$rec\""
-        ]
+        id: idleProc
+        command: ["pgrep", "-x", "hypridle"]
         running: false
+        onExited: (exitCode) => {
+            theme.hypridleAwake = exitCode !== 0
+        }
+    }
+
+    Process {
+        id: dndProc
+        command: ["makoctl", "mode"]
+        running: false
+        onExited: (exitCode) => {
+            if (exitCode !== 0) theme.notifSilenced = false
+        }
         stdout: StdioCollector {
             onStreamFinished: {
-                var lines = this.text.trim().split("\n")
-                for (var i = 0; i < lines.length; i++) {
-                    var parts = lines[i].trim().split(/\s+/)
-                    if (parts.length < 2) continue
-                    if (parts[0] === "IDLE") {
-                        theme.hypridleAwake = parts[1] === "OFF"
-                    } else if (parts[0] === "DND") {
-                        theme.notifSilenced = parts[1] === "ON"
-                    } else if (parts[0] === "REC") {
-                        theme.screenRecording = parts[1] === "REC"
-                        theme.screenRecordingElapsed = theme.screenRecording ? (parseInt(parts[2]) || 0) : 0
-                    }
-                }
+                theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0
             }
         }
     }
+
+    Process {
+        id: recordingPidProc
+        command: ["pgrep", "-o", "-f", "^gpu-screen-recorder"]
+        running: false
+        onExited: (exitCode) => {
+            if (exitCode !== 0) theme.setScreenRecordingPid("")
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var parts = this.text.trim().split(/\s+/)
+                theme.setScreenRecordingPid(parts[0] || "")
+            }
+        }
+    }
+
+    Process {
+        id: recordingElapsedProc
+        command: ["true"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (theme._screenRecordingElapsedProbePid !== theme._screenRecordingPid) return
+                var elapsed = parseInt(this.text.trim())
+                if (isNaN(elapsed)) elapsed = 0
+                theme._screenRecordingBaseElapsed = Math.max(0, elapsed)
+                theme._screenRecordingBaseMs = Date.now()
+                theme.updateScreenRecordingElapsed()
+            }
+        }
+    }
+
     Timer {
-        interval: theme.screenRecording ? 1000 : 1500
+        interval: 1500
         running: theme._statusPollingWanted
         repeat: true
         triggeredOnStart: true
         onTriggered: theme.refreshStatusIndicators()
+    }
+
+    Timer {
+        interval: 1000
+        running: theme.screenRecording
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: theme.updateScreenRecordingElapsed()
     }
 
     Process {
