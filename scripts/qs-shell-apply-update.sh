@@ -6,8 +6,8 @@
 # Updating = read the checked state, verify the immutable target commit, deploy
 # exactly that commit's version payload, restart the bar.
 #
-# MUST be launched DETACHED from the bar (the QML button uses `setsid`), because
-# this script restarts the bar.
+# MUST be launched outside the bar's service/cgroup, because this script stops
+# and restarts the bar. `setsid` is not enough for systemd-managed launches.
 #
 # Safety contract:
 #   - single-flight (flock): no concurrent applies
@@ -46,6 +46,52 @@ progress_started_epoch=0
 progress_screen="${QS_SHELL_PROGRESS_SCREEN:-}"
 progress_panel_open=true
 progress_last_trace_key=""
+launched_bar_unit=""
+
+systemd_env_args() {
+  local -n _args_ref="$1"
+  local name value
+  for name in \
+      DISPLAY \
+      WAYLAND_DISPLAY \
+      XDG_RUNTIME_DIR \
+      XDG_SESSION_ID \
+      XDG_SESSION_TYPE \
+      XDG_CURRENT_DESKTOP \
+      QT_QPA_PLATFORM \
+      QT_QUICK_CONTROLS_STYLE \
+      HYPRLAND_INSTANCE_SIGNATURE \
+      OMARCHY_PATH \
+      PATH; do
+    value="${!name-}"
+    [ -n "$value" ] && _args_ref+=("--setenv=$name=$value")
+  done
+}
+
+start_bar_instance() {
+  local unit args=()
+  unit="qsrise-bar-$(random_run_id)"
+
+  if command -v systemd-run >/dev/null 2>&1; then
+    args=(--user --collect --quiet "--unit=$unit" "--slice=app-graphical.slice" "--property=Type=exec")
+    systemd_env_args args
+    if systemd-run "${args[@]}" qs -n -c bar >/dev/null 2>&1 9>&-; then
+      launched_bar_unit="$unit"
+      return 0
+    fi
+    if [ -n "${INVOCATION_ID:-}" ]; then
+      return 1
+    fi
+  fi
+
+  setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
+}
+
+stop_launched_bar_unit() {
+  [ -n "${launched_bar_unit:-}" ] || return 0
+  command -v systemctl >/dev/null 2>&1 || return 0
+  systemctl --user stop "$launched_bar_unit" >/dev/null 2>&1 || true
+}
 
 epoch_now() {
   date +%s
@@ -875,6 +921,7 @@ old="$DEST.old.$ts"
 swapped=0
 rollback() {
   local msg
+  stop_launched_bar_unit
   if [ "${swapped:-0}" -eq 1 ]; then   # new tree is visible, later step failed → restore old
     rm -rf "$DEST" 2>/dev/null || true
     if [ -d "$old" ]; then
@@ -895,10 +942,8 @@ rollback() {
   fi
   rm -rf "$old" 2>/dev/null || true
   progress_fail "$msg"
-  # 9>&- : do NOT leak the flock fd into the relaunched bar, or it holds the lock
-  # for its whole lifetime and blocks every future update (see normal path below).
   if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-    setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
+    start_bar_instance || true
   fi
   note -u critical "Shell update failed" "$msg"
 }
@@ -927,20 +972,22 @@ if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; t
   commit_companion_systemd || post_swap_fail
 fi
 
-# 5b. Mark up-to-date via an atomic state write (never delete), but only after
-#     every deploy and companion step has completed successfully.
+write_progress "running" "restarting" 5 ""
+# 6. Relaunch the bar outside the apply unit/cgroup before finalizing the
+#    transaction. If restart fails, rollback is still armed and the old deploy is
+#    restored.
+#
+#    systemd-run is preferred so
+#    a systemd-managed apply can exit without killing the new bar. 9>&- prevents
+#    the relaunched bar from inheriting the flock fd and blocking future updates.
+if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
+  start_bar_instance || post_swap_fail
+fi
+
+# 6b. Mark up-to-date via an atomic state write (never delete), but only after
+#     deploy, companion steps and the new bar start have completed successfully.
 clear_state || post_swap_fail
 
 trap - ERR
 rm -rf "$old" 2>/dev/null || true
 swapped=0
-
-write_progress "running" "restarting" 5 ""
-# 6. Relaunch exactly how the user runs it. The Wayland session env is inherited
-#    via the chain bar → setsid → this script (so only ever call apply from the
-#    session, never from the timer). 9>&- closes the flock fd so the new bar does
-#    NOT inherit the lock — otherwise it would hold it for its whole lifetime and
-#    every future update would fail with "already running" (flock is on the OFD).
-if [ -z "${QS_SHELL_NO_RESTART:-}" ]; then
-  setsid qs -n -d -c bar >/dev/null 2>&1 9>&- < /dev/null &
-fi

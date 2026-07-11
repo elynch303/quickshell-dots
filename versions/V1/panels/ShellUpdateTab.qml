@@ -78,6 +78,15 @@ Column {
         return ""
     }
 
+    function appendSetenv(args, name, value) {
+        if (value !== undefined && value !== null && String(value).length > 0)
+            args.push("--setenv=" + name + "=" + value)
+    }
+
+    function applyUnitName() {
+        return "qs-shell-apply-" + Date.now()
+    }
+
     function checkShell() {
         if (root.shellUpdateChecking || progressRunning) return
         root.shellUpdateChecking = true
@@ -88,14 +97,28 @@ Column {
 
     function startApply() {
         root.setShellProgressPanelOpen(true)
-        shellApplyProc.command = [
-            "env",
-            "QS_SHELL_PROGRESS_SCREEN=" + screenNameForProgress(),
-            "setsid",
-            "-f",
-            "bash",
-            applyScript
+        var cmd = [
+            "systemd-run",
+            "--user",
+            "--collect",
+            "--quiet",
+            "--unit=" + applyUnitName(),
+            "--property=Type=exec"
         ]
+        appendSetenv(cmd, "QS_SHELL_PROGRESS_SCREEN", screenNameForProgress())
+        appendSetenv(cmd, "DISPLAY", Quickshell.env("DISPLAY"))
+        appendSetenv(cmd, "WAYLAND_DISPLAY", Quickshell.env("WAYLAND_DISPLAY"))
+        appendSetenv(cmd, "XDG_RUNTIME_DIR", Quickshell.env("XDG_RUNTIME_DIR"))
+        appendSetenv(cmd, "XDG_SESSION_ID", Quickshell.env("XDG_SESSION_ID"))
+        appendSetenv(cmd, "XDG_SESSION_TYPE", Quickshell.env("XDG_SESSION_TYPE"))
+        appendSetenv(cmd, "XDG_CURRENT_DESKTOP", Quickshell.env("XDG_CURRENT_DESKTOP"))
+        appendSetenv(cmd, "QT_QPA_PLATFORM", Quickshell.env("QT_QPA_PLATFORM"))
+        appendSetenv(cmd, "QT_QUICK_CONTROLS_STYLE", Quickshell.env("QT_QUICK_CONTROLS_STYLE"))
+        appendSetenv(cmd, "HYPRLAND_INSTANCE_SIGNATURE", Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
+        appendSetenv(cmd, "OMARCHY_PATH", Quickshell.env("OMARCHY_PATH"))
+        appendSetenv(cmd, "PATH", Quickshell.env("PATH"))
+        cmd.push("bash", applyScript)
+        shellApplyProc.command = cmd
         shellApplyProc.running = false
         shellApplyProc.running = true
     }

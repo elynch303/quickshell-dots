@@ -262,6 +262,22 @@ run_apply() {
     "$APPLY"
 }
 
+run_apply_with_restart() {
+  local root="$1"
+  local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
+  local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+  QS_SHELL_SMOKE_PLATFORM=offscreen \
+  QS_SHELL_SMOKE_TIMEOUT="${QS_SHELL_SMOKE_TIMEOUT:-1}" \
+  QS_SHELL_PROGRESS_TRACE="$trace" \
+  QS_SHELL_PROGRESS_SCREEN="$screen" \
+    "$APPLY"
+}
+
 run_progress_command() {
   local root="$1"; shift
   PATH="$root/bin:$PATH" \
@@ -308,6 +324,45 @@ esac
 exit 0
 SCRIPT
   chmod 755 "$root/bin/systemctl"
+}
+
+install_fake_restart_tools() {
+  local root="$1"
+  mkdir -p "$root/bin"
+  cat > "$root/bin/qs" <<'SCRIPT'
+#!/usr/bin/env bash
+if [ "${1:-}" = "list" ] && [ "${2:-}" = "--all" ]; then
+  exit 0
+fi
+printf 'qs %s\n' "$*" >> "$HOME/qs.log"
+exit 0
+SCRIPT
+  cat > "$root/bin/systemd-run" <<'SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$HOME/systemd-run.log"
+if [ -n "${QS_TEST_SYSTEMD_RUN_FAIL:-}" ]; then
+  exit 1
+fi
+exit 0
+SCRIPT
+  cat > "$root/bin/setsid" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'setsid %s\n' "$*" >> "$HOME/setsid.log"
+exit 99
+SCRIPT
+  cat > "$root/bin/mv" <<'SCRIPT'
+#!/usr/bin/env bash
+last=""
+for arg in "$@"; do
+  last="$arg"
+done
+if [ -n "${QS_TEST_CLEAR_STATE_FAIL:-}" ] && [ "$last" = "$HOME/.cache/qs-shell/update-available.json" ]; then
+  printf 'blocked clear_state mv: %s\n' "$*" >> "$HOME/mv.log"
+  exit 1
+fi
+exec /usr/bin/mv "$@"
+SCRIPT
+  chmod 755 "$root/bin/qs" "$root/bin/systemd-run" "$root/bin/setsid" "$root/bin/mv"
 }
 
 install_failing_systemctl() {
@@ -663,6 +718,81 @@ test_dirty_repo_is_preserved_while_deploying_checked_target() {
   assert_dest_label "$root" A
   assert_eq "$target" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "dirty repo update deployed checked target"
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_shell_apply_launcher_uses_systemd_unit() {
+  local file="$REPO_ROOT/versions/V1/panels/ShellUpdateTab.qml"
+  assert_contains '"systemd-run"' "$file" "shell apply launcher does not use systemd-run"
+  assert_contains '"--collect"' "$file" "shell apply launcher does not collect transient unit"
+  assert_contains '"--unit=" + applyUnitName()' "$file" "shell apply launcher does not use unique unit name"
+  assert_contains '"--property=Type=exec"' "$file" "shell apply launcher does not use Type=exec"
+  assert_contains 'cmd.push("bash", applyScript)' "$file" "shell apply launcher does not invoke apply helper"
+  assert_not_contains '"setsid"' "$file" "shell apply launcher still uses setsid"
+}
+
+test_apply_restarts_bar_in_own_systemd_unit() {
+  local root="$WORK/restart-systemd-unit"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+
+  run_apply_with_restart "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  assert_contains "--unit=qsrise-bar-" "$root/home/systemd-run.log" "bar restart did not use a transient systemd unit"
+  assert_contains "--slice=app-graphical.slice" "$root/home/systemd-run.log" "bar restart did not use app-graphical.slice"
+  assert_contains "--property=Type=exec" "$root/home/systemd-run.log" "bar restart did not use Type=exec"
+  assert_contains "qs -n -c bar" "$root/home/systemd-run.log" "bar restart did not invoke qs as the systemd service main process"
+  [ ! -e "$root/home/setsid.log" ] || fail "bar restart fell back to setsid despite successful systemd-run"
+  assert_progress_state "$root" running restarting 5 "successful apply did not reach restarting phase"
+}
+
+test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails() {
+  local root="$WORK/restart-systemd-fail-closed"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if INVOCATION_ID=test QS_TEST_SYSTEMD_RUN_FAIL=1 run_apply_with_restart "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "systemd-managed apply succeeded after bar systemd-run failed"
+  fi
+
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  [ ! -e "$root/home/setsid.log" ] || fail "systemd-managed apply fell back to setsid after systemd-run failed"
+  assert_contains "Deploy failed" "$(progress_file "$root")" "restart failure did not record rollback failure"
+}
+
+test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit() {
+  local root="$WORK/restart-clear-state-fail"
+  init_fixture "$root"
+  install_fake_systemctl "$root"
+  install_fake_restart_tools "$root"
+  make_update_and_check "$root" A
+  local before first second unit_count
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if QS_TEST_CLEAR_STATE_FAIL=1 run_apply_with_restart "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded despite clear_state failure after bar start"
+  fi
+
+  assert_dest_label "$root" base
+  assert_pending_state_preserved "$root" "$before"
+  assert_contains "blocked clear_state mv" "$root/home/mv.log" "clear_state failure was not exercised"
+  [ ! -e "$root/home/setsid.log" ] || fail "rollback fell back to setsid"
+
+  unit_count="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | wc -l | tr -d ' ')"
+  assert_eq 2 "$unit_count" "expected one new-bar start and one rollback-bar start"
+  first="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | sed -n '1p' | sed 's/^--unit=//')"
+  second="$(grep -o -- '--unit=qsrise-bar-[^ ]*' "$root/home/systemd-run.log" | sed -n '2p' | sed 's/^--unit=//')"
+  [ -n "$first" ] || fail "first bar unit missing"
+  [ -n "$second" ] || fail "rollback bar unit missing"
+  [ "$first" != "$second" ] || fail "rollback reused the same bar unit name"
+  assert_contains "--user stop $first" "$root/home/systemctl.log" "rollback did not stop the started new-bar unit"
 }
 
 test_progress_success_complete_and_ack() {
@@ -1168,6 +1298,10 @@ test_alternate_reachable_commit_with_same_subject_aborts
 test_later_non_payload_commit_in_target_state_aborts
 test_unreachable_target_aborts_before_mutation
 test_dirty_repo_is_preserved_while_deploying_checked_target
+test_shell_apply_launcher_uses_systemd_unit
+test_apply_restarts_bar_in_own_systemd_unit
+test_systemd_apply_does_not_setsids_bar_when_systemd_run_fails
+test_restart_success_then_clear_state_failure_restarts_old_bar_with_new_unit
 test_progress_success_complete_and_ack
 test_progress_panel_visibility_survives_phase_writes
 test_complete_progress_requires_target_marker_match
