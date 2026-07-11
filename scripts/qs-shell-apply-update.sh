@@ -574,10 +574,7 @@ run_quickshell_smoke() {
   else
     timeout "$timeout_s" "$qs_bin" -p "$wrapper" --no-duplicate --no-color >"$out" 2>"$err" || rc=$?
   fi
-  case "$rc" in
-    0|124|143) ;;
-    *) return 1 ;;
-  esac
+  [ "$rc" -eq 0 ] || return 1
   grep -Fq "QS_SHELL_SMOKE_OK" "$out" "$err" 2>/dev/null || return 1
   ! grep -Fq "QS_SHELL_SMOKE_FAIL" "$out" "$err" 2>/dev/null
 }
@@ -603,15 +600,33 @@ smoke_stage() {
 import QtQuick
 
 QtObject {
+  id: root
   property var component: null
+  property bool finished: false
+
+  function finish(ok, errorText) {
+    if (finished)
+      return
+    finished = true
+    if (ok)
+      console.log("QS_SHELL_SMOKE_OK")
+    else
+      console.error("QS_SHELL_SMOKE_FAIL " + errorText)
+    Qt.callLater(Qt.quit)
+  }
+
+  function evaluateStatus() {
+    if (component.status === Component.Ready)
+      finish(true, "")
+    else if (component.status === Component.Error)
+      finish(false, component.errorString())
+  }
 
   Component.onCompleted: {
     component = Qt.createComponent("__QS_SHELL_TARGET_URL__")
-    if (component.status === Component.Error) {
-      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
-    } else {
-      console.log("QS_SHELL_SMOKE_OK")
-    }
+    if (component.status === Component.Loading)
+      component.statusChanged.connect(function() { root.evaluateStatus() })
+    root.evaluateStatus()
   }
 }
 QML
@@ -638,15 +653,33 @@ QML
 import QtQuick
 
 QtObject {
+  id: root
   property var component: null
+  property bool finished: false
+
+  function finish(ok, errorText) {
+    if (finished)
+      return
+    finished = true
+    if (ok)
+      console.log("QS_SHELL_SMOKE_OK")
+    else
+      console.error("QS_SHELL_SMOKE_FAIL " + errorText)
+    Qt.callLater(Qt.quit)
+  }
+
+  function evaluateStatus() {
+    if (component.status === Component.Ready)
+      finish(true, "")
+    else if (component.status === Component.Error)
+      finish(false, component.errorString())
+  }
 
   Component.onCompleted: {
     component = Qt.createComponent(Qt.resolvedUrl("shell.qml"))
-    if (component.status === Component.Error) {
-      console.error("QS_SHELL_SMOKE_FAIL " + component.errorString())
-    } else {
-      console.log("QS_SHELL_SMOKE_OK")
-    }
+    if (component.status === Component.Loading)
+      component.statusChanged.connect(function() { root.evaluateStatus() })
+    root.evaluateStatus()
   }
 }
 QML

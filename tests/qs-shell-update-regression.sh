@@ -256,7 +256,7 @@ run_apply() {
   QS_SHELL_DEST="$root/dest" \
   QS_SHELL_NO_RESTART=1 \
   QS_SHELL_SMOKE_PLATFORM=offscreen \
-  QS_SHELL_SMOKE_TIMEOUT=1 \
+  QS_SHELL_SMOKE_TIMEOUT="${QS_SHELL_SMOKE_TIMEOUT:-1}" \
   QS_SHELL_PROGRESS_TRACE="$trace" \
   QS_SHELL_PROGRESS_SCREEN="$screen" \
     "$APPLY"
@@ -889,6 +889,19 @@ test_qs_module_import_passes_smoke() {
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
+test_successful_smoke_exits_without_timeout() {
+  local root="$WORK/smoke-fast-success"
+  init_fixture "$root"
+  make_update_and_check "$root" fast
+  local start end elapsed
+  start="$(date +%s%3N)"
+  QS_SHELL_SMOKE_TIMEOUT=5 run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"
+  end="$(date +%s%3N)"
+  elapsed=$((end - start))
+  assert_dest_label "$root" fast
+  [ "$elapsed" -lt 4000 ] || fail "successful shell smoke waited for timeout: elapsed=${elapsed}ms"
+}
+
 test_qs_module_with_qmldir_smoke_does_not_execute_side_effect() {
   local root="$WORK/qs-module-side-effect"
   init_fixture "$root"
@@ -1167,6 +1180,7 @@ test_invalid_import_fails_smoke_and_keeps_old_deploy
 test_bad_local_import_fails_smoke_and_keeps_old_deploy
 test_missing_component_fails_smoke_and_keeps_old_deploy
 test_qs_module_import_passes_smoke
+test_successful_smoke_exits_without_timeout
 test_qs_module_with_qmldir_smoke_does_not_execute_side_effect
 test_qs_module_without_qmldir_fails_before_side_effect
 test_manifest_does_not_restore_whole_systemd_wants_dir
