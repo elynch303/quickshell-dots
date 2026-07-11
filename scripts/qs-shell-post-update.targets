@@ -11,6 +11,7 @@
 .config/quickshell/bin/qs-shell-apply-update.sh
 .config/quickshell/bin/qs-theme-update-check.sh
 .config/quickshell/bin/qs-theme-apply-update.sh
+.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh
 .config/systemd/user/qs-aur-blacklist-fetch.service
 .config/systemd/user/qs-aur-blacklist-fetch.timer
 .config/systemd/user/qs-shell-update-check.service

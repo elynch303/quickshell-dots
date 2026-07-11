@@ -16,6 +16,7 @@ repo="${1:-${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}}"
 bin="$HOME/.local/bin"
 qsbin="$HOME/.config/quickshell/bin"
 units="$HOME/.config/systemd/user"
+theme_hooks="$HOME/.config/omarchy/hooks/theme-set.d"
 defer_systemd="${QS_SHELL_COMPANION_DEFER_SYSTEMD:-0}"
 
 # install via temp + rename: the target gets a NEW inode, so replacing a script
@@ -51,7 +52,7 @@ systemd_user() {
 }
 
 rc=0
-mkdir -p "$bin" "$qsbin" "$units"
+mkdir -p "$bin" "$qsbin" "$units" "$theme_hooks"
 
 # ── ArchUpdater security gate + weekly blacklist refresh ───────
 put "$repo/scripts/qs-arch-security-gate.sh" "$bin/qs-arch-security-gate.sh" 755 || rc=1
@@ -84,6 +85,13 @@ if [ -f "$repo/scripts/qs-theme-update-check.sh" ]; then
   else
     rc=1
   fi
+fi
+
+# ── Omarchy theme hook coupled to the picker thumbnail cache contract ─
+if [ -f "$repo/hooks/50-quickshell-bar.sh" ]; then
+  put "$repo/hooks/50-quickshell-bar.sh" "$theme_hooks/50-quickshell-bar.sh" 755 || rc=1
+else
+  rc=1
 fi
 
 # Re-arm both timers so refreshed unit files take effect now. Plain

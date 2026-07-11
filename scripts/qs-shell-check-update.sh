@@ -7,10 +7,10 @@
 # repo's tracking branch against origin, scoped to the installed version.
 #
 # State contract: ~/.cache/qs-shell/update-available.json ALWAYS exists.
-#   "up to date" = {"schemaVersion": 3, "behind": 0}.
+#   "up to date" = {"schemaVersion": 4, "behind": 0}.
 #   Pending includes immutable provenance: repository, upstreamRef, baseCommit,
-#   targetCommit, full commit IDs, payload/companion tree IDs, version, summary
-#   and checked.
+#   targetCommit, full commit IDs, payload/companion tree IDs, theme hook blob,
+#   version, summary and checked.
 # The bar's FileView only ever reads a complete file via atomic replace and never
 # depends on delete-detection.
 set -euo pipefail
@@ -19,7 +19,8 @@ REPO="${QS_SHELL_REPO:-$HOME/.local/share/quickshell-dots}"
 DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
-SCHEMA_VERSION=3
+SCHEMA_VERSION=4
+HOOK_PATH="hooks/50-quickshell-bar.sh"
 mkdir -p "$STATE_DIR"
 
 # jq is required (and a hard dependency in install.sh). Warn once rather than
@@ -88,9 +89,10 @@ is_commit_hash "$target_commit" || exit 0
 git merge-base --is-ancestor "$base_commit" "$target_commit" 2>/dev/null || exit 0
 
 # Commits the upstream is ahead by that change the deployable payload: THIS
-# version's directory, or the companion pieces the post-update hook ships
-# (helper scripts / systemd units). Docs-only commits stay badge-free.
-payload=("versions/$ver/" "scripts/" "systemd/")
+# version's directory, the companion pieces the post-update hook ships
+# (helper scripts / systemd units), or the single Omarchy theme hook coupled to
+# the picker cache contract. Docs-only commits stay badge-free.
+payload=("versions/$ver/" "scripts/" "systemd/" "$HOOK_PATH")
 behind="$(git rev-list --count "$base_commit..$target_commit" -- "${payload[@]}" 2>/dev/null || echo 0)"
 if [ "${behind:-0}" -eq 0 ]; then
   clear_state
@@ -104,6 +106,10 @@ fi
 systemd_tree=""
 if git cat-file -e "$target_commit:systemd" 2>/dev/null; then
   systemd_tree="$(git rev-parse "$target_commit:systemd" 2>/dev/null)" || systemd_tree=""
+fi
+hook_blob=""
+if git cat-file -e "$target_commit:$HOOK_PATH" 2>/dev/null; then
+  hook_blob="$(git rev-parse "$target_commit:$HOOK_PATH" 2>/dev/null)" || hook_blob=""
 fi
 
 # Short changelog. `git log --max-count` (no `head` in the pipe) — so a large
@@ -124,9 +130,11 @@ write_state "$(jq -nc \
   --arg     payloadTree "$payload_tree" \
   --arg     scriptsTree "$scripts_tree" \
   --arg     systemdTree "$systemd_tree" \
+  --arg     hookBlob "$hook_blob" \
   --arg     checked "$(date -Is)" \
   '{schemaVersion: $schema, behind: $behind, repository: $repository,
     upstreamRef: $upstreamRef, baseCommit: $baseCommit, targetCommit: $targetCommit,
     version: $version, summary: $summary, commitIds: $commitIds,
     payloadTree: $payloadTree, scriptsTree: $scriptsTree, systemdTree: $systemdTree,
+    hookBlob: $hookBlob,
     checked: $checked}')"

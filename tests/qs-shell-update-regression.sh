@@ -32,8 +32,8 @@ state_file() {
 
 write_payload() {
   local repo="$1" label="$2" mode="${3:-ok}"
-  rm -rf "$repo/versions" "$repo/scripts" "$repo/systemd"
-  mkdir -p "$repo/versions/V1" "$repo/scripts" "$repo/systemd"
+  rm -rf "$repo/versions" "$repo/scripts" "$repo/systemd" "$repo/hooks"
+  mkdir -p "$repo/versions/V1" "$repo/scripts" "$repo/systemd" "$repo/hooks"
   case "$mode" in
     missing-shell) ;;
     invalid-shell) printf 'import QtQuick\nItem {\n' > "$repo/versions/V1/shell.qml" ;;
@@ -85,7 +85,9 @@ QML
   esac
   printf '%s\n' "$label" > "$repo/versions/V1/payload.txt"
   printf '%s\n' "$label" > "$repo/scripts/companion.txt"
-  printf 'companion-marker\n' > "$repo/scripts/qs-shell-post-update.targets"
+  printf 'theme-hook-%s\n' "$label" > "$repo/hooks/50-quickshell-bar.sh"
+  chmod 755 "$repo/hooks/50-quickshell-bar.sh"
+  printf 'companion-marker\n.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh\n' > "$repo/scripts/qs-shell-post-update.targets"
   if [ "$mode" = "bad-companion" ]; then
     cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -132,6 +134,16 @@ set -euo pipefail
 mkdir -p "$HOME/.config/systemd/user"
 printf 'TARGET-UNIT\n' > "$HOME/.config/systemd/user/qs-shell-update-check.timer"
 SCRIPT
+  elif [ "$mode" = "hook-mutation-fail" ]; then
+    printf '.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh\n' > "$repo/scripts/qs-shell-post-update.targets"
+    cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+src="${1:?}"
+mkdir -p "$HOME/.config/omarchy/hooks/theme-set.d"
+cp "$src/hooks/50-quickshell-bar.sh" "$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
+exit 42
+SCRIPT
   else
     cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -139,6 +151,9 @@ set -euo pipefail
 src="${1:?}"
 mkdir -p "$HOME"
 cp "$src/scripts/companion.txt" "$HOME/companion-marker"
+mkdir -p "$HOME/.config/omarchy/hooks/theme-set.d"
+cp "$src/hooks/50-quickshell-bar.sh" "$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
+chmod 755 "$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
 SCRIPT
   fi
   printf '[Unit]\nDescription=%s\n' "$label" > "$repo/systemd/qs-test.service"
@@ -168,6 +183,9 @@ init_fixture() {
   git -C "$root/repo" archive HEAD:versions/V1 | tar -x -C "$root/dest"
   printf 'V1\n' > "$root/dest/.qsrise"
   git -C "$root/repo" rev-parse HEAD > "$root/dest/.qsrise-commit"
+  mkdir -p "$root/home/.config/omarchy/hooks/theme-set.d"
+  git -C "$root/repo" show HEAD:hooks/50-quickshell-bar.sh > "$root/home/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
+  chmod 755 "$root/home/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
 }
 
 make_update_and_check() {
@@ -178,12 +196,13 @@ make_update_and_check() {
   QS_SHELL_REPO="$root/repo" \
   QS_SHELL_DEST="$root/dest" \
     "$CHECK"
-  jq -e '(.schemaVersion == 3) and (.behind > 0)
+  jq -e '(.schemaVersion == 4) and (.behind > 0)
     and (.targetCommit | type == "string")
     and (.commitIds | type == "array") and (.commitIds | length > 0)
     and (.payloadTree | type == "string") and (.payloadTree | length > 0)
     and (.scriptsTree | type == "string")
-    and (.systemdTree | type == "string")' "$(state_file "$root")" >/dev/null
+    and (.systemdTree | type == "string")
+    and (.hookBlob | type == "string")' "$(state_file "$root")" >/dev/null
 }
 
 run_apply() {
@@ -258,6 +277,11 @@ assert_dest_label() {
   assert_eq "$label" "$(tr -d '\n' < "$root/dest/payload.txt")" "deployed payload label"
 }
 
+assert_installed_hook() {
+  local root="$1" label="$2"
+  assert_eq "theme-hook-$label" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh")" "installed theme hook"
+}
+
 installed_payload_hash() {
   local dir="$1"
   (
@@ -296,6 +320,28 @@ test_remote_moves_but_apply_installs_checked_target() {
   assert_eq "$(git -C "$root/repo" rev-parse "$target_a:versions/V1")" \
     "$(tr -d '\n' < "$root/dest/.qsrise-payload-tree")" "installed payload tree marker"
   assert_eq A "$(tr -d '\n' < "$root/home/companion-marker")" "companion came from checked target"
+  assert_installed_hook "$root" A
+  assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_hook_only_update_installs_checked_hook() {
+  local root="$WORK/hook-only"
+  init_fixture "$root"
+  printf 'theme-hook-A\n' > "$root/repo/hooks/50-quickshell-bar.sh"
+  git -C "$root/repo" add hooks/50-quickshell-bar.sh >/dev/null
+  git -C "$root/repo" commit -m "hook-only" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+
+  HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
+  local target hook_blob
+  target="$(jq -r '.targetCommit' "$(state_file "$root")")"
+  hook_blob="$(git -C "$root/repo" rev-parse "$target:hooks/50-quickshell-bar.sh")"
+  jq -e --arg hook "$hook_blob" '(.schemaVersion == 4) and (.behind == 1) and (.hookBlob == $hook)' "$(state_file "$root")" >/dev/null
+
+  run_apply "$root" >/dev/null
+  assert_dest_label "$root" base
+  assert_installed_hook "$root" A
+  assert_eq "$target" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "hook-only update deployed checked target"
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
@@ -307,7 +353,7 @@ test_check_clears_stale_schema_before_offline_fetch() {
   git -C "$root/repo" remote set-url origin "$root/missing-remote.git"
 
   HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
-  jq -e '(.schemaVersion == 3) and (.behind == 0)' "$(state_file "$root")" >/dev/null
+  jq -e '(.schemaVersion == 4) and (.behind == 0)' "$(state_file "$root")" >/dev/null
 }
 
 test_alternate_reachable_commit_with_same_subject_aborts() {
@@ -321,7 +367,7 @@ test_alternate_reachable_commit_with_same_subject_aborts() {
   git -C "$root/repo" commit -m "same-subject" >/dev/null
   git -C "$root/repo" push origin main >/dev/null 2>&1
   HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
-  jq -e '(.schemaVersion == 3) and (.behind == 1) and (.summary == ["same-subject"])' "$(state_file "$root")" >/dev/null
+  jq -e '(.schemaVersion == 4) and (.behind == 1) and (.summary == ["same-subject"])' "$(state_file "$root")" >/dev/null
 
   git -C "$root/repo" checkout -b alternate "$base" >/dev/null 2>&1
   printf 'ALTERNATE-B\n' > "$root/repo/versions/V1/alternate-marker"
@@ -593,6 +639,21 @@ test_companion_mutation_failure_restores_side_effect() {
   assert_pending_state_preserved "$root" "$before"
 }
 
+test_hook_mutation_failure_restores_old_hook() {
+  local root="$WORK/hook-mutation-fail"
+  init_fixture "$root"
+  make_update_and_check "$root" A hook-mutation-fail
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded despite hook mutation followed by companion failure"
+  fi
+  assert_dest_label "$root" base
+  assert_installed_hook "$root" base
+  assert_pending_state_preserved "$root" "$before"
+}
+
 test_companion_blacklist_side_effects_restore() {
   local root="$WORK/companion-blacklist-fail"
   init_fixture "$root"
@@ -668,6 +729,7 @@ test_systemd_commit_failure_keeps_pending_state() {
 
 test_remote_moves_but_apply_installs_checked_target
 test_check_clears_stale_schema_before_offline_fetch
+test_hook_only_update_installs_checked_hook
 test_missing_target_aborts_before_mutation
 test_changed_target_sha_aborts_before_mutation
 test_alternate_reachable_commit_with_same_subject_aborts
@@ -686,6 +748,7 @@ test_manifest_does_not_restore_whole_systemd_wants_dir
 test_companion_manifest_is_required
 test_companion_failure_keeps_old_deploy_and_pending_state
 test_companion_mutation_failure_restores_side_effect
+test_hook_mutation_failure_restores_old_hook
 test_companion_blacklist_side_effects_restore
 test_companion_failure_restores_systemd_state
 test_systemd_restore_happens_after_file_restore
