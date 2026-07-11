@@ -556,19 +556,34 @@ test_unreachable_target_aborts_before_mutation() {
   assert_pending_state_preserved "$root" "$before"
 }
 
-test_dirty_repo_aborts_before_mutation() {
+test_dirty_repo_is_preserved_while_deploying_checked_target() {
   local root="$WORK/dirty"
   init_fixture "$root"
   make_update_and_check "$root" A
-  local before
-  before="$(jq -c . "$(state_file "$root")")"
-  printf 'local edit\n' >> "$root/repo/versions/V1/payload.txt"
+  local target before_head after_head before_status after_status tracked_content staged_content untracked_content
+  target="$(jq -r '.targetCommit' "$(state_file "$root")")"
+  before_head="$(git -C "$root/repo" rev-parse HEAD)"
+  printf 'local tracked edit\n' >> "$root/repo/versions/V1/payload.txt"
+  printf 'staged local edit\n' > "$root/repo/local-staged.txt"
+  git -C "$root/repo" add local-staged.txt >/dev/null
+  printf 'untracked local edit\n' > "$root/repo/local-untracked.txt"
+  before_status="$(git -C "$root/repo" status --porcelain=v1)"
+  tracked_content="$(cat "$root/repo/versions/V1/payload.txt")"
+  staged_content="$(cat "$root/repo/local-staged.txt")"
+  untracked_content="$(cat "$root/repo/local-untracked.txt")"
 
-  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
-    fail "apply succeeded with dirty repo"
-  fi
-  assert_dest_label "$root" base
-  assert_pending_state_preserved "$root" "$before"
+  run_apply "$root" >/dev/null
+
+  after_head="$(git -C "$root/repo" rev-parse HEAD)"
+  after_status="$(git -C "$root/repo" status --porcelain=v1)"
+  assert_eq "$before_head" "$after_head" "dirty repo HEAD preserved"
+  assert_eq "$before_status" "$after_status" "dirty repo status preserved"
+  assert_eq "$tracked_content" "$(cat "$root/repo/versions/V1/payload.txt")" "dirty tracked file content preserved"
+  assert_eq "$staged_content" "$(cat "$root/repo/local-staged.txt")" "dirty staged file content preserved"
+  assert_eq "$untracked_content" "$(cat "$root/repo/local-untracked.txt")" "dirty untracked file content preserved"
+  assert_dest_label "$root" A
+  assert_eq "$target" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "dirty repo update deployed checked target"
+  assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
@@ -873,7 +888,7 @@ test_changed_target_sha_aborts_before_mutation
 test_alternate_reachable_commit_with_same_subject_aborts
 test_later_non_payload_commit_in_target_state_aborts
 test_unreachable_target_aborts_before_mutation
-test_dirty_repo_aborts_before_mutation
+test_dirty_repo_is_preserved_while_deploying_checked_target
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy
 test_invalid_import_fails_smoke_and_keeps_old_deploy

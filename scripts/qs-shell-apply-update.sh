@@ -11,7 +11,7 @@
 #
 # Safety contract:
 #   - single-flight (flock): no concurrent applies
-#   - refuses on a dirty or diverged repo (the repo is the user's workspace)
+#   - never mutates the deploy repo worktree; reads the pinned target via git archive
 #   - ALWAYS backs up the live dir first (it may hold un-synced live edits)
 #   - atomic same-filesystem rename swap with automatic rollback: $DEST always
 #     holds the old OR the new tree in full, and any failure leaves a running bar
@@ -437,11 +437,7 @@ if [ -f "$DEST/.qsrise-commit" ]; then
 fi
 [ "$current_base" = "$state_base" ] || fail "Pending update is stale — refresh the shell update check first."
 
-# 1. Don't disturb a repo the user is mid-edit in.
-[ -z "$(git status --porcelain)" ] || \
-  fail "Repo has uncommitted changes — commit or stash in $REPO first."
-
-# 2. Refresh refs, then prove that the stored immutable target is still a valid
+# 1. Refresh refs, then prove that the stored immutable target is still a valid
 #    commit from the expected upstream. Never install the moving branch tip.
 git fetch --quiet origin || fail "Could not reach origin (offline?)."
 upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" \
