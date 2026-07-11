@@ -1350,7 +1350,7 @@ Item {
     }
 
     readonly property var launcherLogoTextOptions: ["omarchy", "hyprland", "arch", "omacom"]
-    readonly property var launcherLogoIconOptions: ["omarchy", "hyprland", "arch", "grid", "spark", "power", "dragon", "mark", "nix", "branch"]
+    readonly property var launcherLogoIconOptions: ["omarchy", "hyprland", "arch", "grid", "spark", "power", "dragon", "mark", "nix", "branch", "rebel"]
 
     function launcherLogoTextIndex(id) {
         for (var i = 0; i < launcherLogoTextOptions.length; i++)
@@ -1405,6 +1405,7 @@ Item {
         if (id === "mark") return "Mark"
         if (id === "nix") return "Nix"
         if (id === "branch") return "Branch"
+        if (id === "rebel") return "Rebel"
         return "Omarchy"
     }
     function launcherLogoIconGlyph(id) {
@@ -1418,6 +1419,7 @@ Item {
         if (id === "mark") return ""
         if (id === "nix") return ""
         if (id === "branch") return ""
+        if (id === "rebel") return ""
         return String.fromCodePoint(0xE900)
     }
     function launcherLogoIconFont(id) {
