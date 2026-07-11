@@ -33,6 +33,7 @@ PanelWindow {
     property int  selFilt:       0
     property string filterText:  ""
     property string currentImage: ""
+    property int thumbEpoch:      0
 
     visible: root.imagePickerVisible && active
 
@@ -49,7 +50,7 @@ PanelWindow {
             out.push({
                 idx:      i,
                 filePath: imageArray[i].filePath,
-                thumb:    "file://" + imageArray[i].thumbnailPath,
+                thumb:    panel.thumbUrlFor(imageArray[i]),
                 label:    Model.labelForPath(imageArray[i].filePath),
                 dir:      imageArray[i].dir || "",
                 current:  imageArray[i].filePath === panel.currentImage
@@ -63,6 +64,10 @@ PanelWindow {
         (filtered.length > 0 && selFilt >= 0 && selFilt < filtered.length)
             ? filtered[selFilt].label
             : (filterText ? "No matches" : "")
+    function thumbUrlFor(img) {
+        if (!img || !img.thumbnailPath || img.thumbnailPath === img.filePath) return ""
+        return "file://" + img.thumbnailPath
+    }
 
     // ── open / style gating ──
     function syncOpen() {
@@ -122,6 +127,16 @@ PanelWindow {
     // scan-result cache → instant (re)open
     readonly property string scanCachePath: Quickshell.env("HOME") + "/.cache/quickshell-scan-" + (isThemeMode ? "theme" : "wallpaper")
     property string _lastScan: ""
+    function scanHasOriginalThumbs(text) {
+        var rows = String(text || "").split("\n")
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i]
+            if (!row) continue
+            var cols = row.split("\t")
+            if (cols.length < 2 || !cols[1] || cols[0] === cols[1]) return true
+        }
+        return false
+    }
     Process {
         id: cacheProc
         command: ["cat", panel.scanCachePath]
@@ -130,8 +145,9 @@ PanelWindow {
     function applyScan(text, fromCache) {
         var t = String(text || "")
         if (fromCache && !t.trim()) return   // cache empty → wait for live scan; live empty → fall through to empty-state
+        if (fromCache && scanHasOriginalThumbs(t)) return
         if (fromCache && imagesLoaded) return
-        if (!fromCache && t.trim() === _lastScan.trim() && imagesLoaded) return
+        if (!fromCache && t.trim() === _lastScan.trim() && imagesLoaded) { panel.warmVisible(); warmTimer.restart(); return }
         _lastScan = t
         var images = Model.loadRows(t)
         panel.imageArray   = images
@@ -142,7 +158,7 @@ PanelWindow {
                 panel.layoutSettled = true
                 if (panel.imageArray.length > 0) stage.forceActiveFocus()   // keep Esc-catcher focused when empty
                 panel.fetchMeta()
-                if (!fromCache) { panel.warmMeta(); warmTimer.restart() }
+                if (!fromCache) { panel.warmMeta(); panel.warmVisible(); warmTimer.restart() }
             }
         })
     }
@@ -152,6 +168,10 @@ PanelWindow {
             return ["bash", "-c", [
                 "shopt -s nullglob nocaseglob;",
                 "CACHE=$HOME/.cache/quickshell-theme-picker; mkdir -p \"$CACHE\";",
+                "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\";",
+                "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\";",
+                "hash_for() { local s=\"$1\" r m key h tmp; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; tmp=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$tmp\" && mv -f \"$tmp\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; };",
+                "thumb_for() { local s=\"$1\" k; k=$(hash_for \"$s\") || return 1; printf '%s/%s-512.jpg' \"$D\" \"$k\"; };",
                 "for d in ~/.local/share/omarchy/themes/* ~/.config/omarchy/themes/*; do",
                 "  [ -d \"$d\" ] || continue;",
                 "  name=$(basename \"$d\");",
@@ -161,15 +181,20 @@ PanelWindow {
                 "  [ -z \"$prev\" ] && continue;",
                 "  ext=\"${prev##*.}\"; link=\"$CACHE/$name.$ext\";",
                 "  [ -L \"$link\" ] || ln -sf \"$prev\" \"$link\";",
-                "  printf '%s\\t%s\\t%s\\n' \"$link\" \"$prev\" \"$d\";",
+                "  thumb=$(thumb_for \"$link\") || continue;",
+                "  printf '%s\\t%s\\t%s\\n' \"$link\" \"$thumb\" \"$d\";",
                 "done | sort -u"
             ].join(" ")]
         } else {
-            return ["bash", "-c",
+            return ["bash", "-c", [
+                "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\";",
+                "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\";",
+                "hash_for() { local s=\"$1\" r m key h tmp; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; tmp=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$tmp\" && mv -f \"$tmp\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; };",
+                "thumb_for() { local s=\"$1\" k; k=$(hash_for \"$s\") || return 1; printf '%s/%s-512.jpg' \"$D\" \"$k\"; };",
                 "find -L ~/.config/omarchy/current/theme/backgrounds -maxdepth 1 -type f " +
                 "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) " +
-                "2>/dev/null | sort | while read f; do printf '%s\\t%s\\n' \"$f\" \"$f\"; done"
-            ]
+                "2>/dev/null | sort | while IFS= read -r f; do thumb=$(thumb_for \"$f\") || continue; printf '%s\\t%s\\n' \"$f\" \"$thumb\"; done"
+            ].join(" ")]
         }
     }
 
@@ -202,24 +227,62 @@ PanelWindow {
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
 
-    // ── background pre-warm: after the open settles, generate every missing
-    // thumbnail at LOW priority (nice) so fast scrubbing finds cached thumbs
-    // without the warm burst ever competing with the open animation / GUI ──
-    Process { id: warmProc; command: [] }
-    Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
-    function warmAll() {
-        var srcs = []
-        for (var i = 0; i < imageArray.length; i++)
-            if (imageArray[i].filePath) srcs.push(imageArray[i].filePath)
-        if (srcs.length === 0) return
-        warmProc.command = ["bash", "-c",
-            "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
-            "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); " +
-            "o=\"$D/$k-$m.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
-            "nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 480x270^ -quality 82 \"$1\" >/dev/null 2>&1'",
-            "warm"].concat(srcs)
-        warmProc.running = false; warmProc.running = true
+    // ── pre-warm: visible entries first, the rest after the open settles. All
+    // image pickers share the 512px cache family; Tanzaku lets sourceSize decode
+    // the shared thumbnails down to its strip dimensions.
+    Process {
+        id: priorityWarmProc
+        command: []
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: if (String(this.text || "").trim()) panel.thumbEpoch++
+        }
     }
+    Process {
+        id: warmProc
+        command: []
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: if (String(this.text || "").trim()) panel.thumbEpoch++
+        }
+    }
+    Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
+    function warmCommand(srcs) {
+        return ["bash", "-c",
+            "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
+            "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\"; " +
+            "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
+            "hash_for() { local s=\"$1\" r m key h t; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; t=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$t\" && mv -f \"$t\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; }; " +
+            "for s in \"$@\"; do k=$(hash_for \"$s\") || continue; " +
+            "o=\"$D/$k-512.jpg\"; [ -s \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
+            "if [ -s \"$tmp\" ]; then nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; made=0; while IFS= read -r _src && IFS= read -r out; do [ -s \"$out\" ] && { made=1; break; }; done < \"$tmp\"; [ \"$made\" -eq 1 ] && echo changed; fi",
+            "warm"].concat(srcs)
+    }
+    function startWarm(proc, srcs) {
+        if (srcs.length === 0) return
+        proc.command = panel.warmCommand(srcs)
+        proc.running = false; proc.running = true
+    }
+    function visibleSourcePaths() {
+        var srcs = [], seen = {}
+        for (var i = 0; i < filtered.length; i++) {
+            if (Math.abs(i - selFilt) > maxVisible) continue
+            var p = filtered[i].filePath
+            if (p && !seen[p]) { seen[p] = true; srcs.push(p) }
+        }
+        return srcs
+    }
+    function backgroundSourcePaths() {
+        var visible = {}, priority = visibleSourcePaths(), srcs = [], seen = {}
+        for (var i = 0; i < priority.length; i++) visible[priority[i]] = true
+        for (var j = 0; j < imageArray.length; j++) {
+            var p = imageArray[j].filePath
+            if (p && !visible[p] && !seen[p]) { seen[p] = true; srcs.push(p) }
+        }
+        return srcs
+    }
+    function warmVisible() { panel.startWarm(priorityWarmProc, panel.visibleSourcePaths()) }
+    function warmAll() { panel.startWarm(warmProc, panel.backgroundSourcePaths()) }
 
     // ── lazy meta (author/repo/palette) for the FOCUSED theme only, cached by
     // dir — keeps the scan instant; enrichment lands ~110ms after the focus settles
@@ -461,28 +524,10 @@ PanelWindow {
                 readonly property bool focused: relIdx === 0
                 readonly property bool near:    Math.abs(relIdx) <= panel.maxVisible
 
-                // ── cached 480px thumbnails for ALL items (theme + wallpaper) ──
-                // never decode the full source live → instant load, smooth scrubbing.
-                property string thumbPath: ""
-                Process {
-                    id: thumbProc
-                    command: []
-                    stdout: StdioCollector {
-                        onStreamFinished: { var p = this.text.trim(); if (p) item.thumbPath = "file://" + p }
-                    }
-                }
-                function ensureThumb() {
-                    if (thumbPath || !panel.ready || !near || !entry) return
-                    thumbProc.command = ["bash", "-c",
-                        "s=" + panel.shq(entry.filePath) + "; D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; " +
-                        "k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m.jpg\"; " +
-                        "if command -v magick >/dev/null 2>&1; then [ -f \"$o\" ] || nice -n 10 magick \"$s\" -auto-orient -strip -thumbnail 480x270^ -quality 82 \"$o\" >/dev/null 2>&1; fi; " +
-                        "[ -f \"$o\" ] && echo \"$o\" || echo \"$s\""]
-                    thumbProc.running = false; thumbProc.running = true
-                }
-                onNearChanged: if (near) ensureThumb()
-                Component.onCompleted: ensureThumb()
-                Connections { target: panel; function onReadyChanged() { if (panel.ready) item.ensureThumb() } }
+                // Cached thumbnails are resolved by the scan/warm worker, so
+                // visible delegates don't start shell processes or briefly
+                // switch from an empty source to a generated path.
+                readonly property string thumbPath: entry ? entry.thumb : ""
 
                 width:  panel.stripWidthFor(Math.abs(relIdx))
                 height: panel.focusedH
@@ -516,10 +561,23 @@ PanelWindow {
 
                         // image — clipped to the rounded shape above
                         Image {
+                            id: thumbImage
                             anchors.fill: parent
-                            // cached 480px thumb (theme + wallpaper); current-visibility
+                            // cached 512px thumb (theme + wallpaper); current-visibility
                             // bound so off-screen refs drop → bounded memory
-                            source: (panel.ready && item.near && item.entry) ? item.thumbPath : ""
+                            readonly property string wantedSource: (panel.ready && item.near && item.thumbPath) ? item.thumbPath : ""
+                            source: wantedSource
+                            onWantedSourceChanged: source = wantedSource
+                            Connections {
+                                target: panel
+                                function onThumbEpochChanged() {
+                                    if (thumbImage.wantedSource && (thumbImage.status === Image.Error || thumbImage.status === Image.Null)) {
+                                        var s = thumbImage.wantedSource
+                                        thumbImage.source = ""
+                                        thumbImage.source = s
+                                    }
+                                }
+                            }
                             fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
                             sourceSize.width:  panel.focusedW
                             sourceSize.height: panel.focusedH
