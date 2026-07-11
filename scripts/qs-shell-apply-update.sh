@@ -895,7 +895,9 @@ trap 'post_swap_fail' ERR
 #     manual install.sh re-run. This is part of the reviewed update transaction:
 #     a failure rolls back the visible deploy and leaves the pending state intact.
 if [ -n "$companion" ] && [ -f "$companion/scripts/qs-shell-post-update.sh" ]; then
-  QS_SHELL_COMPANION_DEFER_SYSTEMD=1 bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || post_swap_fail
+  QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+  QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
+    bash "$companion/scripts/qs-shell-post-update.sh" "$companion" >/dev/null 2>&1 || post_swap_fail
   commit_companion_systemd || post_swap_fail
 fi
 

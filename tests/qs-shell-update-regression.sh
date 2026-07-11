@@ -162,7 +162,9 @@ SCRIPT
 set -euo pipefail
 src="${1:?}"
 if [ -f "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" ]; then
-  [ -f "$src/contrib/post-boot.d/quickshell-rise" ] || exit 42
+  if [ ! -f "$src/contrib/post-boot.d/quickshell-rise" ] && [ "${QS_SHELL_REQUIRE_POST_BOOT_SOURCE:-0}" = "1" ]; then
+    exit 42
+  fi
 fi
 SCRIPT
   elif [ "$mode" = "hook-mutation-fail" ]; then
@@ -945,7 +947,7 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
   printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
   chmod 755 "$root/bin/systemctl"
 
-  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
     bash "$repo/scripts/qs-shell-post-update.sh" "$repo" >/dev/null
 
   cmp -s "$repo/contrib/post-boot.d/quickshell-rise" "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" || \
@@ -959,6 +961,49 @@ test_real_post_update_refreshes_installed_post_boot_hook_only() {
     fail "post-update installed opt-in post-boot hook unexpectedly"
   grep -Fxq '.config/omarchy/hooks/post-boot.d/quickshell-rise' "$repo/scripts/qs-shell-post-update.targets" || \
     fail "post-boot hook is missing from companion rollback targets"
+}
+
+make_minimal_legacy_companion() {
+  local root="$1"
+  mkdir -p "$root/companion/scripts" "$root/companion/hooks"
+  cp "$REPO_ROOT/scripts/qs-shell-post-update.sh" "$root/companion/scripts/qs-shell-post-update.sh"
+  printf 'theme-hook\n' > "$root/companion/hooks/50-quickshell-bar.sh"
+  chmod 755 "$root/companion/hooks/50-quickshell-bar.sh"
+}
+
+test_legacy_post_update_missing_post_boot_source_keeps_installed_hook() {
+  local root="$WORK/legacy-post-boot-missing-source"
+  make_minimal_legacy_companion "$root"
+  mkdir -p "$root/home/.local/share" "$root/home/.config/omarchy/hooks/post-boot.d" "$root/bin"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
+  chmod 755 "$root/bin/systemctl"
+
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+    bash "$root/companion/scripts/qs-shell-post-update.sh" "$root/companion" >/dev/null
+
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" \
+    "legacy missing post-boot source should leave installed hook untouched"
+}
+
+test_strict_post_update_missing_post_boot_source_fails() {
+  local root="$WORK/strict-post-boot-missing-source"
+  make_minimal_legacy_companion "$root"
+  mkdir -p "$root/home/.local/share" "$root/home/.config/omarchy/hooks/post-boot.d" "$root/bin"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
+  chmod 755 "$root/bin/systemctl"
+
+  if HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 QS_SHELL_REQUIRE_POST_BOOT_SOURCE=1 \
+      bash "$root/companion/scripts/qs-shell-post-update.sh" "$root/companion" >"$root/post.out" 2>"$root/post.err"; then
+    fail "strict post-update accepted installed post-boot hook with missing staged source"
+  fi
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" \
+    "strict missing post-boot source should not mutate installed hook"
 }
 
 test_missing_post_boot_source_rolls_back_and_preserves_pending_state() {
@@ -1127,6 +1172,8 @@ test_qs_module_without_qmldir_fails_before_side_effect
 test_manifest_does_not_restore_whole_systemd_wants_dir
 test_companion_manifest_is_required
 test_real_post_update_refreshes_installed_post_boot_hook_only
+test_legacy_post_update_missing_post_boot_source_keeps_installed_hook
+test_strict_post_update_missing_post_boot_source_fails
 test_missing_post_boot_source_rolls_back_and_preserves_pending_state
 test_companion_failure_keeps_old_deploy_and_pending_state
 test_companion_mutation_failure_restores_side_effect
