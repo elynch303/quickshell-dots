@@ -26,8 +26,25 @@ assert_contains() {
   grep -Fq -- "$needle" "$file" || fail "$msg: missing '$needle'"
 }
 
+assert_not_contains() {
+  local needle="$1" file="$2" msg="$3"
+  [ ! -f "$file" ] || ! grep -Fq -- "$needle" "$file" || fail "$msg: unexpected '$needle'"
+}
+
 state_file() {
   printf '%s/.cache/qs-shell/update-available.json\n' "$1/home"
+}
+
+progress_file() {
+  printf '%s/.cache/qs-shell/apply-status.json\n' "$1/home"
+}
+
+progress_trace_file() {
+  printf '%s/progress.trace\n' "$1"
+}
+
+notify_log() {
+  printf '%s/home/notify.log\n' "$1"
 }
 
 write_payload() {
@@ -228,6 +245,8 @@ make_update_and_check() {
 
 run_apply() {
   local root="$1"
+  local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
+  local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
   PATH="$root/bin:$PATH" \
   HOME="$root/home" \
   XDG_STATE_HOME="$root/state" \
@@ -236,7 +255,19 @@ run_apply() {
   QS_SHELL_NO_RESTART=1 \
   QS_SHELL_SMOKE_PLATFORM=offscreen \
   QS_SHELL_SMOKE_TIMEOUT=1 \
+  QS_SHELL_PROGRESS_TRACE="$trace" \
+  QS_SHELL_PROGRESS_SCREEN="$screen" \
     "$APPLY"
+}
+
+run_progress_command() {
+  local root="$1"; shift
+  PATH="$root/bin:$PATH" \
+  HOME="$root/home" \
+  XDG_STATE_HOME="$root/state" \
+  QS_SHELL_REPO="$root/repo" \
+  QS_SHELL_DEST="$root/dest" \
+    "$APPLY" "$@"
 }
 
 install_fake_systemctl() {
@@ -288,6 +319,16 @@ SCRIPT
   chmod 755 "$root/bin/systemctl"
 }
 
+install_fake_notify() {
+  local root="$1"
+  mkdir -p "$root/bin"
+  cat > "$root/bin/notify-send" <<'SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$HOME/notify.log"
+SCRIPT
+  chmod 755 "$root/bin/notify-send"
+}
+
 assert_pending_state_preserved() {
   local root="$1" before="$2"
   assert_eq "$before" "$(jq -c . "$(state_file "$root")")" "pending state preserved"
@@ -306,6 +347,41 @@ assert_installed_hook() {
 assert_installed_post_boot_hook() {
   local root="$1" label="$2"
   assert_eq "post-boot-$label" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "installed post-boot hook"
+}
+
+assert_progress_json_valid() {
+  local root="$1"
+  jq -e '(.schemaVersion == 1)
+    and (.runId | type == "string")
+    and (.state | type == "string")
+    and (.phase | type == "string")
+    and (.step | type == "number")
+    and (.totalSteps == 5)
+    and (.targetCommit | type == "string")
+    and (.startedEpoch | type == "number")
+    and (.updatedEpoch | type == "number")
+    and (.screenName | type == "string")
+    and (.error | type == "string")
+    and (.acknowledged | type == "boolean")
+    and (.panelOpen | type == "boolean")' "$(progress_file "$root")" >/dev/null
+}
+
+assert_progress_state() {
+  local root="$1" state="$2" phase="$3" step="$4" msg="$5"
+  assert_progress_json_valid "$root"
+  jq -e --arg state "$state" --arg phase "$phase" --argjson step "$step" \
+    '(.state == $state) and (.phase == $phase) and (.step == $step)' \
+    "$(progress_file "$root")" >/dev/null || fail "$msg"
+}
+
+progress_run_id() {
+  jq -r '.runId' "$(progress_file "$1")"
+}
+
+assert_progress_trace_order() {
+  local root="$1" want="$2" got
+  got="$(awk -F '\t' '{print $2 ":" $3}' "$(progress_trace_file "$root")" | paste -sd ' ' -)"
+  assert_eq "$want" "$got" "progress phase order"
 }
 
 installed_payload_hash() {
@@ -433,6 +509,7 @@ test_changed_post_boot_hook_blob_aborts_before_mutation() {
   assert_dest_label "$root" base
   assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "post-boot hook survived blob mismatch"
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed validating 2 "post-boot blob mismatch did not fail in validating phase"
 }
 
 test_check_clears_stale_schema_before_offline_fetch() {
@@ -586,6 +663,146 @@ test_dirty_repo_is_preserved_while_deploying_checked_target() {
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
 }
 
+test_progress_success_complete_and_ack() {
+  local root="$WORK/progress-success"
+  init_fixture "$root"
+  install_fake_notify "$root"
+  make_update_and_check "$root" A
+  local target run
+  target="$(jq -r '.targetCommit' "$(state_file "$root")")"
+
+  run_apply "$root" >/dev/null
+
+  assert_not_contains "Shell updated" "$(notify_log "$root")" "success notification fired before loaded-bar completion"
+  assert_progress_trace_order "$root" "checking:1 validating:2 testing:3 installing:4 restarting:5"
+  assert_progress_state "$root" running restarting 5 "successful apply did not wait for loaded-bar completion"
+  assert_eq "$target" "$(jq -r '.targetCommit' "$(progress_file "$root")")" "progress target commit"
+  assert_eq "DP-1" "$(jq -r '.screenName' "$(progress_file "$root")")" "progress screen name"
+  jq -e '.panelOpen == true' "$(progress_file "$root")" >/dev/null || fail "new progress run did not start with panelOpen true"
+  run="$(progress_run_id "$root")"
+
+  run_progress_command "$root" --complete-progress "$run"
+  assert_progress_state "$root" completed restarting 5 "complete-progress did not mark completed"
+  assert_contains "Shell updated" "$(notify_log "$root")" "success notification missing after loaded-bar completion"
+  assert_eq 1 "$(grep -Fc 'Shell updated' "$(notify_log "$root")")" "success notification count after completion"
+
+  run_progress_command "$root" --complete-progress "$run"
+  assert_eq 1 "$(grep -Fc 'Shell updated' "$(notify_log "$root")")" "success notification was repeated"
+
+  run_progress_command "$root" --ack-progress "$run"
+  assert_progress_state "$root" idle "" 0 "ack-progress did not mark idle"
+  jq -e '.acknowledged == true' "$(progress_file "$root")" >/dev/null || fail "ack-progress did not acknowledge status"
+}
+
+test_progress_panel_visibility_survives_phase_writes() {
+  local root="$WORK/progress-panel-open"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  run_apply "$root" >/dev/null
+  local run
+  run="$(progress_run_id "$root")"
+
+  run_progress_command "$root" --progress-panel "$run" closed
+  jq -e '.panelOpen == false' "$(progress_file "$root")" >/dev/null || fail "progress panel close was not persisted"
+
+  run_progress_command "$root" --complete-progress "$run"
+  jq -e '(.state == "completed") and (.panelOpen == false)' "$(progress_file "$root")" >/dev/null || \
+    fail "complete-progress did not preserve closed panel state"
+
+  run_progress_command "$root" --progress-panel "$run" open
+  jq -e '.panelOpen == true' "$(progress_file "$root")" >/dev/null || fail "progress panel reopen was not persisted"
+}
+
+test_complete_progress_requires_target_marker_match() {
+  local root="$WORK/progress-complete-mismatch"
+  init_fixture "$root"
+  install_fake_notify "$root"
+  make_update_and_check "$root" A
+  run_apply "$root" >/dev/null
+  local run
+  run="$(progress_run_id "$root")"
+  printf '0000000000000000000000000000000000000000\n' > "$root/dest/.qsrise-commit"
+
+  run_progress_command "$root" --complete-progress "$run"
+
+  assert_progress_state "$root" failed restarting 5 "complete-progress accepted wrong deploy marker"
+  assert_contains "Loaded shell does not match" "$(progress_file "$root")" "complete-progress mismatch error"
+  assert_not_contains "Shell updated" "$(notify_log "$root")" "mismatch emitted success notification"
+  assert_contains "Shell update failed" "$(notify_log "$root")" "mismatch did not emit failure notification"
+}
+
+test_recent_running_progress_blocks_second_apply() {
+  local root="$WORK/progress-double-click"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  mkdir -p "$(dirname "$(progress_file "$root")")"
+  local now before
+  now="$(date +%s)"
+  jq -nc --argjson now "$now" '{
+    schemaVersion: 1,
+    runId: "already-running",
+    state: "running",
+    phase: "installing",
+    step: 4,
+    totalSteps: 5,
+    targetCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    startedEpoch: $now,
+    updatedEpoch: $now,
+    screenName: "DP-2",
+    error: "",
+    acknowledged: false,
+    panelOpen: true
+  }' > "$(progress_file "$root")"
+  before="$(jq -c . "$(progress_file "$root")")"
+
+  run_apply "$root" >/dev/null
+
+  assert_dest_label "$root" base
+  assert_eq "$before" "$(jq -c . "$(progress_file "$root")")" "second apply overwrote active progress"
+  [ ! -e "$(progress_trace_file "$root")" ] || fail "second apply started a new progress trace"
+}
+
+test_stale_running_progress_can_be_replaced() {
+  local root="$WORK/progress-stale"
+  init_fixture "$root"
+  make_update_and_check "$root" A
+  mkdir -p "$(dirname "$(progress_file "$root")")"
+  local old
+  old="$(( $(date +%s) - 1200 ))"
+  jq -nc --argjson old "$old" '{
+    schemaVersion: 1,
+    runId: "stale-running",
+    state: "running",
+    phase: "installing",
+    step: 4,
+    totalSteps: 5,
+    targetCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    startedEpoch: $old,
+    updatedEpoch: $old,
+    screenName: "DP-2",
+    error: "",
+    acknowledged: false,
+    panelOpen: true
+  }' > "$(progress_file "$root")"
+
+  run_apply "$root" >/dev/null
+
+  assert_dest_label "$root" A
+  [ "$(progress_run_id "$root")" != "stale-running" ] || fail "stale progress run was not replaced"
+  assert_progress_state "$root" running restarting 5 "stale progress replacement did not finish apply"
+}
+
+test_progress_failure_in_checking_phase() {
+  local root="$WORK/progress-checking-fail"
+  init_fixture "$root"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with no pending state"
+  fi
+
+  assert_progress_state "$root" failed checking 1 "checking failure did not write failed checking status"
+}
+
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
   local root="$WORK/smoke"
   init_fixture "$root"
@@ -598,6 +815,7 @@ test_staging_smoke_failure_keeps_old_deploy_and_pending_state() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "staging smoke failure did not fail in testing phase"
 }
 
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy() {
@@ -612,6 +830,7 @@ test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "invalid shell failure did not fail in testing phase"
 }
 
 test_invalid_import_fails_smoke_and_keeps_old_deploy() {
@@ -626,6 +845,7 @@ test_invalid_import_fails_smoke_and_keeps_old_deploy() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed testing 3 "invalid import failure did not fail in testing phase"
 }
 
 test_bad_local_import_fails_smoke_and_keeps_old_deploy() {
@@ -771,6 +991,7 @@ test_companion_failure_keeps_old_deploy_and_pending_state() {
   fi
   assert_dest_label "$root" base
   assert_pending_state_preserved "$root" "$before"
+  assert_progress_state "$root" failed installing 4 "companion failure did not fail in installing phase"
 }
 
 test_companion_mutation_failure_restores_side_effect() {
@@ -889,6 +1110,12 @@ test_alternate_reachable_commit_with_same_subject_aborts
 test_later_non_payload_commit_in_target_state_aborts
 test_unreachable_target_aborts_before_mutation
 test_dirty_repo_is_preserved_while_deploying_checked_target
+test_progress_success_complete_and_ack
+test_progress_panel_visibility_survives_phase_writes
+test_complete_progress_requires_target_marker_match
+test_recent_running_progress_blocks_second_apply
+test_stale_running_progress_can_be_replaced
+test_progress_failure_in_checking_phase
 test_staging_smoke_failure_keeps_old_deploy_and_pending_state
 test_invalid_shell_qml_fails_smoke_and_keeps_old_deploy
 test_invalid_import_fails_smoke_and_keeps_old_deploy
