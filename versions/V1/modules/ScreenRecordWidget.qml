@@ -60,7 +60,7 @@ Item {
     Process {
         id: toggleProc
         command: ["bash", "-c", "omarchy-capture-screenrecording --stop-recording"]
-        onExited: root.refreshStatusIndicators()
+        onExited: root.refreshRecordingStatus()
     }
 
     TooltipMixin { id: tip; root: rootMod.root; owner: rootMod; text: rootMod.tooltipText }

@@ -918,6 +918,8 @@ Item {
     property string _screenRecordingElapsedProbePid: ""
     property int _screenRecordingBaseElapsed: 0
     property real _screenRecordingBaseMs: 0
+    readonly property string screenRecordingStatePath: "/tmp/omarchy-screenrecord-filename"
+    property bool _recordingRefreshPending: false
     property string voxState: "idle"          // idle/recording/transcribing
     property string voxHint: ""
     property bool voxAvailable: true
@@ -927,7 +929,16 @@ Item {
     function refreshStatusIndicators() {
         if (!idleProc.running) idleProc.running = true
         if (!dndProc.running) dndProc.running = true
-        if (!recordingPidProc.running) recordingPidProc.running = true
+    }
+    function refreshRecordingStatus() {
+        if (recordingPidProc.running) {
+            _recordingRefreshPending = true
+            return
+        }
+        recordingPidProc.running = true
+    }
+    function reconcileSlowStatusIndicators() {
+        refreshRecordingStatus()
     }
     function setScreenRecordingPid(pid) {
         pid = String(pid || "").trim()
@@ -991,6 +1002,10 @@ Item {
         running: false
         onExited: (exitCode) => {
             if (exitCode !== 0) theme.setScreenRecordingPid("")
+            if (theme._recordingRefreshPending) {
+                theme._recordingRefreshPending = false
+                theme.refreshRecordingStatus()
+            }
         }
         stdout: StdioCollector {
             onStreamFinished: {
@@ -998,6 +1013,19 @@ Item {
                 theme.setScreenRecordingPid(parts[0] || "")
             }
         }
+    }
+
+    FileView {
+        id: screenRecordingStateFile
+        path: theme.screenRecordingStatePath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: {
+            screenRecordingStateFile.reload()
+            theme.refreshRecordingStatus()
+        }
+        onLoaded: theme.refreshRecordingStatus()
+        onLoadFailed: theme.refreshRecordingStatus()
     }
 
     Process {
@@ -1022,6 +1050,14 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: theme.refreshStatusIndicators()
+    }
+
+    Timer {
+        interval: 45000
+        running: theme._statusPollingWanted
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: theme.reconcileSlowStatusIndicators()
     }
 
     Timer {
