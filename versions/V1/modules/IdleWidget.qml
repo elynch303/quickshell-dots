@@ -6,8 +6,8 @@ Item {
     id: rootMod
     required property var root
 
-    // "stay awake" mode active when hypridle is NOT running
-    readonly property bool awake: root.hypridleAwake
+    // "Stay awake" mode active; Theme maps this to the active Omarchy idle backend.
+    readonly property bool awake: root.stayAwake
 
     visible: awake
     implicitWidth: awake ? 20 : 0
@@ -26,7 +26,7 @@ Item {
 
     Process {
         id: toggleProc
-        command: ["bash", "-c", "omarchy-toggle-idle"]
+        command: ["bash", "-c", "if command -v omarchy-toggle-idle >/dev/null 2>&1; then exec omarchy-toggle-idle; fi; exec omarchy toggle idle"]
         onExited: root.refreshStatusIndicators()
     }
 

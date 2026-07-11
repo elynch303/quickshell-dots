@@ -910,8 +910,15 @@ Item {
     property bool omarchyUpdateAvail: false   // mirrored from UpdateWidget (6h poll)
     // Centralized status indicators. These live on Theme so BarSlot-per-monitor
     // widgets don't each spawn their own status poller.
-    property bool hypridleAwake: false        // hypridle absent/off → stay-awake indicator
-    property bool notifSilenced: false        // mako do-not-disturb mode
+    property bool stayAwake: false            // idle lock disabled / stay-awake indicator
+    readonly property bool hypridleAwake: stayAwake // compatibility alias for older modules
+    property bool _idleBackendChecked: false
+    property bool _idleOmarchyShellBackend: false
+    readonly property string idleStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/indicators/stay-awake"
+    property bool notifSilenced: false        // notification do-not-disturb mode
+    property bool _notifBackendChecked: false
+    property bool _notifOmarchyShellBackend: false
+    readonly property string notificationsStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/notifications.json"
     property bool screenRecording: false
     property int screenRecordingElapsed: 0
     property string _screenRecordingPid: ""
@@ -926,8 +933,32 @@ Item {
     readonly property bool _statusPollingWanted: modStatus || barAnim === 7
     readonly property bool _voxActive: voxState === "recording" || voxState === "transcribing"
 
-    function refreshStatusIndicators() {
+    function refreshIdleStatus() {
+        if (!_idleBackendChecked) return
+        if (_idleOmarchyShellBackend) {
+            idleStateFile.reload()
+            return
+        }
         if (!idleProc.running) idleProc.running = true
+    }
+    function refreshStatusIndicators() {
+        refreshIdleStatus()
+        refreshNotificationStatus()
+    }
+    function parseNotificationsState(text) {
+        try {
+            var parsed = JSON.parse(String(text || "{}"))
+            notifSilenced = parsed && parsed.dnd === true
+        } catch (e) {
+            notifSilenced = false
+        }
+    }
+    function refreshNotificationStatus() {
+        if (!_notifBackendChecked) return
+        if (_notifOmarchyShellBackend) {
+            notificationsStateFile.reload()
+            return
+        }
         if (!dndProc.running) dndProc.running = true
     }
     function refreshRecordingStatus() {
@@ -974,11 +1005,61 @@ Item {
     }
 
     Process {
+        id: idleBackendProc
+        command: ["bash", "-c", "command -v omarchy-shell >/dev/null 2>&1 && test -f /usr/share/omarchy/shell/plugins/services/idle/manifest.json"]
+        running: true
+        onExited: (exitCode) => {
+            theme._idleOmarchyShellBackend = exitCode === 0
+            theme._idleBackendChecked = true
+            theme.refreshIdleStatus()
+        }
+    }
+
+    FileView {
+        id: idleStateFile
+        path: theme.idleStatePath
+        watchChanges: theme._idleOmarchyShellBackend
+        printErrors: false
+        onFileChanged: idleStateFile.reload()
+        onLoaded: {
+            if (theme._idleOmarchyShellBackend) theme.stayAwake = true
+        }
+        onLoadFailed: {
+            if (theme._idleOmarchyShellBackend) theme.stayAwake = false
+        }
+    }
+
+    Process {
+        id: notifBackendProc
+        command: ["bash", "-c", "command -v omarchy-shell >/dev/null 2>&1 && test -f /usr/share/omarchy/shell/plugins/notifications/manifest.json"]
+        running: true
+        onExited: (exitCode) => {
+            theme._notifOmarchyShellBackend = exitCode === 0
+            theme._notifBackendChecked = true
+            theme.refreshNotificationStatus()
+        }
+    }
+
+    FileView {
+        id: notificationsStateFile
+        path: theme.notificationsStatePath
+        watchChanges: theme._notifOmarchyShellBackend
+        printErrors: false
+        onFileChanged: notificationsStateFile.reload()
+        onLoaded: {
+            if (theme._notifOmarchyShellBackend) theme.parseNotificationsState(notificationsStateFile.text())
+        }
+        onLoadFailed: {
+            if (theme._notifOmarchyShellBackend) theme.notifSilenced = false
+        }
+    }
+
+    Process {
         id: idleProc
         command: ["pgrep", "-x", "hypridle"]
         running: false
         onExited: (exitCode) => {
-            theme.hypridleAwake = exitCode !== 0
+            if (!theme._idleOmarchyShellBackend) theme.stayAwake = exitCode !== 0
         }
     }
 
@@ -987,11 +1068,11 @@ Item {
         command: ["makoctl", "mode"]
         running: false
         onExited: (exitCode) => {
-            if (exitCode !== 0) theme.notifSilenced = false
+            if (exitCode !== 0 && !theme._notifOmarchyShellBackend) theme.notifSilenced = false
         }
         stdout: StdioCollector {
             onStreamFinished: {
-                theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0
+                if (!theme._notifOmarchyShellBackend) theme.notifSilenced = this.text.indexOf("do-not-disturb") >= 0
             }
         }
     }
