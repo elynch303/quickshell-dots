@@ -17,11 +17,11 @@ Column {
     readonly property int progressStep: Math.max(1, Math.min(root.shellProgressStep || 1, root.shellProgressTotalSteps || 5))
     readonly property int totalSteps: root.shellProgressTotalSteps || 5
     readonly property var phaseLabels: [
-        "Update prüfen",
-        "Payload validieren",
-        "Shell testen",
-        "Installieren",
-        "Neustarten"
+        "Check for updates",
+        "Validate payload",
+        "Test shell",
+        "Install",
+        "Restart"
     ]
     readonly property var spinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -135,9 +135,9 @@ Column {
 
     readonly property string progressHeader: {
         if (root.shellProgressInterrupted) return "Interrupted"
-        if (root.shellProgressFailed) return "Failed · Schritt " + progressStep + " von " + totalSteps
+        if (root.shellProgressFailed) return "Failed · Step " + progressStep + " of " + totalSteps
         if (root.shellProgressCompleted) return "Completed"
-        return "Schritt " + progressStep + " von " + totalSteps
+        return "Step " + progressStep + " of " + totalSteps
     }
 
     readonly property string progressErrorText: {
