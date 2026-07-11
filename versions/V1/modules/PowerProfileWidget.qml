@@ -27,7 +27,7 @@ Item {
     readonly property color profileColor: {
         if (isPowerSaver)  return root.indigo
         if (isPerformance) return root.seal
-        return Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.85)
+        return root.seal
     }
 
     readonly property string tooltipText: {
