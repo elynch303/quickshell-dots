@@ -106,8 +106,12 @@ PanelWindow {
         target: root
         function onArchVisibleChanged() {
             if (!root.archVisible) return
+            archPanel.nowEpoch = Math.floor(Date.now() / 1000)
             root.archGateRescan()
             if (root.archUpdates.length === 0) root.archRefreshTick++
+        }
+        function onArchScanCheckedEpochChanged() {
+            archPanel.nowEpoch = Math.floor(Date.now() / 1000)
         }
     }
 
@@ -175,6 +179,17 @@ PanelWindow {
         if (root.archGateFail > 0 || root.archGateState === "blocked") return "Repo upgrade blocked: package blocked"
         if (repoOkPackages !== repoUpdatePackages) return "Repo upgrade blocked: unverified package"
         return ""
+    }
+    readonly property string repoBlockButtonText: {
+        if (repoUpdatePackages === 0) return "No updates"
+        if (!repoScanFresh) return "Refresh required"
+        if (!repoScanMatchesUpdates) return "Scan drift"
+        if (root.archGateState === "scanning") return "Scanning"
+        if (!repoGateComplete) return "Scan incomplete"
+        if (root.archGateDegraded) return "Protection limited"
+        if (root.archGateFail > 0 || root.archGateState === "blocked") return "Package blocked"
+        if (repoOkPackages !== repoUpdatePackages) return "Unverified package"
+        return archPanel.repoBlockReason
     }
     function shellQuote(value) {
         return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"
@@ -757,7 +772,9 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: archPanel.canUpdate
                             ? "Full repo upgrade (" + archPanel.repoUpdatePackages + ")"
-                            : archPanel.repoBlockReason
+                            : archPanel.repoBlockButtonText
+                        width: parent.width - 16
+                        horizontalAlignment: Text.AlignHCenter
                         color: root.paper
                         font.family: root.mono; font.pixelSize: 11
                         elide: Text.ElideRight

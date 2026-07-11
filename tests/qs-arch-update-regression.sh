@@ -341,6 +341,20 @@ test_checkupdates_bad_exit_fails_even_without_stderr() {
   [ ! -e "$root/home/.cache/qs-arch-updates.json" ] || fail "check wrote state after bad checkupdates exit code"
 }
 
+test_blacklist_fetch_service_has_bounded_retries() {
+  local service="$REPO_ROOT/systemd/qs-aur-blacklist-fetch.service"
+  assert_contains "StartLimitIntervalSec=1h" "$service" "blacklist fetch service missing retry interval limit"
+  assert_contains "StartLimitBurst=4" "$service" "blacklist fetch service missing retry burst limit"
+  assert_contains "Restart=on-failure" "$service" "blacklist fetch service missing failure retry policy"
+  assert_contains "RestartSec=15min" "$service" "blacklist fetch service missing retry delay"
+}
+
+test_arch_panel_refresh_updates_freshness_clock() {
+  local panel="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
+  assert_contains "function onArchScanCheckedEpochChanged()" "$panel" "arch panel does not refresh its freshness clock after package scan"
+  assert_contains "archPanel.nowEpoch = Math.floor(Date.now() / 1000)" "$panel" "arch panel freshness clock update is missing"
+}
+
 test_success_runs_exact_full_upgrade
 test_aur_warnings_do_not_block_full_repo_upgrade
 test_rescan_drift_aborts_before_pacman
@@ -356,5 +370,7 @@ test_malformed_checkupdates_line_fails_check
 test_invalid_checkupdates_package_name_fails_check
 test_malformed_rescan_aborts_before_pacman
 test_checkupdates_bad_exit_fails_even_without_stderr
+test_blacklist_fetch_service_has_bounded_retries
+test_arch_panel_refresh_updates_freshness_clock
 
 printf 'qs-arch-update regression tests passed\n'

@@ -2,8 +2,12 @@
 Description=AUR security blacklist refresh
 # Offline-tolerant by design: a failed fetch keeps the last validated list
 # (fail-closed), so there is no dependency on network-online.target.
+StartLimitIntervalSec=1h
+StartLimitBurst=4
 
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/qs-aur-blacklist-fetch.sh
+Restart=on-failure
+RestartSec=15min
 Nice=19
