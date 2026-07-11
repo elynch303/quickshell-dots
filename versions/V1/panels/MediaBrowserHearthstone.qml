@@ -28,6 +28,8 @@ PanelWindow {
 
     property bool loaded:        false
     property bool layoutSettled: false
+    property bool closing:       false
+    property int  thumbEpoch:    0
     property var  imageArray:    []
     property int  selFilt:       0
     property string filterText:  ""
@@ -49,6 +51,7 @@ PanelWindow {
             out.push({
                 idx:      i,
                 filePath: imageArray[i].filePath,
+                thumbnailPath: imageArray[i].thumbnailPath,
                 label:    panel.mediaLabel(imageArray[i].filePath),
                 isVideo:  panel.isVideos
             })
@@ -63,8 +66,23 @@ PanelWindow {
             : (filterText ? "No matches" : "")
 
     // ── open / style gating ──
+    function releaseClosedState() {
+        panel.closing = true
+        cacheProc.running = false
+        scanProc.running = false
+        warmTimer.stop()
+        warmProc.running = false
+        panel.loaded        = false
+        panel.layoutSettled = false
+        panel.filterText    = ""
+        panel.imageArray    = []
+        panel.selFilt       = 0
+        panel.reveal        = 0
+        panel.dealT         = 0
+    }
     function syncOpen() {
         if (root.mediaBrowserVisible && active) {
+            panel.closing = false
             if (!loaded) {
                 panel.layoutSettled = false
                 panel.filterText    = ""
@@ -75,10 +93,7 @@ PanelWindow {
                 panel.runScan()
             }
         } else {
-            panel.loaded        = false
-            panel.layoutSettled = false
-            panel.reveal        = 0
-            panel.dealT         = 0
+            panel.releaseClosedState()
         }
     }
     Connections {
@@ -86,6 +101,7 @@ PanelWindow {
         function onMediaBrowserVisibleChanged() { panel.syncOpen() }
         function onPickerStyleChanged()          { panel.syncOpen() }
     }
+    Component.onCompleted: panel.syncOpen()
 
     function buildScanCmd() {
         if (isVideos) {
@@ -93,13 +109,14 @@ PanelWindow {
                 "D=\"${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$(xdg-user-dir VIDEOS 2>/dev/null)}}\"; case \"$D\" in \"\"|\"$HOME\") D=\"$HOME/Videos\";; esac; " +
                 "find \"$D\" -maxdepth 1 -type f " +
                 "\\( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.mov' -o -iname '*.avi' -o -iname '*.m4v' \\) " +
-                "-printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -100 | cut -f2-"]
+                "-printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -100 | cut -f2- | " +
+                "while IFS= read -r f; do b=$(basename \"$f\"); printf '%s\\t%s/%s-512.jpg\\n' \"$f\" \"$HOME/.cache/quickshell-media-thumbs\" \"${b%.*}\"; done"]
         } else {
             return ["bash", "-c",
                 "D=\"${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-$(xdg-user-dir PICTURES 2>/dev/null)}}\"; case \"$D\" in \"\"|\"$HOME\") D=\"$HOME/Pictures\";; esac; " +
                 "find \"$D\" -maxdepth 1 -type f -iname 'screenshot-*.png' " +
                 "-printf '%T@\\t%p\\n' 2>/dev/null | sort -rn | head -100 | cut -f2- | " +
-                "while IFS= read -r f; do printf '%s\\t%s\\n' \"$f\" \"$f\"; done"]
+                "while IFS= read -r f; do k=$(printf '%s' \"$f\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$f\" 2>/dev/null); printf '%s\\t%s/%s-%s-512.jpg\\n' \"$f\" \"$HOME/.cache/quickshell-img-thumbs\" \"$k\" \"$m\"; done"]
         }
     }
 
@@ -117,9 +134,13 @@ PanelWindow {
         stdout: StdioCollector { onStreamFinished: panel.applyScan(this.text, true) }
     }
     function applyScan(text, fromCache) {
+        if (!root.mediaBrowserVisible || !panel.active) return
         var t = String(text || "")
         if (fromCache && (!t.trim() || loaded)) return
-        if (!fromCache && t.trim() === _lastScan.trim() && loaded) return
+        if (!fromCache && t.trim() === _lastScan.trim() && loaded) {
+            warmTimer.restart()
+            return
+        }
         _lastScan = t
         var rows = Model.loadRows(t)
         panel.imageArray = rows
@@ -143,9 +164,24 @@ PanelWindow {
     }
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+    function cancellableCommand(body, argv0, args) {
+        return ["bash", "-c",
+            "body=$1; shift; setsid bash -c \"$body\" worker \"$@\" & worker=$!; " +
+            "cleanup() { pkill -TERM -s \"$worker\" 2>/dev/null || true; sleep 0.2; pkill -KILL -s \"$worker\" 2>/dev/null || true; }; " +
+            "trap 'cleanup; exit 143' TERM INT; wait \"$worker\"",
+            argv0 || "manager", body].concat(args || [])
+    }
 
     // ── background pre-warm (nice; after open settles) ──
-    Process { id: warmProc; command: [] }
+    Process {
+        id: warmProc
+        command: []
+        stdout: StdioCollector {
+            waitForEnd: true
+            onStreamFinished: if (this.text.trim() && root.mediaBrowserVisible && panel.active)
+                panel.thumbEpoch++
+        }
+    }
     Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
     function warmAll() {
         var srcs = []
@@ -153,18 +189,20 @@ PanelWindow {
             if (imageArray[i].filePath) srcs.push(imageArray[i].filePath)
         if (srcs.length === 0) return
         if (panel.isVideos) {
-            warmProc.command = ["bash", "-c",
+            warmProc.command = panel.cancellableCommand(
                 "d=$HOME/.cache/quickshell-media-thumbs; mkdir -p \"$d\"; command -v ffmpegthumbnailer >/dev/null 2>&1 || exit 0; " +
-                "for s in \"$@\"; do b=$(basename \"$s\"); o=\"$d/${b%.*}-512.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
-                "nice -n 19 xargs -d '\\n' -P 2 -n 2 sh -c 'ffmpegthumbnailer -i \"$0\" -o \"$1\" -s 910 -q 6 >/dev/null 2>&1'",
-                "warm"].concat(srcs)
+                "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
+                "for s in \"$@\"; do b=$(basename \"$s\"); o=\"$d/${b%.*}-512.jpg\"; [ -s \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
+                "if [ -s \"$tmp\" ]; then nice -n 19 xargs -r -d '\\n' -P 2 -n 2 sh -c 'ffmpegthumbnailer -i \"$0\" -o \"$1\" -s 910 -q 6 >/dev/null 2>&1 || true' < \"$tmp\"; made=0; while IFS= read -r _src && IFS= read -r out; do [ -s \"$out\" ] && { made=1; break; }; done < \"$tmp\"; [ \"$made\" -eq 1 ] && echo changed; fi",
+                "warm", srcs)
         } else {
-            warmProc.command = ["bash", "-c",
+            warmProc.command = panel.cancellableCommand(
                 "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
+                "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
                 "for s in \"$@\"; do k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); " +
-                "o=\"$D/$k-$m-512.jpg\"; [ -f \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\"; done | " +
-                "nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1'",
-                "warm"].concat(srcs)
+                "o=\"$D/$k-$m-512.jpg\"; [ -s \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
+                "if [ -s \"$tmp\" ]; then nice -n 19 xargs -r -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1' < \"$tmp\"; made=0; while IFS= read -r _src && IFS= read -r out; do [ -s \"$out\" ] && { made=1; break; }; done < \"$tmp\"; [ \"$made\" -eq 1 ] && echo changed; fi",
+                "warm", srcs)
         }
         warmProc.running = false; warmProc.running = true
     }
@@ -355,35 +393,13 @@ PanelWindow {
                 readonly property real dim: focused ? 0.0 : Math.min(0.62, 0.30 + Math.abs(relIdx) * 0.05)
 
                 // lazy cached thumbnail (video poster or screenshot thumb)
-                property string thumbPath: ""
-                Process {
-                    id: thumbProc
-                    command: []
-                    stdout: StdioCollector {
-                        onStreamFinished: { var p = this.text.trim(); if (p) card.thumbPath = "file://" + p }
-                    }
+                readonly property string thumbPath: {
+                    if (!entry) return ""
+                    var fp = entry.thumbnailPath || ""
+                    if (!fp && !panel.isVideos) fp = entry.filePath
+                    if (panel.isVideos && fp === entry.filePath) return ""
+                    return fp ? "file://" + fp : ""
                 }
-                function ensureThumb() {
-                    if (thumbPath || !panel.ready || !nearby || !entry) return
-                    var fp = entry.filePath; if (!fp) return
-                    if (panel.isVideos) {
-                        thumbProc.command = ["bash", "-c",
-                            "d=$HOME/.cache/quickshell-media-thumbs; mkdir -p \"$d\"; " +
-                            "b=$(basename " + panel.shq(fp) + "); o=\"$d/${b%.*}-512.jpg\"; " +
-                            "[ -s \"$o\" ] || nice -n 10 ffmpegthumbnailer -i " + panel.shq(fp) +
-                            " -o \"$o\" -s 910 -q 6 >/dev/null 2>&1; [ -s \"$o\" ] && echo \"$o\""]
-                    } else {
-                        thumbProc.command = ["bash", "-c",
-                            "s=" + panel.shq(fp) + "; D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; " +
-                            "k=$(printf '%s' \"$s\" | md5sum | cut -d' ' -f1); m=$(stat -c %Y \"$s\" 2>/dev/null); o=\"$D/$k-$m-512.jpg\"; " +
-                            "if command -v magick >/dev/null 2>&1; then [ -f \"$o\" ] || nice -n 10 magick \"$s\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$o\" >/dev/null 2>&1; fi; " +
-                            "[ -f \"$o\" ] && echo \"$o\" || echo \"$s\""]
-                    }
-                    thumbProc.running = false; thumbProc.running = true
-                }
-                onNearbyChanged: if (nearby) ensureThumb()
-                Component.onCompleted: ensureThumb()
-                Connections { target: panel; function onReadyChanged() { if (panel.ready) card.ensureThumb() } }
 
                 width: panel.cardW; height: panel.cardH
                 visible: nearby
@@ -406,9 +422,22 @@ PanelWindow {
                     anchors.fill: parent
                     anchors.margins: 6
                     Image {
+                        id: thumbImage
                         anchors.fill: parent
-                        source: (panel.ready && card.nearby && card.entry) ? card.thumbPath : ""
-                        fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
+                        readonly property string wantedSource: (panel.ready && card.nearby && card.entry && card.thumbPath) ? card.thumbPath : ""
+                        source: wantedSource
+                        onWantedSourceChanged: source = wantedSource
+                        Connections {
+                            target: panel
+                            function onThumbEpochChanged() {
+                                if (thumbImage.wantedSource && (thumbImage.status === Image.Error || thumbImage.status === Image.Null)) {
+                                    var s = thumbImage.wantedSource
+                                    thumbImage.source = ""
+                                    thumbImage.source = s
+                                }
+                            }
+                        }
+                        fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: false; smooth: true
                         sourceSize.width:  panel.cardW * 2
                         sourceSize.height: panel.cardH * 2
                     }

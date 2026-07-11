@@ -251,7 +251,7 @@ ShellRoot {
     LazyLoader { active: theme.pickerStyle === "tanzaku" || theme.pickerStyle === "";  ImageCarouselPanel       { root: theme } }
     LazyLoader { active: theme.pickerStyle === "hearthstone";                           ImageCarouselHearthstone { root: theme } }
     LazyLoader { active: theme.pickerStyle === "carousel";                              ImageCarouselCarousel    { root: theme } }
-    LazyLoader { active: theme.pickerStyle === "tanzaku" || theme.pickerStyle === "";  MediaBrowserPanel        { root: theme } }
-    LazyLoader { active: theme.pickerStyle === "hearthstone";                           MediaBrowserHearthstone  { root: theme } }
-    LazyLoader { active: theme.pickerStyle === "carousel";                              MediaBrowserCarousel     { root: theme } }
+    LazyLoader { active: theme.mediaBrowserVisible && (theme.pickerStyle === "tanzaku" || theme.pickerStyle === "");  MediaBrowserPanel        { root: theme } }
+    LazyLoader { active: theme.mediaBrowserVisible && theme.pickerStyle === "hearthstone";                             MediaBrowserHearthstone  { root: theme } }
+    LazyLoader { active: theme.mediaBrowserVisible && theme.pickerStyle === "carousel";                                MediaBrowserCarousel     { root: theme } }
 }
