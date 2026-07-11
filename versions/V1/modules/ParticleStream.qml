@@ -517,13 +517,18 @@ Item {
 
     FileView {
         id: themeNameState
-        path: Quickshell.env("HOME") + "/.config/omarchy/current/theme.name"
+        path: theme.themeNamePath
         watchChanges: true
         onFileChanged: root.scheduleThemeText7()
     }
 
     Connections {
         target: theme
+        function onThemeNamePathChanged() {
+            themeColorsState.reload()
+            themeNameState.reload()
+            root.scheduleThemeText7()
+        }
         function onLastAppliedNameChanged() {
             if (theme.lastAppliedName !== "") root.scheduleThemeText7(theme.lastAppliedName)
         }

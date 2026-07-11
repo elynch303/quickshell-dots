@@ -272,11 +272,12 @@ PanelWindow {
     // generated copy, so it stays stale until re-applied. Reads the name from
     // disk — no user-controlled string reaches the shell.
     function reapplyCurrentTheme() {
-        var nameFile = Quickshell.env("HOME") + "/.config/omarchy/current/theme.name"
+        var nameFile = root.themeNamePath
+        var omarchyPath = root.omarchyInstallRoot || (Quickshell.env("HOME") + "/.local/share/omarchy")
         var inner = "n=$(tr -d '[:space:]' < " + shellQuote(nameFile) + "); "
                   + "[ -n \"$n\" ] || { echo 'no current theme'; exit 1; }; "
                   + themedGumConfirmEnv() + " gum confirm " + shellQuote("Re-apply the current theme to pick up its update?")
-                  + " && omarchy-theme-set \"$n\""
+                  + " && OMARCHY_PATH=" + shellQuote(omarchyPath) + " omarchy-theme-set \"$n\""
         panelUpdateRunner.command = ["bash", "-c",
             "omarchy-launch-floating-terminal-with-presentation " + shellQuote(inner)]
         root.archVisible = false

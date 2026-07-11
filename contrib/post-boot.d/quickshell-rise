@@ -3,5 +3,11 @@
 # stop waybar (omarchy re-autostarts it at login → would overlap), then launch
 # the bar detached so we don't block later post-boot.d hooks (omarchy-hook runs
 # them sequentially). -n bails out if an instance is already running (idempotent).
+if command -v omarchy-shell >/dev/null 2>&1 && [ -d /usr/share/omarchy ]; then
+  export OMARCHY_PATH=/usr/share/omarchy
+else
+  export OMARCHY_PATH="$HOME/.local/share/omarchy"
+fi
+
 pkill -x waybar 2>/dev/null || true
 setsid qs -n -d -c bar >/dev/null 2>&1 < /dev/null &

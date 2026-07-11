@@ -1,19 +1,19 @@
 .pragma library
 
 // WANTED is the single source of truth for which raw colors.toml keys map
-// onto this shell's semantic slots. Both the startup FileView read and the
-// IPC push path translate through it.
-const WANTED = {
-    background: "paper",
-    foreground: "ink",
-    color7:     "inkDeep",
-    color8:     "sumi",
-    color1:     "sealRaw",
-    color2:     "color02",
-    color3:     "color03",
-    color4:     "indigo",
-    accent:     "accentHint",
-};
+// onto this shell's semantic slots. Legacy Omarchy colorN keys intentionally
+// come first so mixed files keep the old values stable.
+const WANTED = [
+    { target: "paper",      keys: ["background", "bg"] },
+    { target: "ink",        keys: ["foreground", "fg"] },
+    { target: "inkDeep",    keys: ["color7", "bright_fg", "light_fg"] },
+    { target: "sumi",       keys: ["color8", "muted", "dark_fg"] },
+    { target: "sealRaw",    keys: ["color1", "red"] },
+    { target: "color02",    keys: ["color2", "green"] },
+    { target: "color03",    keys: ["color3", "yellow"] },
+    { target: "indigo",     keys: ["color4", "blue"] },
+    { target: "accentHint", keys: ["accent"] },
+];
 
 const LINE = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"/;
 
@@ -31,8 +31,15 @@ function parseAll(text) {
 function mapKeys(raw) {
     const out = {};
     if (!raw) return out;
-    for (const key in WANTED) {
-        if (raw[key]) out[WANTED[key]] = raw[key];
+    for (let i = 0; i < WANTED.length; i++) {
+        const group = WANTED[i];
+        for (let j = 0; j < group.keys.length; j++) {
+            const value = raw[group.keys[j]];
+            if (validColor(value)) {
+                out[group.target] = value;
+                break;
+            }
+        }
     }
     return out;
 }

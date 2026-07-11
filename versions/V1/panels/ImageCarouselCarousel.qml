@@ -139,9 +139,9 @@ PanelWindow {
         command: requestMode === "theme"
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
-               "name=$(cat ~/.config/omarchy/current/theme.name 2>/dev/null || true); " +
+               "name=$(cat " + panel.shq(root.themeNamePath) + " 2>/dev/null || true); " +
                "for ext in png jpg jpeg webp; do f=\"$CACHE/$name.$ext\"; [ -L \"$f\" ] && echo \"$f\" && exit 0; done; echo ''"]
-            : ["bash", "-c", "readlink -f ~/.config/omarchy/current/background 2>/dev/null || true"]
+            : ["bash", "-c", "readlink -f " + panel.shq(root.currentBackgroundPath) + " 2>/dev/null || true"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -201,7 +201,7 @@ PanelWindow {
                 "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\";",
                 "hash_for() { local s=\"$1\" r m key h tmp; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; tmp=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$tmp\" && mv -f \"$tmp\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; };",
                 "thumb_for() { local s=\"$1\" k; k=$(hash_for \"$s\") || return 1; printf '%s/%s-512.jpg' \"$D\" \"$k\"; };",
-                "find -L ~/.config/omarchy/current/theme/backgrounds -maxdepth 1 -type f " +
+                "find -L " + shq(root.currentBackgroundsPath) + " -maxdepth 1 -type f " +
                 "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) " +
                 "2>/dev/null | sort | while IFS= read -r f; do thumb=$(thumb_for \"$f\") || continue; printf '%s\\t%s\\n' \"$f\" \"$thumb\"; done"
             ].join(" ")]
@@ -216,7 +216,7 @@ PanelWindow {
         var path = imageArray[selectedIndex].filePath; if (!path) return
         if (isThemeMode) {
             var name = Model.nameForPath(path)
-            applyThemeProc.command = ["bash", "-c", "omarchy-theme-set '" + name.replace(/'/g, "'\\''") + "'"]
+            applyThemeProc.command = ["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]
             applyThemeProc.running = false; applyThemeProc.running = true
         } else {
             applyBgProc.command = ["bash", "-c", "omarchy-theme-bg-set '" + path.replace(/'/g, "'\\''") + "'"]
@@ -625,6 +625,7 @@ PanelWindow {
                                         }
                                     }
                                 }
+                                retainWhileLoading: true
                                 fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true; smooth: true
                                 sourceSize.width:  slice.selected ? panel.expandedW : panel.sliceW
                                 sourceSize.height: slice.selected ? panel.expandedH : panel.sliceH

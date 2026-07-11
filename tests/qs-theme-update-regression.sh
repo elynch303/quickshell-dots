@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECK="${CHECK:-$REPO_ROOT/scripts/qs-theme-update-check.sh}"
 APPLY="${APPLY:-$REPO_ROOT/scripts/qs-theme-apply-update.sh}"
+HOOK="${HOOK:-$REPO_ROOT/hooks/50-quickshell-bar.sh}"
 WORK="$(mktemp -d /tmp/qs-theme-update-test.XXXXXX)"
 
 cleanup() {
@@ -58,6 +59,19 @@ run_check() {
     "$CHECK"
 }
 
+run_check_default_current() {
+  local root="$1"
+  shift
+  QS_THEMES_DIR="$root/themes" \
+  QS_THEME_STATE="$root/state.json" \
+  QS_THEME_LOCK="$root/lock" \
+  QS_THEME_TIMEOUT=3 \
+  QS_THEME_FETCH_TIMEOUT=5 \
+  HOME="$root/home" \
+  PATH="$root/bin:$PATH" \
+    "$CHECK"
+}
+
 run_apply() {
   local root="$1"
   shift
@@ -84,11 +98,134 @@ test_clean_pinned_apply() {
 
   run_check "$root" "$name"
   assert_eq clean "$(jq -r '.themes[0].state' "$root/state.json")" "clean fixture state"
+  assert_eq true "$(jq -r '.themes[0].current' "$root/state.json")" "QS_CURRENT_FILE override marks current theme"
   local target
   target="$(jq -r '.themes[0].targetCommit' "$root/state.json")"
 
   run_apply "$root" "$name" >/dev/null
   assert_eq "$target" "$(git -C "$root/themes/$name" rev-parse HEAD)" "apply installed saved target"
+}
+
+write_test_images() {
+  local dir="$1"
+  mkdir -p "$dir"
+  printf 'one\n' > "$dir/one.jpg"
+  printf 'two\n' > "$dir/two.png"
+  printf 'three\n' > "$dir/three.webp"
+}
+
+prepare_hook_home() {
+  local root="$1"
+  mkdir -p "$root/home/.cache" "$root/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/qs"
+  chmod +x "$root/bin/qs"
+}
+
+run_hook_fixture() {
+  local root="$1"
+  HOME="$root/home" PATH="$root/bin:$PATH" "$HOOK"
+}
+
+test_hook_legacy_current_root_writes_cache() {
+  local root="$WORK/hook-legacy"
+  prepare_hook_home "$root"
+  mkdir -p "$root/home/.config/omarchy/current"
+  printf 'legacy-theme\n' > "$root/home/.config/omarchy/current/theme.name"
+  write_test_images "$root/home/.config/omarchy/current/theme/backgrounds"
+
+  run_hook_fixture "$root"
+
+  assert_eq 3 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "legacy hook cache line count"
+  assert_eq 3 "$(awk -F '\t' '$1 ~ /\.config\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "legacy hook cache paths"
+  assert_eq legacy-theme "$(tr -d '[:space:]' < "$root/home/.cache/quickshell-scan-wallpaper.theme")" "legacy hook theme stamp"
+}
+
+test_hook_omarchy4_current_root_writes_cache() {
+  local root="$WORK/hook-omarchy4"
+  prepare_hook_home "$root"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/omarchy-shell"
+  chmod +x "$root/bin/omarchy-shell"
+  mkdir -p "$root/home/.local/state/omarchy/current" "$root/home/.config/omarchy/current/theme/backgrounds"
+  printf 'omarchy4-theme\n' > "$root/home/.local/state/omarchy/current/theme.name"
+  printf 'legacy\n' > "$root/home/.config/omarchy/current/theme/backgrounds/legacy.jpg"
+  write_test_images "$root/home/.local/state/omarchy/current/theme/backgrounds"
+
+  run_hook_fixture "$root"
+
+  assert_eq 3 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "omarchy4 hook cache line count"
+  assert_eq 3 "$(awk -F '\t' '$1 ~ /\.local\/state\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "omarchy4 hook cache paths"
+  assert_eq omarchy4-theme "$(tr -d '[:space:]' < "$root/home/.cache/quickshell-scan-wallpaper.theme")" "omarchy4 hook theme stamp"
+}
+
+test_hook_without_valid_root_keeps_existing_cache() {
+  local root="$WORK/hook-no-root"
+  prepare_hook_home "$root"
+  printf 'SENTINEL\n' > "$root/home/.cache/quickshell-scan-wallpaper"
+  printf 'SENTINEL-THEME\n' > "$root/home/.cache/quickshell-scan-wallpaper.theme"
+
+  run_hook_fixture "$root"
+
+  assert_eq SENTINEL "$(tr -d '\n' < "$root/home/.cache/quickshell-scan-wallpaper")" "hook no-root preserves cache"
+  assert_eq SENTINEL-THEME "$(tr -d '\n' < "$root/home/.cache/quickshell-scan-wallpaper.theme")" "hook no-root preserves stamp"
+}
+
+test_default_current_file_prefers_omarchy4_state() {
+  local root="$WORK/default-current-omarchy4" name="demo"
+  init_fixture "$root" "$name"
+  printf 'v2\n' > "$root/seed/base.txt"
+  git -C "$root/seed" commit -am update-v2 >/dev/null
+  git -C "$root/seed" push origin main >/dev/null 2>&1
+  mkdir -p "$root/home/.local/state/omarchy/current" "$root/home/.config/omarchy/current" "$root/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/omarchy-shell"
+  chmod +x "$root/bin/omarchy-shell"
+  printf '%s\n' "$name" > "$root/home/.local/state/omarchy/current/theme.name"
+  printf 'not-current\n' > "$root/home/.config/omarchy/current/theme.name"
+
+  run_check_default_current "$root"
+
+  assert_eq true "$(jq -r '.themes[0].current' "$root/state.json")" "default current file prefers omarchy4 state"
+}
+
+test_default_current_file_uses_legacy_path() {
+  local root="$WORK/default-current-legacy" name="demo"
+  init_fixture "$root" "$name"
+  printf 'v2\n' > "$root/seed/base.txt"
+  git -C "$root/seed" commit -am update-v2 >/dev/null
+  git -C "$root/seed" push origin main >/dev/null 2>&1
+  mkdir -p "$root/home/.config/omarchy/current" "$root/bin"
+  printf '%s\n' "$name" > "$root/home/.config/omarchy/current/theme.name"
+
+  run_check_default_current "$root"
+
+  assert_eq true "$(jq -r '.themes[0].current' "$root/state.json")" "default current file uses legacy path"
+}
+
+test_palette_alias_contract_is_present() {
+  local p="$REPO_ROOT/versions/V1/Palette.js"
+  assert_contains 'keys: ["background", "bg"]' "$p" "palette background alias"
+  assert_contains 'keys: ["foreground", "fg"]' "$p" "palette foreground alias"
+  assert_contains 'keys: ["color1", "red"]' "$p" "palette red alias"
+  assert_contains 'keys: ["color2", "green"]' "$p" "palette green alias"
+  assert_contains 'keys: ["color3", "yellow"]' "$p" "palette yellow alias"
+  assert_contains 'validColor(value)' "$p" "palette valid color gate"
+}
+
+test_theme_apply_exports_omarchy_path() {
+  local theme="$REPO_ROOT/versions/V1/Theme.qml"
+  local updater="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
+  local postboot="$REPO_ROOT/contrib/post-boot.d/quickshell-rise"
+  local picker_count
+
+  assert_contains 'property string omarchyInstallRoot:' "$theme" "theme install root property"
+  assert_contains '/usr/share/omarchy' "$theme" "omarchy4 install root"
+  picker_count="$(grep -RFl '["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]' \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselPanel.qml" \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselCarousel.qml" \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselHearthstone.qml" | wc -l | tr -d '[:space:]')"
+  assert_eq 3 "$picker_count" "all image pickers pass OMARCHY_PATH to omarchy-theme-set"
+  assert_contains 'OMARCHY_PATH=' "$updater" "theme reapply passes OMARCHY_PATH"
+  assert_contains 'export OMARCHY_PATH=/usr/share/omarchy' "$postboot" "post-boot omarchy4 export"
+  assert_contains "export OMARCHY_PATH=\"\$HOME/.local/share/omarchy\"" "$postboot" "post-boot legacy export"
 }
 
 test_ignored_untracked_collision_blocks_check_and_apply() {
@@ -198,6 +335,13 @@ test_apply_aborts_when_check_lock_is_held() {
 }
 
 test_clean_pinned_apply
+test_hook_legacy_current_root_writes_cache
+test_hook_omarchy4_current_root_writes_cache
+test_hook_without_valid_root_keeps_existing_cache
+test_default_current_file_prefers_omarchy4_state
+test_default_current_file_uses_legacy_path
+test_palette_alias_contract_is_present
+test_theme_apply_exports_omarchy_path
 test_ignored_untracked_collision_blocks_check_and_apply
 test_ignored_file_blocks_incoming_subpath
 test_ignored_subpath_blocks_incoming_file

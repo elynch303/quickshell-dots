@@ -42,7 +42,13 @@ set -euo pipefail
 THEMES_DIR="${QS_THEMES_DIR:-$HOME/.config/omarchy/themes}"
 STATE="${QS_THEME_STATE:-$HOME/.cache/qs-theme-updates.json}"
 LOCK="${QS_THEME_LOCK:-$HOME/.cache/qs-theme-update.lock}"
-CURRENT_FILE="${QS_CURRENT_FILE:-$HOME/.config/omarchy/current/theme.name}"
+if [ -n "${QS_CURRENT_FILE:-}" ]; then
+  CURRENT_FILE="$QS_CURRENT_FILE"
+elif command -v omarchy-shell >/dev/null 2>&1 && [ -f "$HOME/.local/state/omarchy/current/theme.name" ]; then
+  CURRENT_FILE="$HOME/.local/state/omarchy/current/theme.name"
+else
+  CURRENT_FILE="$HOME/.config/omarchy/current/theme.name"
+fi
 NET_TIMEOUT="${QS_THEME_TIMEOUT:-10}"
 FETCH_TIMEOUT="${QS_THEME_FETCH_TIMEOUT:-45}"
 BUDGET="${QS_THEME_BUDGET:-180}"

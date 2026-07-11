@@ -9,7 +9,21 @@ Item {
     id: theme
     signal reactorTest(string kind, string arg)
 
-    readonly property string colorsPath: Quickshell.env("HOME") + "/.config/omarchy/current/theme/colors.toml"
+    property string omarchyCurrentRoot: Quickshell.env("HOME") + "/.config/omarchy/current"
+    property string omarchyInstallRoot: Quickshell.env("HOME") + "/.local/share/omarchy"
+    property bool omarchyCurrentRootResolved: false
+    readonly property string themeNamePath: omarchyCurrentRoot + "/theme.name"
+    readonly property string colorsPath: omarchyCurrentRoot + "/theme/colors.toml"
+    readonly property string currentBackgroundPath: omarchyCurrentRoot + "/background"
+    readonly property string currentBackgroundsPath: omarchyCurrentRoot + "/theme/backgrounds"
+
+    function reloadCurrentThemeFiles() {
+        if (!omarchyCurrentRootResolved) return
+        Qt.callLater(function() {
+            paletteReader.running = false
+            paletteReader.running = true
+        })
+    }
 
     property color paper:   "#181616"
     property color ink:     "#c5c9c5"
@@ -1790,6 +1804,27 @@ Item {
             trayVisible = false
         } else {
             trayPinned = trayPinned.concat([key])
+        }
+    }
+
+    Process {
+        id: omarchyCurrentRootProbe
+        command: ["bash", "-c",
+            "state=\"$HOME/.local/state/omarchy/current\"; legacy=\"$HOME/.config/omarchy/current\"; " +
+            "if command -v omarchy-shell >/dev/null 2>&1 && [ -d \"$state\" ] && [ -d /usr/share/omarchy ]; then printf '%s\\t%s\\n' \"$state\" /usr/share/omarchy; " +
+            "elif [ -d \"$legacy\" ]; then printf '%s\\t%s\\n' \"$legacy\" \"$HOME/.local/share/omarchy\"; " +
+            "else printf '%s\\t%s\\n' \"$legacy\" \"$HOME/.local/share/omarchy\"; fi"]
+        running: true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var parts = this.text.trim().split("\t")
+                var resolved = parts.length > 0 ? parts[0] : ""
+                var installRoot = parts.length > 1 ? parts[1] : ""
+                if (resolved) theme.omarchyCurrentRoot = resolved
+                if (installRoot) theme.omarchyInstallRoot = installRoot
+                theme.omarchyCurrentRootResolved = true
+                theme.reloadCurrentThemeFiles()
+            }
         }
     }
 

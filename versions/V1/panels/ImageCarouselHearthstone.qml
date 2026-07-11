@@ -105,9 +105,9 @@ PanelWindow {
         command: panel.isThemeMode
             ? ["bash", "-c",
                "CACHE=$HOME/.cache/quickshell-theme-picker; " +
-               "name=$(cat ~/.config/omarchy/current/theme.name 2>/dev/null || true); " +
+               "name=$(cat " + panel.shq(root.themeNamePath) + " 2>/dev/null || true); " +
                "for ext in png jpg jpeg webp; do f=\"$CACHE/$name.$ext\"; [ -L \"$f\" ] && echo \"$f\" && exit 0; done; echo ''"]
-            : ["bash", "-c", "readlink -f ~/.config/omarchy/current/background 2>/dev/null || true"]
+            : ["bash", "-c", "readlink -f " + panel.shq(root.currentBackgroundPath) + " 2>/dev/null || true"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
@@ -198,7 +198,7 @@ PanelWindow {
                 "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\";",
                 "hash_for() { local s=\"$1\" r m key h tmp; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; tmp=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$tmp\" && mv -f \"$tmp\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; };",
                 "thumb_for() { local s=\"$1\" k; k=$(hash_for \"$s\") || return 1; printf '%s/%s-512.jpg' \"$D\" \"$k\"; };",
-                "find -L ~/.config/omarchy/current/theme/backgrounds -maxdepth 1 -type f " +
+                "find -L " + shq(root.currentBackgroundsPath) + " -maxdepth 1 -type f " +
                 "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) " +
                 "2>/dev/null | sort | while IFS= read -r f; do thumb=$(thumb_for \"$f\") || continue; printf '%s\\t%s\\n' \"$f\" \"$thumb\"; done"
             ].join(" ")]
@@ -214,7 +214,7 @@ PanelWindow {
         var path = filtered[selFilt].filePath; if (!path) return
         if (isThemeMode) {
             var name = Model.nameForPath(path)
-            applyThemeProc.command = ["bash", "-c", "omarchy-theme-set '" + name.replace(/'/g, "'\\''") + "'"]
+            applyThemeProc.command = ["env", "OMARCHY_PATH=" + root.omarchyInstallRoot, "omarchy-theme-set", name]
             applyThemeProc.running = false; applyThemeProc.running = true
         } else {
             applyBgProc.command = ["bash", "-c", "omarchy-theme-bg-set '" + path.replace(/'/g, "'\\''") + "'"]
@@ -232,6 +232,9 @@ PanelWindow {
                                ? filtered[selFilt] : null
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+    function paletteReadCmd(pathExpr) {
+        return "awk -F'\"' 'function valid(v){ return v ~ /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/ } { k=$1; gsub(/[[:space:]=]/,\"\",k); if (valid($2)) c[k]=$2 } END { split(\"color1 red color2 green color3 yellow color4 blue color5 magenta color6 cyan\", a, \" \"); for (i=1; i<=6; i++) { p=a[i*2-1]; q=a[i*2]; v=c[p]; if (v == \"\") v=c[q]; if (v != \"\") { if (out != \"\") out=out \",\"; out=out v } } print out }' " + pathExpr + " 2>/dev/null"
+    }
 
     // ── pre-warm: visible entries first, the rest after the open settles ──
     Process {
@@ -306,7 +309,7 @@ PanelWindow {
             "  repo=$(sed -nE 's#^[[:space:]]*url = (.*)$#\\1#p' \"$d/.git/config\" | head -1);" +
             "  author=$(printf '%s' \"$repo\" | sed -nE 's#.*github\\.com[:/]+([^/]+)/.*#\\1#p');" +
             "fi;" +
-            "pal=$(awk -F'\"' '/^color[1-6][[:space:]]*=/{print $2}' \"$d/colors.toml\" 2>/dev/null | paste -sd,);" +
+            "pal=$(" + paletteReadCmd("\"$d/colors.toml\"") + ");" +
             "printf '%s\\t%s\\t%s\\n' \"$author\" \"$repo\" \"$pal\""]
         metaProc.running = false; metaProc.running = true
     }
@@ -359,7 +362,7 @@ PanelWindow {
             "for d in \"$@\"; do repo=''; author='';" +
             "if [ -f \"$d/.git/config\" ]; then repo=$(sed -nE 's#^[[:space:]]*url = (.*)$#\\1#p' \"$d/.git/config\" | head -1);" +
             "author=$(printf '%s' \"$repo\" | sed -nE 's#.*github\\.com[:/]+([^/]+)/.*#\\1#p'); fi;" +
-            "pal=$(awk -F'\"' '/^color[1-6][[:space:]]*=/{print $2}' \"$d/colors.toml\" 2>/dev/null | paste -sd,);" +
+            "pal=$(" + paletteReadCmd("\"$d/colors.toml\"") + ");" +
             "printf '%s\\t%s\\t%s\\t%s\\n' \"$d\" \"$author\" \"$repo\" \"$pal\"; done",
             "warm"].concat(dirs)
         metaWarmProc.running = false; metaWarmProc.running = true
