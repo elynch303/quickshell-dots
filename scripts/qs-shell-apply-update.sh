@@ -537,31 +537,25 @@ commit_companion_systemd() {
   return "$rc"
 }
 
-check_stage_local_imports() {
-  local root="$1" file dir line rel rc=0
+check_stage_imports() {
+  local root="$1" file dir line rel path rc=0
   while IFS= read -r -d '' file; do
     dir="$(dirname "$file")"
     while IFS= read -r line || [ -n "$line" ]; do
-      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]*"\([^"]\+\)".*/\1/p')"
-      [ -n "$rel" ] || continue
-      case "$rel" in
-        :*|qrc:*) continue ;;
-      esac
-      [ -e "$dir/$rel" ] || rc=1
-    done < "$file"
-  done < <(find "$root" -name '*.qml' -type f -print0)
-  return "$rc"
-}
+      if [[ "$line" =~ ^[[:space:]]*import[[:space:]]*\"([^\"]+)\" ]]; then
+        rel="${BASH_REMATCH[1]}"
+        case "$rel" in
+          :*|qrc:*) ;;
+          *) [ -e "$dir/$rel" ] || rc=1 ;;
+        esac
+      fi
 
-check_stage_qs_imports() {
-  local root="$1" file line rel path rc=0
-  while IFS= read -r -d '' file; do
-    while IFS= read -r line || [ -n "$line" ]; do
-      rel="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*import[[:space:]]\+qs\.\([A-Za-z0-9_.]\+\).*/\1/p')"
-      [ -n "$rel" ] || continue
-      path="${rel//./\/}"
-      [ -d "$root/$path" ] || rc=1
-      [ -f "$root/$path/qmldir" ] || rc=1
+      if [[ "$line" =~ ^[[:space:]]*import[[:space:]]+qs\.([A-Za-z0-9_.]+) ]]; then
+        rel="${BASH_REMATCH[1]}"
+        path="${rel//./\/}"
+        [ -d "$root/$path" ] || rc=1
+        [ -f "$root/$path/qmldir" ] || rc=1
+      fi
     done < "$file"
   done < <(find "$root" -name '*.qml' -type f -print0)
   return "$rc"
@@ -588,8 +582,7 @@ smoke_stage() {
   fi
   [ -n "$qs_bin" ] || fail "quickshell is required for staged shell smoke."
   command -v timeout >/dev/null 2>&1 || fail "timeout is required for staged shell smoke."
-  check_stage_local_imports "$root" || fail "Staged shell contains unresolved local QML imports."
-  check_stage_qs_imports "$root" || fail "Staged shell contains unresolved qs.* QML imports."
+  check_stage_imports "$root" || fail "Staged shell contains unresolved local or qs.* QML imports."
 
   smoke="$(mktemp -d -p "$STATE_DIR" smoke.XXXXXX)" || fail "Could not create staged shell smoke directory."
   wrapper="$smoke/file-url-smoke.qml"
