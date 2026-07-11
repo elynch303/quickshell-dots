@@ -251,7 +251,8 @@ PanelWindow {
         }
     }
     Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
-    function warmCommand(srcs) {
+    function warmCommand(srcs, niceLevel) {
+        var nice = niceLevel === 10 ? 10 : 19
         return ["bash", "-c",
             "D=$HOME/.cache/quickshell-img-thumbs; mkdir -p \"$D\"; command -v magick >/dev/null 2>&1 || exit 0; " +
             "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\"; " +
@@ -259,12 +260,12 @@ PanelWindow {
             "hash_for() { local s=\"$1\" r m key h t; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; t=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$t\" && mv -f \"$t\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; }; " +
             "for s in \"$@\"; do k=$(hash_for \"$s\") || continue; " +
             "o=\"$D/$k-512.jpg\"; [ -s \"$o\" ] && continue; printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
-            "if [ -s \"$tmp\" ]; then nice -n 19 xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; made=0; while IFS= read -r _src && IFS= read -r out; do [ -s \"$out\" ] && { made=1; break; }; done < \"$tmp\"; [ \"$made\" -eq 1 ] && echo changed; fi",
+            "if [ -s \"$tmp\" ]; then nice -n " + nice + " xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; made=0; while IFS= read -r _src && IFS= read -r out; do [ -s \"$out\" ] && { made=1; break; }; done < \"$tmp\"; [ \"$made\" -eq 1 ] && echo changed; fi",
             "warm"].concat(srcs)
     }
-    function startWarm(proc, srcs) {
+    function startWarm(proc, srcs, niceLevel) {
         if (srcs.length === 0) return
-        proc.command = panel.warmCommand(srcs)
+        proc.command = panel.warmCommand(srcs, niceLevel)
         proc.running = false; proc.running = true
     }
     function visibleSourcePaths() {
@@ -285,8 +286,8 @@ PanelWindow {
         }
         return srcs
     }
-    function warmVisible() { panel.startWarm(priorityWarmProc, panel.visibleSourcePaths()) }
-    function warmAll() { panel.startWarm(warmProc, panel.backgroundSourcePaths()) }
+    function warmVisible() { panel.startWarm(priorityWarmProc, panel.visibleSourcePaths(), 10) }
+    function warmAll() { panel.startWarm(warmProc, panel.backgroundSourcePaths(), 19) }
 
     // ── lazy meta (author/repo/palette) for the focused theme, cached by dir ──
     property var metaCache: ({})
