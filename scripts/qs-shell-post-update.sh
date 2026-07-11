@@ -17,6 +17,7 @@ bin="$HOME/.local/bin"
 qsbin="$HOME/.config/quickshell/bin"
 units="$HOME/.config/systemd/user"
 theme_hooks="$HOME/.config/omarchy/hooks/theme-set.d"
+post_boot_hooks="$HOME/.config/omarchy/hooks/post-boot.d"
 defer_systemd="${QS_SHELL_COMPANION_DEFER_SYSTEMD:-0}"
 
 # install via temp + rename: the target gets a NEW inode, so replacing a script
@@ -92,6 +93,16 @@ if [ -f "$repo/hooks/50-quickshell-bar.sh" ]; then
   put "$repo/hooks/50-quickshell-bar.sh" "$theme_hooks/50-quickshell-bar.sh" 755 || rc=1
 else
   rc=1
+fi
+
+# ── optional autostart hook: refresh only if the user installed it ─────
+if [ -f "$post_boot_hooks/quickshell-rise" ]; then
+  mkdir -p "$post_boot_hooks" || rc=1
+  if [ -f "$repo/contrib/post-boot.d/quickshell-rise" ]; then
+    put "$repo/contrib/post-boot.d/quickshell-rise" "$post_boot_hooks/quickshell-rise" 755 || rc=1
+  else
+    rc=1
+  fi
 fi
 
 # Re-arm both timers so refreshed unit files take effect now. Plain

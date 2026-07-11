@@ -23,8 +23,9 @@ DEST="${QS_SHELL_DEST:-$HOME/.config/quickshell/bar}"
 [ "$DEST" != "/" ] && DEST="${DEST%/}"
 STATE_DIR="$HOME/.cache/qs-shell"
 STATE="$STATE_DIR/update-available.json"
-SCHEMA_VERSION=4
+SCHEMA_VERSION=5
 HOOK_PATH="hooks/50-quickshell-bar.sh"
+POST_BOOT_HOOK_PATH="contrib/post-boot.d/quickshell-rise"
 # Backups live in STATE_HOME (durable), NOT in ~/.cache — caches get tmpfs-mounted
 # or wiped by hygiene tools, and the backup is the rollback's last-resort restore.
 BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/qs-shell/backups"
@@ -75,14 +76,16 @@ read_pending_state() {
        and (.scriptsTree | type == "string")
        and (.systemdTree | type == "string")
        and (.hookBlob | type == "string")
-    then [.repository, .upstreamRef, .baseCommit, .targetCommit, .version, .hookBlob] | @tsv
+       and (.postBootHookBlob | type == "string")
+    then [.repository, .upstreamRef, .baseCommit, .targetCommit, .version, .hookBlob, .postBootHookBlob] | @tsv
     else empty end
   ' "$STATE" 2>/dev/null)" || fail "Could not read shell update state."
   [ -n "$parsed" ] || fail "Shell update state is missing immutable target data."
-  IFS=$'\t' read -r state_repo state_upstream state_base state_target state_version state_hook_blob <<< "$parsed"
+  IFS=$'\t' read -r state_repo state_upstream state_base state_target state_version state_hook_blob state_post_boot_hook_blob <<< "$parsed"
   is_commit_hash "$state_base" || fail "Stored base commit is invalid."
   is_commit_hash "$state_target" || fail "Stored target commit is invalid."
   [ -z "$state_hook_blob" ] || is_commit_hash "$state_hook_blob" || fail "Stored theme hook blob is invalid."
+  [ -z "$state_post_boot_hook_blob" ] || is_commit_hash "$state_post_boot_hook_blob" || fail "Stored post-boot hook blob is invalid."
 }
 
 bar_pids() {
@@ -455,10 +458,10 @@ git cat-file -e "$state_target:versions/$ver" 2>/dev/null || \
 
 # Detect a state file where targetCommit was edited to a different reachable
 # commit: the immutable target must still match the stored full commit lineage,
-# payload tree, companion tree IDs and theme hook blob that the check wrote for
+# payload tree, companion tree IDs and hook blobs that the check wrote for
 # baseCommit..targetCommit. Count and changelog remain UI consistency checks,
 # but are not trusted as provenance.
-payload=("versions/$ver/" "scripts/" "systemd/" "$HOOK_PATH")
+payload=("versions/$ver/" "scripts/" "systemd/" "$HOOK_PATH" "$POST_BOOT_HOOK_PATH")
 state_behind="$(jq -r '.behind // empty' "$STATE" 2>/dev/null)" || fail "Could not read stored update count."
 [[ "$state_behind" =~ ^[0-9]+$ ]] || fail "Stored update count is invalid."
 actual_behind="$(git rev-list --count "$state_base..$state_target" -- "${payload[@]}" 2>/dev/null)" || \
@@ -509,6 +512,13 @@ if git cat-file -e "$state_target:$HOOK_PATH" 2>/dev/null; then
     fail "Could not verify stored theme hook blob."
 fi
 [ "$actual_hook_blob" = "$state_hook_blob" ] || fail "Stored target does not match the checked theme hook blob."
+actual_post_boot_hook_blob=""
+if git cat-file -e "$state_target:$POST_BOOT_HOOK_PATH" 2>/dev/null; then
+  actual_post_boot_hook_blob="$(git rev-parse "$state_target:$POST_BOOT_HOOK_PATH" 2>/dev/null)" || \
+    fail "Could not verify stored post-boot hook blob."
+fi
+[ "$actual_post_boot_hook_blob" = "$state_post_boot_hook_blob" ] || \
+  fail "Stored target does not match the checked post-boot hook blob."
 
 # Sweep any stage dir orphaned by a previously hard-killed run (SIGKILL / power
 # loss skips the EXIT trap). Safe here: the flock above guarantees no other apply
@@ -558,6 +568,9 @@ for p in scripts systemd; do
 done
 if git cat-file -e "$state_target:$HOOK_PATH" 2>/dev/null; then
   companion_paths+=("$HOOK_PATH")
+fi
+if git cat-file -e "$state_target:$POST_BOOT_HOOK_PATH" 2>/dev/null; then
+  companion_paths+=("$POST_BOOT_HOOK_PATH")
 fi
 if [ "${#companion_paths[@]}" -gt 0 ]; then
   companion="$(mktemp -d -p "$STATE_DIR" companion.XXXXXX)" || fail "Could not create companion stage."

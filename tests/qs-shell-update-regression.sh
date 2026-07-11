@@ -85,9 +85,12 @@ QML
   esac
   printf '%s\n' "$label" > "$repo/versions/V1/payload.txt"
   printf '%s\n' "$label" > "$repo/scripts/companion.txt"
+  mkdir -p "$repo/contrib/post-boot.d"
+  printf 'post-boot-%s\n' "$label" > "$repo/contrib/post-boot.d/quickshell-rise"
+  chmod 755 "$repo/contrib/post-boot.d/quickshell-rise"
   printf 'theme-hook-%s\n' "$label" > "$repo/hooks/50-quickshell-bar.sh"
   chmod 755 "$repo/hooks/50-quickshell-bar.sh"
-  printf 'companion-marker\n.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh\n' > "$repo/scripts/qs-shell-post-update.targets"
+  printf 'companion-marker\n.config/omarchy/hooks/post-boot.d/quickshell-rise\n.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh\n' > "$repo/scripts/qs-shell-post-update.targets"
   if [ "$mode" = "bad-companion" ]; then
     cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -134,6 +137,17 @@ set -euo pipefail
 mkdir -p "$HOME/.config/systemd/user"
 printf 'TARGET-UNIT\n' > "$HOME/.config/systemd/user/qs-shell-update-check.timer"
 SCRIPT
+  elif [ "$mode" = "missing-postboot-source" ]; then
+    rm -f "$repo/contrib/post-boot.d/quickshell-rise"
+    printf '.config/omarchy/hooks/post-boot.d/quickshell-rise\n' > "$repo/scripts/qs-shell-post-update.targets"
+    cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+src="${1:?}"
+if [ -f "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" ]; then
+  [ -f "$src/contrib/post-boot.d/quickshell-rise" ] || exit 42
+fi
+SCRIPT
   elif [ "$mode" = "hook-mutation-fail" ]; then
     printf '.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh\n' > "$repo/scripts/qs-shell-post-update.targets"
     cat > "$repo/scripts/qs-shell-post-update.sh" <<'SCRIPT'
@@ -151,6 +165,12 @@ set -euo pipefail
 src="${1:?}"
 mkdir -p "$HOME"
 cp "$src/scripts/companion.txt" "$HOME/companion-marker"
+if [ -f "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise" ]; then
+  [ -f "$src/contrib/post-boot.d/quickshell-rise" ] || exit 43
+  mkdir -p "$HOME/.config/omarchy/hooks/post-boot.d"
+  cp "$src/contrib/post-boot.d/quickshell-rise" "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$HOME/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+fi
 mkdir -p "$HOME/.config/omarchy/hooks/theme-set.d"
 cp "$src/hooks/50-quickshell-bar.sh" "$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
 chmod 755 "$HOME/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh"
@@ -196,13 +216,14 @@ make_update_and_check() {
   QS_SHELL_REPO="$root/repo" \
   QS_SHELL_DEST="$root/dest" \
     "$CHECK"
-  jq -e '(.schemaVersion == 4) and (.behind > 0)
+  jq -e '(.schemaVersion == 5) and (.behind > 0)
     and (.targetCommit | type == "string")
     and (.commitIds | type == "array") and (.commitIds | length > 0)
     and (.payloadTree | type == "string") and (.payloadTree | length > 0)
     and (.scriptsTree | type == "string")
     and (.systemdTree | type == "string")
-    and (.hookBlob | type == "string")' "$(state_file "$root")" >/dev/null
+    and (.hookBlob | type == "string")
+    and (.postBootHookBlob | type == "string")' "$(state_file "$root")" >/dev/null
 }
 
 run_apply() {
@@ -282,6 +303,11 @@ assert_installed_hook() {
   assert_eq "theme-hook-$label" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/theme-set.d/50-quickshell-bar.sh")" "installed theme hook"
 }
 
+assert_installed_post_boot_hook() {
+  local root="$1" label="$2"
+  assert_eq "post-boot-$label" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "installed post-boot hook"
+}
+
 installed_payload_hash() {
   local dir="$1"
   (
@@ -336,13 +362,77 @@ test_hook_only_update_installs_checked_hook() {
   local target hook_blob
   target="$(jq -r '.targetCommit' "$(state_file "$root")")"
   hook_blob="$(git -C "$root/repo" rev-parse "$target:hooks/50-quickshell-bar.sh")"
-  jq -e --arg hook "$hook_blob" '(.schemaVersion == 4) and (.behind == 1) and (.hookBlob == $hook)' "$(state_file "$root")" >/dev/null
+  jq -e --arg hook "$hook_blob" '(.schemaVersion == 5) and (.behind == 1) and (.hookBlob == $hook)' "$(state_file "$root")" >/dev/null
 
   run_apply "$root" >/dev/null
   assert_dest_label "$root" base
   assert_installed_hook "$root" A
   assert_eq "$target" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "hook-only update deployed checked target"
   assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_post_boot_only_update_refreshes_installed_hook() {
+  local root="$WORK/post-boot-only"
+  init_fixture "$root"
+  mkdir -p "$root/home/.config/omarchy/hooks/post-boot.d"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf 'post-boot-A\n' > "$root/repo/contrib/post-boot.d/quickshell-rise"
+  git -C "$root/repo" add contrib/post-boot.d/quickshell-rise >/dev/null
+  git -C "$root/repo" commit -m "post-boot-only" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+
+  HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
+  local target post_boot_blob
+  target="$(jq -r '.targetCommit' "$(state_file "$root")")"
+  post_boot_blob="$(git -C "$root/repo" rev-parse "$target:contrib/post-boot.d/quickshell-rise")"
+  jq -e --arg blob "$post_boot_blob" '(.schemaVersion == 5) and (.behind == 1) and (.postBootHookBlob == $blob)' "$(state_file "$root")" >/dev/null
+
+  run_apply "$root" >/dev/null
+  assert_dest_label "$root" base
+  assert_installed_post_boot_hook "$root" A
+  assert_eq "$target" "$(tr -d '\n' < "$root/dest/.qsrise-commit")" "post-boot-only update deployed checked target"
+  assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_post_boot_update_does_not_install_absent_opt_in_hook() {
+  local root="$WORK/post-boot-absent"
+  init_fixture "$root"
+  printf 'post-boot-A\n' > "$root/repo/contrib/post-boot.d/quickshell-rise"
+  git -C "$root/repo" add contrib/post-boot.d/quickshell-rise >/dev/null
+  git -C "$root/repo" commit -m "post-boot-only" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+
+  HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
+  run_apply "$root" >/dev/null
+
+  [ ! -e "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" ] || \
+    fail "post-boot update installed absent opt-in hook"
+  assert_eq 0 "$(jq -r '.behind' "$(state_file "$root")")" "success cleared state"
+}
+
+test_changed_post_boot_hook_blob_aborts_before_mutation() {
+  local root="$WORK/post-boot-blob"
+  init_fixture "$root"
+  mkdir -p "$root/home/.config/omarchy/hooks/post-boot.d"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf 'post-boot-A\n' > "$root/repo/contrib/post-boot.d/quickshell-rise"
+  git -C "$root/repo" add contrib/post-boot.d/quickshell-rise >/dev/null
+  git -C "$root/repo" commit -m "post-boot-only" >/dev/null
+  git -C "$root/repo" push origin main >/dev/null 2>&1
+  HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
+  jq '.postBootHookBlob = "0000000000000000000000000000000000000000"' "$(state_file "$root")" > "$root/state.tmp"
+  mv "$root/state.tmp" "$(state_file "$root")"
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded after stored post-boot hook blob was changed"
+  fi
+  assert_dest_label "$root" base
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "post-boot hook survived blob mismatch"
+  assert_pending_state_preserved "$root" "$before"
 }
 
 test_check_clears_stale_schema_before_offline_fetch() {
@@ -353,7 +443,7 @@ test_check_clears_stale_schema_before_offline_fetch() {
   git -C "$root/repo" remote set-url origin "$root/missing-remote.git"
 
   HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
-  jq -e '(.schemaVersion == 4) and (.behind == 0)' "$(state_file "$root")" >/dev/null
+  jq -e '(.schemaVersion == 5) and (.behind == 0)' "$(state_file "$root")" >/dev/null
 }
 
 test_alternate_reachable_commit_with_same_subject_aborts() {
@@ -367,7 +457,7 @@ test_alternate_reachable_commit_with_same_subject_aborts() {
   git -C "$root/repo" commit -m "same-subject" >/dev/null
   git -C "$root/repo" push origin main >/dev/null 2>&1
   HOME="$root/home" QS_SHELL_REPO="$root/repo" QS_SHELL_DEST="$root/dest" "$CHECK"
-  jq -e '(.schemaVersion == 4) and (.behind == 1) and (.summary == ["same-subject"])' "$(state_file "$root")" >/dev/null
+  jq -e '(.schemaVersion == 5) and (.behind == 1) and (.summary == ["same-subject"])' "$(state_file "$root")" >/dev/null
 
   git -C "$root/repo" checkout -b alternate "$base" >/dev/null 2>&1
   printf 'ALTERNATE-B\n' > "$root/repo/versions/V1/alternate-marker"
@@ -609,6 +699,51 @@ test_companion_manifest_is_required() {
   assert_pending_state_preserved "$root" "$before"
 }
 
+test_real_post_update_refreshes_installed_post_boot_hook_only() {
+  local root="$WORK/real-post-update"
+  local repo="$REPO_ROOT"
+
+  mkdir -p "$root/home/.local/share" "$root/home/.config/omarchy/hooks/post-boot.d" "$root/bin"
+  printf 'cached\n' > "$root/home/.local/share/qs-aur-blacklist.txt"
+  printf 'OLD\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/systemctl"
+  chmod 755 "$root/bin/systemctl"
+
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+    bash "$repo/scripts/qs-shell-post-update.sh" "$repo" >/dev/null
+
+  cmp -s "$repo/contrib/post-boot.d/quickshell-rise" "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" || \
+    fail "installed post-boot hook was not refreshed"
+
+  rm -rf "$root/home/.config/omarchy/hooks/post-boot.d"
+  HOME="$root/home" PATH="$root/bin:$PATH" QS_SHELL_COMPANION_DEFER_SYSTEMD=1 \
+    bash "$repo/scripts/qs-shell-post-update.sh" "$repo" >/dev/null
+
+  [ ! -e "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" ] || \
+    fail "post-update installed opt-in post-boot hook unexpectedly"
+  grep -Fxq '.config/omarchy/hooks/post-boot.d/quickshell-rise' "$repo/scripts/qs-shell-post-update.targets" || \
+    fail "post-boot hook is missing from companion rollback targets"
+}
+
+test_missing_post_boot_source_rolls_back_and_preserves_pending_state() {
+  local root="$WORK/post-boot-missing-source"
+  init_fixture "$root"
+  mkdir -p "$root/home/.config/omarchy/hooks/post-boot.d"
+  printf 'OLD-HOOK\n' > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  chmod 755 "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  make_update_and_check "$root" A missing-postboot-source
+  local before
+  before="$(jq -c . "$(state_file "$root")")"
+
+  if run_apply "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded with installed post-boot hook but missing staged source"
+  fi
+  assert_dest_label "$root" base
+  assert_eq "OLD-HOOK" "$(tr -d '\n' < "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise")" "post-boot hook restored after missing source"
+  assert_pending_state_preserved "$root" "$before"
+}
+
 test_companion_failure_keeps_old_deploy_and_pending_state() {
   local root="$WORK/companion-fail"
   init_fixture "$root"
@@ -730,6 +865,9 @@ test_systemd_commit_failure_keeps_pending_state() {
 test_remote_moves_but_apply_installs_checked_target
 test_check_clears_stale_schema_before_offline_fetch
 test_hook_only_update_installs_checked_hook
+test_post_boot_only_update_refreshes_installed_hook
+test_post_boot_update_does_not_install_absent_opt_in_hook
+test_changed_post_boot_hook_blob_aborts_before_mutation
 test_missing_target_aborts_before_mutation
 test_changed_target_sha_aborts_before_mutation
 test_alternate_reachable_commit_with_same_subject_aborts
@@ -746,6 +884,8 @@ test_qs_module_with_qmldir_smoke_does_not_execute_side_effect
 test_qs_module_without_qmldir_fails_before_side_effect
 test_manifest_does_not_restore_whole_systemd_wants_dir
 test_companion_manifest_is_required
+test_real_post_update_refreshes_installed_post_boot_hook_only
+test_missing_post_boot_source_rolls_back_and_preserves_pending_state
 test_companion_failure_keeps_old_deploy_and_pending_state
 test_companion_mutation_failure_restores_side_effect
 test_hook_mutation_failure_restores_old_hook
