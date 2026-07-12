@@ -3,6 +3,7 @@
 #
 # Writes an immutable-ish scan state for the official repo package set and emits
 # the legacy QML stream:
+#   C|system-scan-available|reason
 #   S|pkg|old|new
 #   A|pkg|old|new
 #
@@ -20,7 +21,16 @@ fail() {
 
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required"
-command -v checkupdates >/dev/null 2>&1 || fail "checkupdates is required"
+
+system_scan_available=true
+system_scan_reason=""
+if ! command -v checkupdates >/dev/null 2>&1; then
+  system_scan_available=false
+  system_scan_reason="missing-checkupdates"
+elif ! command -v fakeroot >/dev/null 2>&1; then
+  system_scan_available=false
+  system_scan_reason="missing-fakeroot"
+fi
 
 state_dir="$(dirname "$STATE")"
 mkdir -p "$state_dir"
@@ -37,22 +47,24 @@ aur_tsv="$tmpdir/aur.tsv"
 : > "$system_tsv"
 : > "$aur_tsv"
 
-rc=0
-LC_ALL=C checkupdates >"$system_raw" 2>"$system_err" || rc=$?
-case "$rc" in
-  0|2) ;;
-  *) fail "checkupdates failed" ;;
-esac
+if $system_scan_available; then
+  rc=0
+  LC_ALL=C checkupdates >"$system_raw" 2>"$system_err" || rc=$?
+  case "$rc" in
+    0|2) ;;
+    *) fail "checkupdates failed" ;;
+  esac
 
-while IFS= read -r line || [ -n "$line" ]; do
-  [ -n "$line" ] || continue
-  read -r name old arrow new rest <<< "$line"
-  [ -n "${name:-}" ] && [ -n "${old:-}" ] && [ -n "${arrow:-}" ] && [ -n "${new:-}" ] && [ -z "${rest:-}" ] \
-    || fail "malformed checkupdates output"
-  [ "$arrow" = "->" ] || fail "malformed checkupdates output"
-  case "$name" in *[!a-zA-Z0-9@._+-]*) fail "malformed checkupdates output" ;; esac
-  printf '%s\t%s\t%s\n' "$name" "$old" "$new" >> "$system_tsv"
-done < "$system_raw"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    read -r name old arrow new rest <<< "$line"
+    [ -n "${name:-}" ] && [ -n "${old:-}" ] && [ -n "${arrow:-}" ] && [ -n "${new:-}" ] && [ -z "${rest:-}" ] \
+      || fail "malformed checkupdates output"
+    [ "$arrow" = "->" ] || fail "malformed checkupdates output"
+    case "$name" in *[!a-zA-Z0-9@._+-]*) fail "malformed checkupdates output" ;; esac
+    printf '%s\t%s\t%s\n' "$name" "$old" "$new" >> "$system_tsv"
+  done < "$system_raw"
+fi
 
 if [ "${QS_ARCH_SKIP_AUR:-0}" != "1" ]; then
   if command -v paru >/dev/null 2>&1; then
@@ -73,13 +85,17 @@ fi
 
 awk -F '\t' '{print $1 "|" $2 "|" $3}' "$system_tsv" > "$system_canon"
 LC_ALL=C sort "$system_canon" > "$system_sorted"
-system_hash="$(sha256sum "$system_sorted" | awk '{print $1}')"
 system_count="$(wc -l < "$system_tsv" | tr -d ' ')"
 aur_count="$(wc -l < "$aur_tsv" | tr -d ' ')"
 checked_epoch="$(date +%s)"
-checked_iso="$(date -Is)"
-scan_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' || true)"
-[ -n "$scan_id" ] || scan_id="${checked_epoch}-$$"
+checked_iso="$(date -d "@$checked_epoch" -Is)"
+system_hash=""
+scan_id=""
+if $system_scan_available; then
+  system_hash="$(sha256sum "$system_sorted" | awk '{print $1}')"
+  scan_id="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' || true)"
+  [ -n "$scan_id" ] || scan_id="${checked_epoch}-$$"
+fi
 
 system_json="$(jq -Rn '[inputs | select(length > 0) | split("\t") | {name:.[0], oldVer:.[1], newVer:.[2], source:"system"}]' < "$system_tsv")"
 aur_json="$(jq -Rn '[inputs | select(length > 0) | split("\t") | {name:.[0], oldVer:.[1], newVer:.[2], source:"aur"}]' < "$aur_tsv")"
@@ -87,6 +103,8 @@ aur_json="$(jq -Rn '[inputs | select(length > 0) | split("\t") | {name:.[0], old
 state_tmp="$(mktemp -p "$state_dir" .qs-arch-updates.XXXXXX)" || fail "could not create state temp"
 jq -nc \
   --argjson schema "$SCHEMA_VERSION" \
+  --argjson systemScanAvailable "$system_scan_available" \
+  --arg reason "$system_scan_reason" \
   --arg scanId "$scan_id" \
   --arg checked "$checked_iso" \
   --argjson checkedEpoch "$checked_epoch" \
@@ -97,6 +115,8 @@ jq -nc \
   --argjson aurPackages "$aur_json" \
   '{
     schemaVersion: $schema,
+    systemScanAvailable: $systemScanAvailable,
+    reason: $reason,
     scanId: $scanId,
     checked: $checked,
     checkedEpoch: $checkedEpoch,
@@ -111,6 +131,11 @@ jq -nc \
   }
 mv -f "$state_tmp" "$STATE"
 
-printf 'M|%s|%s|%s|%s\n' "$scan_id" "$checked_epoch" "$system_hash" "$system_count"
+if $system_scan_available; then
+  printf 'C|1|\n'
+  printf 'M|%s|%s|%s|%s\n' "$scan_id" "$checked_epoch" "$system_hash" "$system_count"
+else
+  printf 'C|0|%s\n' "$system_scan_reason"
+fi
 awk -F '\t' '{printf "S|%s|%s|%s\n", $1, $2, $3}' "$system_tsv"
 awk -F '\t' '{printf "A|%s|%s|%s\n", $1, $2, $3}' "$aur_tsv"

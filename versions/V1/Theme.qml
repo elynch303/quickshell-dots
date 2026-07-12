@@ -1639,6 +1639,8 @@ Item {
     property int archScanCheckedEpoch: 0
     property string archScanHash: ""
     property int archScanSystemCount: 0
+    property bool archSystemScanAvailable: false
+    property string archSystemScanReason: "scan-not-checked"
     readonly property int archScanMaxAge: 900
 
     // ── Arch security gate (pre-install verdict per package) ──

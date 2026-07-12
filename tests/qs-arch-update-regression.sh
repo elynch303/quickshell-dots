@@ -76,7 +76,7 @@ SCRIPT
 env_common() {
   local root="$1"
   shift
-  PATH="$root/bin:$PATH" \
+  PATH="$root/bin:${QS_TEST_BASE_PATH:-$PATH}" \
   HOME="$root/home" \
   XDG_STATE_HOME="$root/state" \
   QS_GATE_MIN=0 \
@@ -90,6 +90,16 @@ env_common() {
   FAKE_AUR_FILE="$root/aur.out" \
   FAKE_SUDO_DELAY="${FAKE_SUDO_DELAY:-0}" \
   "$@"
+}
+
+restricted_tool_path() {
+  local root="$1" name src
+  mkdir -p "$root/system-bin"
+  for name in bash cat dirname mkdir mktemp rm timeout awk sort sha256sum wc tr date od mv jq; do
+    src="$(command -v "$name")"
+    ln -sf "$src" "$root/system-bin/$name"
+  done
+  printf '%s\n' "$root/system-bin"
 }
 
 run_check() {
@@ -126,7 +136,7 @@ prepare_checked_gate() {
   printf '%s\n' "$payload" > "$root/checkupdates.out"
   run_check "$root"
   run_gate_from_check "$root"
-  jq -e '.schemaVersion == 1 and (.scanId | length > 0) and .systemCount > 0 and (.systemHash | length > 0)' \
+  jq -e '.schemaVersion == 1 and .systemScanAvailable == true and .reason == "" and (.scanId | length > 0) and .systemCount > 0 and (.systemHash | length > 0)' \
     "$root/home/.cache/qs-arch-updates.json" >/dev/null
   jq -e '.schemaVersion == 1 and .degraded == false and .fail == 0 and .ok >= .systemCount' \
     "$root/home/.cache/qs-arch-gate.json" >/dev/null
@@ -231,24 +241,120 @@ test_missing_checkupdates_fails_closed() {
   init_fixture "$root"
   prepare_checked_gate "$root" $'linux 1.0 -> 1.1'
   rm -f "$root/bin/checkupdates"
+  local restricted
+  restricted="$(restricted_tool_path "$root")"
 
-  if run_apply_checked "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+  if QS_TEST_BASE_PATH="$restricted" run_apply_checked "$root" >"$root/apply.out" 2>"$root/apply.err"; then
     fail "apply succeeded without checkupdates"
   fi
   assert_file_absent "$root/pacman.marker" "pacman ran without checkupdates"
-  assert_contains "-v" "$root/sudo.log" "sudo -v should happen before the fresh rescan"
+  [ ! -s "$root/sudo.log" ] || fail "sudo ran without checkupdates"
+  assert_contains "pacman-contrib is required" "$root/apply.err" "missing dependency error was not actionable"
 }
 
-test_check_without_checkupdates_fails() {
+test_check_without_checkupdates_writes_capability_and_keeps_aur() {
   local root="$WORK/check-missing"
   init_fixture "$root"
   rm -f "$root/bin/checkupdates"
-  printf 'linux 1.0 -> 1.1\n' > "$root/checkupdates.out"
+  printf 'aurtool 1.0 -> 1.1\n' > "$root/aur.out"
+  local restricted
+  restricted="$(restricted_tool_path "$root")"
 
-  if run_check "$root" >"$root/check.stdout" 2>"$root/check.stderr"; then
-    fail "check succeeded without checkupdates"
+  QS_TEST_BASE_PATH="$restricted" run_check "$root"
+
+  jq -e '
+    .schemaVersion == 1
+    and .systemScanAvailable == false
+    and .reason == "missing-checkupdates"
+    and .scanId == ""
+    and .systemHash == ""
+    and .systemCount == 0
+    and .aurCount == 1
+    and (.checked | length > 0)
+    and .checkedEpoch > 0
+    and (.systemPackages | length) == 0
+    and (.aurPackages | length) == 1
+  ' "$root/home/.cache/qs-arch-updates.json" >/dev/null
+  [ "$(date -d "$(jq -r '.checked' "$root/home/.cache/qs-arch-updates.json")" +%s)" \
+      = "$(jq -r '.checkedEpoch' "$root/home/.cache/qs-arch-updates.json")" ] \
+    || fail "unavailable scan timestamps do not describe the same instant"
+  if compgen -G "$root/home/.cache/.qs-arch-updates.*" >/dev/null; then
+    fail "atomic state write left a temporary file behind"
   fi
-  [ ! -e "$root/home/.cache/qs-arch-updates.json" ] || fail "check wrote state without checkupdates"
+  assert_contains "C|0|missing-checkupdates" "$root/check.out" "missing capability stream record"
+  assert_contains "A|aurtool|1.0|1.1" "$root/check.out" "AUR update was lost without checkupdates"
+  if grep -q '^M|' "$root/check.out"; then
+    fail "unavailable system scan emitted trusted scan metadata"
+  fi
+
+  run_gate_from_check "$root"
+  jq -e '.warn == 1 and .fail == 0 and .degraded == true' \
+    "$root/home/.cache/qs-arch-gate.json" >/dev/null
+}
+
+test_dependency_install_transition_needs_no_reinstall() {
+  local root="$WORK/check-transition"
+  init_fixture "$root"
+  rm -f "$root/bin/checkupdates"
+  local restricted
+  restricted="$(restricted_tool_path "$root")"
+
+  QS_TEST_BASE_PATH="$restricted" run_check "$root"
+  jq -e '.systemScanAvailable == false and .reason == "missing-checkupdates"' \
+    "$root/home/.cache/qs-arch-updates.json" >/dev/null
+
+  cat > "$root/bin/checkupdates" <<'SCRIPT'
+#!/usr/bin/env bash
+cat "$FAKE_CHECKUPDATES_FILE"
+exit 0
+SCRIPT
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/fakeroot"
+  chmod +x "$root/bin/checkupdates" "$root/bin/fakeroot"
+  printf 'linux 1.0 -> 1.1\n' > "$root/checkupdates.out"
+  QS_TEST_BASE_PATH="$restricted" run_check "$root"
+
+  jq -e '.systemScanAvailable == true and .reason == "" and .systemCount == 1 and (.scanId | length > 0) and (.systemHash | length > 0)' \
+    "$root/home/.cache/qs-arch-updates.json" >/dev/null
+  assert_contains "C|1|" "$root/check.out" "available capability stream record missing after dependency install"
+}
+
+test_old_state_without_capability_fails_before_sudo() {
+  local root="$WORK/old-state"
+  init_fixture "$root"
+  prepare_checked_gate "$root" $'linux 1.0 -> 1.1'
+  local tmp
+  tmp="$(mktemp)"
+  jq 'del(.systemScanAvailable, .reason)' "$root/home/.cache/qs-arch-updates.json" > "$tmp"
+  mv "$tmp" "$root/home/.cache/qs-arch-updates.json"
+
+  if run_apply_checked "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply accepted old state without capability"
+  fi
+  assert_file_absent "$root/pacman.marker" "pacman ran from old state without capability"
+  [ ! -s "$root/sudo.log" ] || fail "sudo ran from old state without capability"
+}
+
+test_missing_fakeroot_is_unavailable_and_apply_fails_before_sudo() {
+  local root="$WORK/missing-fakeroot"
+  init_fixture "$root"
+  prepare_checked_gate "$root" $'linux 1.0 -> 1.1'
+  local restricted
+  restricted="$(restricted_tool_path "$root")"
+
+  QS_TEST_BASE_PATH="$restricted" run_check "$root"
+  jq -e '.systemScanAvailable == false and .reason == "missing-fakeroot" and .scanId == "" and .systemHash == ""' \
+    "$root/home/.cache/qs-arch-updates.json" >/dev/null
+  assert_contains "C|0|missing-fakeroot" "$root/check.out" "missing fakeroot capability record was not emitted"
+
+  # Restore a previously valid reviewed state, then prove the apply helper still
+  # checks the runtime capability before sudo.
+  QS_TEST_BASE_PATH="$PATH" prepare_checked_gate "$root" $'linux 1.0 -> 1.1'
+  if QS_TEST_BASE_PATH="$restricted" run_apply_checked "$root" >"$root/apply.out" 2>"$root/apply.err"; then
+    fail "apply succeeded without fakeroot"
+  fi
+  assert_file_absent "$root/pacman.marker" "pacman ran without fakeroot"
+  [ ! -s "$root/sudo.log" ] || fail "sudo ran without fakeroot"
+  assert_contains "fakeroot is required" "$root/apply.err" "missing fakeroot error was not actionable"
 }
 
 test_state_replaced_after_click_aborts_before_sudo() {
@@ -355,6 +461,18 @@ test_arch_panel_refresh_updates_freshness_clock() {
   assert_contains "archPanel.nowEpoch = Math.floor(Date.now() / 1000)" "$panel" "arch panel freshness clock update is missing"
 }
 
+test_qml_exposes_missing_dependency_without_unsafe_fallback() {
+  local widget="$REPO_ROOT/versions/V1/modules/ArchUpdaterWidget.qml"
+  local panel="$REPO_ROOT/versions/V1/panels/ArchUpdaterPanel.qml"
+  assert_contains 'parts[0] === "C"' "$widget" "Arch updater widget does not parse capability records"
+  assert_contains 'root.archSystemScanAvailable = sawCapability && systemScanAvailable' "$widget" "Arch updater widget does not fail closed without a capability record"
+  assert_contains 'Install pacman-contrib and fakeroot for safe repository checks' "$panel" "Packages tab lacks the missing dependency explanation"
+  assert_contains 'sudo pacman -S --needed pacman-contrib fakeroot' "$panel" "Packages tab dependency command is missing or unsafe"
+  if grep -Eq '^[[:space:]]*(LC_ALL=[^ ]+[[:space:]]+)?pacman[[:space:]]+-Qu' "$REPO_ROOT/scripts/qs-arch-update-check.sh"; then
+    fail "Arch update check regained the unsafe pacman -Qu fallback"
+  fi
+}
+
 test_success_runs_exact_full_upgrade
 test_aur_warnings_do_not_block_full_repo_upgrade
 test_rescan_drift_aborts_before_pacman
@@ -362,7 +480,10 @@ test_stale_scan_aborts_before_sudo
 test_gate_mismatch_aborts_before_sudo
 test_degraded_gate_aborts_before_sudo
 test_missing_checkupdates_fails_closed
-test_check_without_checkupdates_fails
+test_check_without_checkupdates_writes_capability_and_keeps_aur
+test_dependency_install_transition_needs_no_reinstall
+test_old_state_without_capability_fails_before_sudo
+test_missing_fakeroot_is_unavailable_and_apply_fails_before_sudo
 test_state_replaced_after_click_aborts_before_sudo
 test_gate_changed_after_review_aborts_before_pacman
 test_scan_stales_during_sudo_aborts_before_pacman
@@ -372,5 +493,6 @@ test_malformed_rescan_aborts_before_pacman
 test_checkupdates_bad_exit_fails_even_without_stderr
 test_blacklist_fetch_service_has_bounded_retries
 test_arch_panel_refresh_updates_freshness_clock
+test_qml_exposes_missing_dependency_without_unsafe_fallback
 
 printf 'qs-arch-update regression tests passed\n'
