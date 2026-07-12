@@ -80,6 +80,7 @@ Item {
             readonly property int totalCount:  SystemTray.items.values.length
             readonly property string tooltipText: totalCount + (totalCount === 1 ? " app" : " apps")
                                                   + (hiddenCount > 0 ? " · " + hiddenCount + " hidden" : "")
+                                                  + "\nMiddle-click an app to open its menu"
 
             TooltipMixin { id: tip; root: rootMod.root; owner: toggleBtn; text: toggleBtn.tooltipText }
 
