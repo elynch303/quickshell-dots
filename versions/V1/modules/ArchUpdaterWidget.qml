@@ -33,8 +33,6 @@ Item {
     readonly property bool hasBadge: rootMod.badgeCount > 0
     readonly property bool hasNotice: rootMod.hasUpdates || rootMod.hasThemeUpdates
         || root.themeUpdLocalEdits > 0 || rootMod.hasShellUpdate
-        || root.archSystemScanReason === "missing-checkupdates"
-        || root.archSystemScanReason === "missing-fakeroot"
 
     implicitWidth: 26
     implicitHeight: 28
@@ -90,17 +88,9 @@ Item {
         var lines = text.trim().split("\n")
         var updates = []
         var sysCount = 0; var aCount = 0
-        var sawMeta = false; var sawCapability = false
-        var systemScanAvailable = false
-        var systemScanReason = "scan-capability-unknown"
+        var sawMeta = false
         for (var i = 0; i < lines.length; i++) {
             var parts = lines[i].split("|")
-            if (parts.length >= 2 && parts[0] === "C") {
-                sawCapability = true
-                systemScanAvailable = parts[1] === "1"
-                systemScanReason = parts[2] || ""
-                continue
-            }
             if (parts.length >= 4) {
                 var src = parts[0]
                 if (src === "M") {
@@ -124,8 +114,6 @@ Item {
             root.archScanHash = ""
             root.archScanSystemCount = 0
         }
-        root.archSystemScanAvailable = sawCapability && systemScanAvailable
-        root.archSystemScanReason = sawCapability ? systemScanReason : "scan-capability-unknown"
         rootMod.systemCount = sysCount
         rootMod.aurCount = aCount
         rootMod.updateCount = sysCount + aCount
@@ -173,7 +161,6 @@ Item {
     readonly property string tooltipText: {
         if (rootMod.refreshing) return ""
         var parts = []
-        if (!root.archSystemScanAvailable) parts.push("system scan unavailable")
         if (rootMod.systemCount) parts.push(rootMod.systemCount + " system")
         if (rootMod.aurCount) parts.push(rootMod.aurCount + " AUR")
         if (rootMod.cleanThemeCount > 0) parts.push(rootMod.cleanThemeCount + " themes")

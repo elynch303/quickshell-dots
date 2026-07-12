@@ -123,7 +123,7 @@ scan_id=""
 scan_hash=""
 scan_count=""
 if command -v jq >/dev/null 2>&1 && [ -r "$SCAN_STATE" ]; then
-  scan_tsv="$(jq -er 'select(.systemScanAvailable == true) | [.scanId, .systemHash, (.systemCount | tostring)] | @tsv' "$SCAN_STATE" 2>/dev/null || true)"
+  scan_tsv="$(jq -er '[.scanId, .systemHash, (.systemCount | tostring)] | @tsv' "$SCAN_STATE" 2>/dev/null || true)"
   if [ -n "$scan_tsv" ]; then
     IFS=$'\t' read -r scan_id scan_hash scan_count <<< "$scan_tsv"
   fi

@@ -162,10 +162,7 @@ PanelWindow {
         triggeredOnStart: true
         onTriggered: archPanel.nowEpoch = Math.floor(Date.now() / 1000)
     }
-    readonly property bool repoScanFresh: root.archSystemScanAvailable
-        && root.archScanId !== ""
-        && root.archScanHash !== ""
-        && root.archScanCheckedEpoch > 0
+    readonly property bool repoScanFresh: root.archScanCheckedEpoch > 0
         && (nowEpoch - root.archScanCheckedEpoch) >= 0
         && (nowEpoch - root.archScanCheckedEpoch) <= root.archScanMaxAge
     readonly property bool repoScanMatchesUpdates: root.archScanSystemCount === repoUpdatePackages
@@ -178,12 +175,7 @@ PanelWindow {
         && (root.archGateState === "clean" || root.archGateState === "warn")
         && !root.archGateDegraded
     readonly property bool canUpdate: repoGateAllowsFullUpgrade
-    readonly property bool dependencyMissing: !root.archSystemScanAvailable
-        && (root.archSystemScanReason === "missing-checkupdates"
-            || root.archSystemScanReason === "missing-fakeroot")
     readonly property string repoBlockReason: {
-        if (dependencyMissing) return "System update scan unavailable: install scan dependencies"
-        if (!root.archSystemScanAvailable) return "System update scan unavailable: refresh scan"
         if (repoUpdatePackages === 0) return "No pacman updates"
         if (!repoScanFresh) return "Repo upgrade blocked: refresh scan"
         if (!repoScanMatchesUpdates) return "Repo upgrade blocked: scan drift"
@@ -195,8 +187,6 @@ PanelWindow {
         return ""
     }
     readonly property string repoBlockButtonText: {
-        if (dependencyMissing) return "Install dependency"
-        if (!root.archSystemScanAvailable) return "Refresh required"
         if (repoUpdatePackages === 0) return "No updates"
         if (!repoScanFresh) return "Refresh required"
         if (!repoScanMatchesUpdates) return "Scan drift"
@@ -225,22 +215,6 @@ PanelWindow {
             + " GUM_CONFIRM_SELECTED_BACKGROUND=" + shellQuote(hexColor(root.seal))
             + " GUM_CONFIRM_UNSELECTED_FOREGROUND=" + shellQuote(hexColor(root.ink))
             + " GUM_CONFIRM_UNSELECTED_BACKGROUND=" + shellQuote(hexColor(root.bg))
-    }
-
-    function installArchScanDependency() {
-        var inner = "printf '%s\\n\\n' " + shellQuote("Install pacman-contrib and fakeroot to enable safe repository checks.") + "; "
-            + "printf '%s\\n\\n' " + shellQuote("$ sudo pacman -S --needed pacman-contrib fakeroot") + "; "
-            + "sudo pacman -S --needed pacman-contrib fakeroot; rc=$?; "
-            + "if [ $rc -eq 0 ] && command -v checkupdates >/dev/null 2>&1 && command -v fakeroot >/dev/null 2>&1; then "
-            + "qs -c bar ipc call omarchy.system-update refresh >/dev/null 2>&1 || true; "
-            + "printf '\\n%s\\n' " + shellQuote("Dependency installed. Repository scan requested.") + "; "
-            + "else rc=1; printf '\\n%s\\n' " + shellQuote("Installation failed. Repository updates remain disabled.") + "; fi; "
-            + "printf '\\n'; read -r -p " + shellQuote("Press Enter to close...") + " _; exit $rc"
-        panelUpdateRunner.command = ["bash", "-c",
-            "omarchy-launch-floating-terminal-with-presentation " + shellQuote(inner)]
-        root.archVisible = false
-        panelUpdateRunner.running = false
-        panelUpdateRunner.running = true
     }
 
     // ── theme update = visible terminal, pinned to the checked commit ──
@@ -621,19 +595,6 @@ PanelWindow {
                 }
             }
 
-            UiText {
-                visible: !root.archSystemScanAvailable
-                width: parent.width
-                text: archPanel.dependencyMissing
-                    ? "System update scan unavailable\nInstall pacman-contrib and fakeroot for safe repository checks"
-                    : "System update scan unavailable\nRefresh to check repository scan capability"
-                color: root.seal
-                font.family: root.mono
-                font.pixelSize: 10
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-            }
-
             // ── escalation: a FAIL means the INSTALLED copy is on the list, i.e.
             // possibly already compromised; the full repo upgrade stays blocked ──
             UiText {
@@ -770,7 +731,7 @@ PanelWindow {
                     UiText {
                         width: parent.width
                         visible: root.archUpdates.length === 0
-                        text: root.archSystemScanAvailable ? "No updates available" : "No AUR updates available"
+                        text: "No updates available"
                         color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.5)
                         font.family: root.mono; font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
@@ -816,12 +777,9 @@ PanelWindow {
                 Rectangle {
                     width: (parent.width - 8 * (archPanel.btnCount - 1)) / archPanel.btnCount
                     height: 28; radius: root.tileRadius
-                    readonly property bool actionable: archPanel.canUpdate || archPanel.dependencyMissing
-                    opacity: actionable ? 1.0 : 0.45
-                    color: archPanel.dependencyMissing
-                        ? (updateMa.containsMouse ? root.fillHover : root.fillIdle)
-                        : (updateMa.containsMouse && archPanel.canUpdate) ? root.fillPrimaryHover : root.seal
-                    border.color: archPanel.dependencyMissing ? (updateMa.containsMouse ? root.seal : root.sep) : "transparent"
+                    opacity: archPanel.canUpdate ? 1.0 : 0.45
+                    color: (updateMa.containsMouse && archPanel.canUpdate) ? root.fillPrimaryHover : root.seal
+                    border.color: "transparent"
                     Behavior on color { ColorAnimation { duration: 120 } }
                     UiText {
                         anchors.centerIn: parent
@@ -830,9 +788,7 @@ PanelWindow {
                             : archPanel.repoBlockButtonText
                         width: parent.width - 16
                         horizontalAlignment: Text.AlignHCenter
-                        color: archPanel.dependencyMissing
-                            ? (updateMa.containsMouse ? root.seal : root.ink)
-                            : root.paper
+                        color: root.paper
                         font.family: root.mono; font.pixelSize: 11
                         elide: Text.ElideRight
                     }
@@ -840,13 +796,9 @@ PanelWindow {
                         id: updateMa
                         anchors.fill: parent
                         hoverEnabled: true
-                        enabled: parent.actionable
-                        cursorShape: parent.actionable ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        enabled: archPanel.canUpdate
+                        cursorShape: archPanel.canUpdate ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: {
-                            if (archPanel.dependencyMissing) {
-                                archPanel.installArchScanDependency();
-                                return;
-                            }
                             // Full repository upgrade only. The helper revalidates the
                             // checked scan, gate verdict and a fresh checkupdates scan
                             // before it can launch sudo pacman -Syu.

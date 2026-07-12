@@ -37,8 +37,6 @@ fail() {
 
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 command -v sudo >/dev/null 2>&1 || fail "sudo is required"
-command -v checkupdates >/dev/null 2>&1 || fail "pacman-contrib is required for safe repository scans"
-command -v fakeroot >/dev/null 2>&1 || fail "fakeroot is required for safe repository scans"
 [ -x "$CHECK_HELPER" ] || fail "arch update check helper is missing"
 [ -x "$GATE_HELPER" ] || fail "arch security gate helper is missing"
 [ -r "$STATE" ] || fail "no checked package scan is available"
@@ -58,7 +56,6 @@ case "$expected_checked_epoch" in ''|*[!0-9]*) fail "expected scan timestamp is 
 
 state_tsv="$(jq -er '
   select(.schemaVersion == 1)
-  | select(.systemScanAvailable == true)
   | select((.scanId // "") != "")
   | select((.systemHash // "") != "")
   | [
@@ -134,7 +131,7 @@ rescan_gate_state="$tmpdir/rescan-gate.json"
 QS_ARCH_UPDATE_STATE="$rescan_state" QS_ARCH_SKIP_AUR=1 "$CHECK_HELPER" >"$tmpdir/rescan.out" \
   || fail "fresh checkupdates scan failed"
 
-rescan_tsv="$(jq -er 'select(.systemScanAvailable == true) | [.scanId, .systemHash, (.systemCount | tostring), (.checkedEpoch | tostring)] | @tsv' "$rescan_state" 2>/dev/null)" \
+rescan_tsv="$(jq -er '[.scanId, .systemHash, (.systemCount | tostring), (.checkedEpoch | tostring)] | @tsv' "$rescan_state" 2>/dev/null)" \
   || fail "fresh checkupdates scan state is malformed"
 IFS=$'\t' read -r rescan_scan_id rescan_hash rescan_count rescan_checked_epoch <<< "$rescan_tsv"
 

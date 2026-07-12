@@ -29,41 +29,6 @@ info() { printf "%s==>%s %s\n" "$c_g" "$c_0" "$*"; }
 warn() { printf "%s!!%s %s\n"  "$c_y" "$c_0" "$*"; }
 err()  { printf "%s✗%s %s\n"   "$c_r" "$c_0" "$*" >&2; }
 
-offer_arch_scan_dependencies() {
-  command -v checkupdates >/dev/null 2>&1 \
-    && command -v fakeroot >/dev/null 2>&1 \
-    && return 0
-
-  warn "pacman-contrib and fakeroot are required for safe repository update scans."
-  warn "QSRise, theme updates, shell updates, and AUR notices will still work."
-
-  local ans=""
-  if [[ -t 0 || -t 1 || -t 2 ]]; then
-    read -r -p "Install Arch update scan dependencies now? [y/N] " ans </dev/tty || ans=""
-  else
-    warn "No interactive terminal available; skipping optional Arch update scan dependencies."
-  fi
-
-  case "${ans,,}" in
-    y|yes)
-      info "Installing pacman-contrib and fakeroot for safe repository update scans..."
-      if sudo pacman -S --needed pacman-contrib fakeroot; then
-        if command -v checkupdates >/dev/null 2>&1 && command -v fakeroot >/dev/null 2>&1; then
-          info "Arch update scan dependencies installed; repository update scans are enabled."
-        else
-          warn "Dependency installation completed but checkupdates is still unusable; repository scans remain disabled."
-        fi
-      else
-        warn "Arch update scan dependency installation failed; continuing with repository update scans disabled."
-      fi
-      ;;
-    *)
-      info "Skipped Arch update scan dependencies; install them later to enable safe repository update scans:"
-      printf "  %ssudo pacman -S --needed pacman-contrib fakeroot%s\n" "$c_b" "$c_0"
-      ;;
-  esac
-}
-
 # ── claude-usage backend (opt-in AI usage backend) ──────────────
 # Installs the script + systemd timer that feed the Claude quota widget.
 # It reads the OAuth token Claude Code already stores (~/.claude/.credentials.json)
@@ -209,16 +174,15 @@ install_theme_updater() {
 }
 
 # ── 1. dependencies ─────────────────────────────────────────────
-need=(qs git jq curl)
+need=(qs git jq curl checkupdates)
 opt=(wpctl pactl pamixer brightnessctl upower powerprofilesctl bluetoothctl iwctl makoctl hypridle)
 miss=()
 for b in "${need[@]}"; do command -v "$b" >/dev/null 2>&1 || miss+=("$b"); done
 if ((${#miss[@]})); then
   err "Missing required: ${miss[*]}"
-  warn "On Arch:  sudo pacman -S quickshell git jq curl"
+  warn "On Arch:  sudo pacman -S quickshell git jq curl pacman-contrib"
   exit 1
 fi
-offer_arch_scan_dependencies
 optmiss=()
 for b in "${opt[@]}"; do command -v "$b" >/dev/null 2>&1 || optmiss+=("$b"); done
 ((${#optmiss[@]})) && warn "Optional tools missing (some widgets disabled): ${optmiss[*]}"

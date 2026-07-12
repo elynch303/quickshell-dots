@@ -133,8 +133,6 @@ Required packages are checked by the installer:
 sudo pacman -S quickshell git jq curl ttf-jetbrains-mono-nerd ttf-material-symbols-variable
 ```
 
-`pacman-contrib` and `fakeroot` are optional for the bar, but both are required for the ArchUpdater's safe official-repository scan (`checkupdates`). The installer offers to install them; without them, only system package scanning and applying are disabled.
-
 <details>
 <summary>Optional widget dependencies</summary>
 
