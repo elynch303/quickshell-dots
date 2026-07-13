@@ -23,6 +23,44 @@ PanelWindow {
     readonly property int    volume:   audio.volume
     readonly property bool   muted:    audio.muted
     property bool   micMuted: false
+    property real   micLevel: 0
+    property bool   notifyMicStateAfterRefresh: false
+    property bool   micStateRefreshPending: false
+    readonly property real micNoiseFloorDb: -55
+    readonly property bool micMeterAvailable: micPeakLoader.status === Loader.Ready
+        && micPeakLoader.item !== null
+    readonly property real micPeakValue: micMeterAvailable ? micPeakLoader.item.peak : 0
+
+    Loader {
+        id: micPeakLoader
+        active: true
+        source: "MicrophonePeakMonitor.qml"
+        onLoaded: {
+            item.panelOpen = Qt.binding(function() { return root.volVisible })
+            item.muted = Qt.binding(function() { return volPanel.micMuted })
+        }
+    }
+
+    function peakToMeter(peak) {
+        if (!isFinite(peak) || peak <= 0) return 0
+        // PwNodePeakMonitor exposes the cube root of linear amplitude.
+        var amplitude = peak * peak * peak
+        var db = 20 * Math.log(amplitude) / Math.LN10
+        if (db <= micNoiseFloorDb) return 0
+        return Math.max(0, Math.min(1, (db - micNoiseFloorDb) / -micNoiseFloorDb))
+    }
+
+    Timer {
+        interval: 45
+        repeat: true
+        running: root.volVisible && volPanel.micMeterAvailable
+        onTriggered: {
+            var sample = volPanel.micMuted ? 0 : volPanel.peakToMeter(volPanel.micPeakValue)
+            volPanel.micLevel = sample >= volPanel.micLevel
+                ? sample : Math.max(sample, volPanel.micLevel * 0.78)
+        }
+        onRunningChanged: if (!running) volPanel.micLevel = 0
+    }
 
     // ── per-app mixer + device switcher state ──
     property var    apps:        []   // [{idx, name, vol, muted}]
@@ -59,6 +97,27 @@ PanelWindow {
         audioErrNotify.running = false
         audioErrNotify.running = true
     }
+    function notifyMicState() {
+        var title = micMuted ? "Microphone muted" : "Microphone active"
+        var body = micMuted ? "Input has been disabled" : "Input is ready"
+        micStateNotify.command = ["notify-send", "-a", "Audio",
+            "-h", "string:x-canonical-private-synchronous:qs-microphone", title, body]
+        micStateNotify.running = false
+        micStateNotify.running = true
+    }
+    function parseMicMuteState(text) {
+        var match = String(text || "").trim().match(/^Mute:\s*(yes|no)$/i)
+        if (!match) return -1
+        return match[1].toLowerCase() === "yes" ? 1 : 0
+    }
+    function refreshMicState(notifyAfter) {
+        if (notifyAfter === true) notifyMicStateAfterRefresh = true
+        if (micData.running) {
+            micStateRefreshPending = true
+            return
+        }
+        micData.running = true
+    }
 
     function setDefaultSink(dev) {
         if (!dev || !dev.name) return
@@ -82,7 +141,7 @@ PanelWindow {
         appsProc.running   = false; appsProc.running   = true
         sinksProc.running  = false; sinksProc.running  = true
         defSinkProc.running = false; defSinkProc.running = true
-        micData.running    = false; micData.running    = true
+        volPanel.refreshMicState(false)
     }
 
     property real reveal: root.volVisible ? 1 : 0
@@ -393,6 +452,34 @@ PanelWindow {
                 }
             }
 
+            Item {
+                width: parent.width
+                height: visible ? 8 : 0
+                visible: volPanel.micMeterAvailable
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 4
+                    radius: 2
+                    color: root.fillIdle
+                    border.color: root.sep
+                    border.width: 1
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: parent.width * volPanel.micLevel
+                        radius: parent.radius
+                        color: volPanel.micMuted
+                            ? Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.25)
+                            : root.seal
+                    }
+                }
+            }
+
             Rectangle {
                 width: parent.width
                 height: 28; radius: root.tileRadius
@@ -449,6 +536,7 @@ PanelWindow {
     }
 
     Process { id: audioErrNotify }
+    Process { id: micStateNotify }
     Process {
         id: muteRunner
         command: ["bash", "-c", volPanel.outputMuteCommand]
@@ -462,8 +550,7 @@ PanelWindow {
         command: ["bash", "-c", volPanel.micMuteCommand]
         onExited: (code) => {
             volPanel.notifyAudioError("Mute mic", code)
-            micData.running = false
-            micData.running = true
+            volPanel.refreshMicState(code === 0)
         }
     }
     Process { id: audioRunner;   command: ["bash", "-c", "omarchy-launch-audio"] }
@@ -481,12 +568,31 @@ PanelWindow {
 
     Process {
         id: micData
-        command: ["bash", "-c", "pactl get-source-mute @DEFAULT_SOURCE@ 2>/dev/null | awk '{print $2}'"]
+        command: ["env", "LC_ALL=C", "pactl", "get-source-mute", "@DEFAULT_SOURCE@"]
         running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                volPanel.micMuted = this.text.trim() === "yes"
+        stdout: StdioCollector { id: micDataOut }
+        // pactl get-source-mute prints "Mute: yes" | "Mute: no". Only act on an explicit,
+        // VALID read (exit 0 + a parsed yes/no): empty/failed/malformed output must NOT flip
+        // micMuted to false — that would falsely report "Microphone active". On a bad read we
+        // keep the previous state, drop any pending toggle notification, and surface the
+        // failure through the existing audio-error path.
+        onExited: (code) => {
+            var state = volPanel.parseMicMuteState(micDataOut.text)
+            var valid = code === 0 && state >= 0
+            var rerun = volPanel.micStateRefreshPending
+            volPanel.micStateRefreshPending = false
+            if (rerun) {
+                Qt.callLater(function() { volPanel.refreshMicState(false) })
+                return
             }
+            var pending = volPanel.notifyMicStateAfterRefresh
+            volPanel.notifyMicStateAfterRefresh = false
+            if (!valid) {
+                volPanel.notifyAudioError("Read mic state", code !== 0 ? code : 1)
+                return
+            }
+            volPanel.micMuted = state === 1
+            if (pending) volPanel.notifyMicState()
         }
     }
 
