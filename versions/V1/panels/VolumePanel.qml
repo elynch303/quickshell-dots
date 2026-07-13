@@ -551,14 +551,24 @@ PanelWindow {
         id: micData
         command: ["pactl", "get-source-mute", "@DEFAULT_SOURCE@"]
         running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                volPanel.micMuted = this.text.indexOf("yes") >= 0
-                if (volPanel.notifyMicStateAfterRefresh) {
-                    volPanel.notifyMicStateAfterRefresh = false
-                    volPanel.notifyMicState()
-                }
+        stdout: StdioCollector { id: micDataOut }
+        // pactl get-source-mute prints "Mute: yes" | "Mute: no". Only act on an explicit,
+        // VALID read (exit 0 + a parsed yes/no): empty/failed/malformed output must NOT flip
+        // micMuted to false — that would falsely report "Microphone active". On a bad read we
+        // keep the previous state, drop any pending toggle notification, and surface the
+        // failure through the existing audio-error path.
+        onExited: (code) => {
+            var out = micDataOut.text.trim().toLowerCase()
+            var muted = out.indexOf("yes") >= 0
+            var valid = code === 0 && (muted || out.indexOf("no") >= 0)
+            var pending = volPanel.notifyMicStateAfterRefresh
+            volPanel.notifyMicStateAfterRefresh = false
+            if (!valid) {
+                volPanel.notifyAudioError("Read mic state", code !== 0 ? code : 1)
+                return
             }
+            volPanel.micMuted = muted
+            if (pending) volPanel.notifyMicState()
         }
     }
 
