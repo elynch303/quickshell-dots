@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Quickshell Rise README
+    url: https://github.com/HANCORE-linux/quickshell-dots#readme
+    about: Installation, requirements, usage, and common commands.
+  - name: Omarchy
+    url: https://omarchy.org/
+    about: Check upstream Omarchy behavior when an issue is not specific to this bar.
