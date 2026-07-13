@@ -49,12 +49,13 @@ fi
 
 # 1b2. remove the Codex usage backend, if it was installed (idempotent).
 # Pairs with the AI usage widget's Codex side (install_codex_backend in install.sh).
-if compgen -G "$unitdir/codex-usage*" >/dev/null 2>&1 || compgen -G "$bindir/codex-usage*" >/dev/null 2>&1; then
+if compgen -G "$unitdir/codex-usage*" >/dev/null 2>&1 || compgen -G "$bindir/codex-usage*" >/dev/null 2>&1 \
+   || [[ -e "$HOME/.cache/codex-usage.json" || -e "$HOME/.cache/codex-usage-activity.json" ]]; then
   systemctl --user disable --now codex-usage.timer >/dev/null 2>&1 || true
   systemctl --user stop codex-usage.service >/dev/null 2>&1 || true
   rm -f "$unitdir"/codex-usage.service "$unitdir"/codex-usage.timer
   rm -f "$bindir"/codex-usage
-  rm -f "$HOME/.cache/codex-usage.json"
+  rm -f "$HOME/.cache/codex-usage.json" "$HOME/.cache/codex-usage-activity.json"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
   systemctl --user reset-failed 'codex-usage*' >/dev/null 2>&1 || true   # clear any ghost state
   pkill -f "$bindir/codex-usage" 2>/dev/null || true

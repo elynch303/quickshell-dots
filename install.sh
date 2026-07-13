@@ -84,7 +84,7 @@ install_codex_backend() {
   systemctl --user enable --now codex-usage.timer >/dev/null 2>&1 || true
   "$bindst/codex-usage" >/dev/null 2>&1 || true   # prime the cache now
 
-  info "Codex usage backend installed (5h + weekly via Codex app-server RPC, 0 tokens)"
+  info "Codex usage backend installed (Codex app-server RPC plus validated session-window fallback, 0 tokens)"
 }
 
 # ── opencode-usage backend (opt-in; pairs with the AI usage widget) ─

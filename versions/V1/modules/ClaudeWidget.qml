@@ -46,6 +46,18 @@ Item {
     readonly property int    cxReset5hTs: root.aiCxReset5hTs
     readonly property int    cxReset7dTs: root.aiCxReset7dTs
     readonly property bool   cxHas:       root.aiCxHas
+    readonly property var    cxBuckets:   root.aiCxBuckets || []
+    readonly property var    cxWindows:   root.aiCxWindows || []
+    readonly property string cxLimitStatus: root.aiCxLimitStatus
+    readonly property string cxLimitReachedType: root.aiCxLimitReachedType
+    readonly property int    cxPrimaryPct: root.aiCxPrimaryPct
+    readonly property string cxPrimaryLabel: root.aiCxPrimaryLabel
+    readonly property bool   cxHasGeneral5h: {
+        for (var i = 0; i < cxWindows.length; i++) {
+            if ((cxWindows[i] || {}).minutes === 300) return true
+        }
+        return false
+    }
 
     // ── OpenCode ──
     property bool ocActive: false
@@ -61,11 +73,11 @@ Item {
 
     // ── per-tool signal (active OR fresh non-zero usage) ──
     readonly property bool clSignal: clActive || (clPct5h > 0 && clFresh)
-    readonly property bool cxSignal: cxActive || (cxPct5h > 0 && cxFresh)
+    readonly property bool cxSignal: cxActive || (cxPrimaryPct > 0 && cxFresh)
     readonly property bool ocSignal: ocActive || ((ocPct5h > 0 || ocToday > 0) && ocFresh)
 
     // ── selected-tool display values ──
-    readonly property int  pct5h:   isOpenCode ? ocPct5h : (isCodex ? cxPct5h : clPct5h)
+    readonly property int  pct5h:   isOpenCode ? ocPct5h : (isCodex ? cxPrimaryPct : clPct5h)
     readonly property int  pct5hStep: Math.round(pct5h / 5) * 5
     readonly property bool selFresh: isOpenCode ? ocFresh : (isCodex ? cxFresh : clFresh)
     readonly property bool selSignal: isOpenCode ? ocSignal : (isCodex ? cxSignal : clSignal)
@@ -89,11 +101,14 @@ Item {
         if (cxHas || cxActive) {
             if (lines.length) lines.push("")
             lines.push("OpenAI Codex" + (cxPlan ? "  (" + cxPlan + ")" : ""))
-            var x5 = root.aiFmtReset(cxReset5hTs)
-            lines.push("5h: " + cxPct5h + "%" + (x5 ? "  (reset in " + x5 + ")" : ""))
-            var x7 = root.aiFmtReset(cxReset7dTs)
-            lines.push("7d: " + cxPct7d + "%" + (x7 ? "  (reset in " + x7 + ")" : ""))
-            if (cxTokens) lines.push(cxTokens + " tokens" + (cxRate ? "  · " + cxRate : ""))
+            for (var i = 0; i < cxWindows.length; i++) {
+                var xw = cxWindows[i] || {}
+                var xr = root.aiFmtReset(xw.resetTs || 0)
+                lines.push(String(xw.label || "window") + ": " + (xw.pct || 0) + "%" + (xr ? "  (reset in " + xr + ")" : ""))
+            }
+            if (!cxHasGeneral5h) lines.push("5h: not reported by Codex RPC")
+            lines.push("General limit: " + root.aiCodexStatusLabel(cxLimitStatus, cxLimitReachedType))
+            if (cxRate) lines.push("Local activity (1h, incl. cached): " + cxRate)
         }
         if (ocHas || ocActive) {
             if (lines.length) lines.push("")

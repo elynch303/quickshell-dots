@@ -800,7 +800,7 @@ Item {
             if (tnow >= wn.aicl && queueWarn7("CLAUDE " + aiCl7, "AI QUOTA!")) wn.aicl = tnow + 300000
         } else wn.aicl = 0
         if (aiCxHot) {
-            if (tnow >= wn.aicx && queueWarn7("CODEX " + aiCx7, "AI QUOTA!")) wn.aicx = tnow + 300000
+            if (tnow >= wn.aicx && queueWarn7("CODEX " + aiCx7, aiCxQuotaName7)) wn.aicx = tnow + 300000
         } else wn.aicx = 0
         if (aiOcHot) {
             if (tnow >= wn.aioc && queueWarn7("OPENCODE " + aiOc7, "AI QUOTA!")) wn.aioc = tnow + 300000
@@ -917,9 +917,11 @@ Item {
         else pushText("VOLUME", "UNMUTED", 1, "short")
     }
 
-    // AI quota crossing 80% of the 5h window (hysteresis: rearms below 75%)
+    // AI quota crossing 80% of the highest available provider window
+    // (hysteresis: rearms below 75%).
     readonly property int aiCl7: theme.aiClPct5h !== undefined ? theme.aiClPct5h : 0
-    readonly property int aiCx7: theme.aiCxPct5h !== undefined ? theme.aiCxPct5h : 0
+    readonly property int aiCx7: theme.aiCxQuotaPct !== undefined ? theme.aiCxQuotaPct : (theme.aiCxPct5h !== undefined ? theme.aiCxPct5h : 0)
+    readonly property string aiCxQuotaName7: theme.aiCxQuotaLabel !== undefined && theme.aiCxQuotaLabel !== "" ? theme.aiCxQuotaLabel.toUpperCase() : "AI QUOTA!"
     readonly property int aiOc7: theme.aiOcPct5h !== undefined ? theme.aiOcPct5h : 0
     readonly property int aiQuotaWarn7: 80
     readonly property int aiQuotaReset7: 75

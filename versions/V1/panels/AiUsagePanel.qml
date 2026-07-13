@@ -44,6 +44,17 @@ PanelWindow {
     readonly property int    cxToday:     root.aiCxToday
     readonly property bool   cxFresh:     root.aiCxFresh
     readonly property bool   cxHas:       root.aiCxHas
+    readonly property var    cxWindows:   root.aiCxWindows || []
+    readonly property string cxLimitStatus: root.aiCxLimitStatus
+    readonly property string cxLimitReachedType: root.aiCxLimitReachedType
+    readonly property var    cxWin0:      cxWindows.length > 0 ? cxWindows[0] : null
+    readonly property var    cxWin1:      cxWindows.length > 1 ? cxWindows[1] : null
+    readonly property bool   cxHasGeneral5h: {
+        for (var i = 0; i < cxWindows.length; i++) {
+            if ((cxWindows[i] || {}).minutes === 300) return true
+        }
+        return false
+    }
 
     readonly property int    ocPct5h:     root.aiOcPct5h
     readonly property int    ocPct7d:     root.aiOcPct7d
@@ -343,12 +354,12 @@ PanelWindow {
                     text: "no data — run codex"
                     color: root.sumiHi; font.family: root.mono; font.pixelSize: 11
                 }
-                UsageRow { visible: aiPanel.showCodex && aiPanel.cxHas; label: "5h"; pct: aiPanel.cxPct5h; dim: !aiPanel.cxFresh }
-                UsageRow { visible: aiPanel.showCodex && aiPanel.cxHas; label: "7d"; pct: aiPanel.cxPct7d; dim: !aiPanel.cxFresh }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "5h resets in"; v: root.aiFmtResetDetail(aiPanel.cxReset5hTs) || "—" }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "7d resets in"; v: root.aiFmtResetDetail(aiPanel.cxReset7dTs) || "—" }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxTokens !== ""; k: "Tokens"; v: aiPanel.cxTokens }
-                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxRate !== "";   k: "Rate"; v: aiPanel.cxRate }
+                UsageRow { visible: aiPanel.showCodex && aiPanel.cxWin0 !== null; label: aiPanel.cxWin0 ? aiPanel.cxWin0.label : ""; pct: aiPanel.cxWin0 ? aiPanel.cxWin0.pct : 0; dim: !aiPanel.cxFresh }
+                UsageRow { visible: aiPanel.showCodex && aiPanel.cxWin1 !== null; label: aiPanel.cxWin1 ? aiPanel.cxWin1.label : ""; pct: aiPanel.cxWin1 ? aiPanel.cxWin1.pct : 0; dim: !aiPanel.cxFresh }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxWin0 !== null; k: (aiPanel.cxWin0 ? aiPanel.cxWin0.label : "") + " resets in"; v: root.aiFmtResetDetail(aiPanel.cxWin0 ? aiPanel.cxWin0.resetTs : 0) || "—" }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxWin1 !== null; k: (aiPanel.cxWin1 ? aiPanel.cxWin1.label : "") + " resets in"; v: root.aiFmtResetDetail(aiPanel.cxWin1 ? aiPanel.cxWin1.resetTs : 0) || "—" }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas; k: "General limit"; v: root.aiCodexStatusLabel(aiPanel.cxLimitStatus, aiPanel.cxLimitReachedType) }
+                DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxRate !== "";   k: "Local activity (1h, incl. cached)"; v: aiPanel.cxRate }
                 DetailRow { visible: aiPanel.showCodex && aiPanel.cxHas && aiPanel.cxToday > 0; k: "Today"; v: (aiPanel.cxToday / 1e6).toFixed(2) + "M tok" }
 
                 Rectangle { visible: false; width: parent.width; height: 1; color: root.sep }
