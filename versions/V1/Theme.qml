@@ -19,10 +19,7 @@ Item {
 
     function reloadCurrentThemeFiles() {
         if (!omarchyCurrentRootResolved) return
-        Qt.callLater(function() {
-            paletteReader.running = false
-            paletteReader.running = true
-        })
+        themeReloadDebounce.restart()
     }
 
     property color paper:   "#181616"
@@ -2217,6 +2214,29 @@ Item {
                 theme.omarchyCurrentRootResolved = true
                 theme.reloadCurrentThemeFiles()
             }
+        }
+    }
+
+    Timer {
+        id: themeReloadDebounce
+        interval: 40
+        repeat: false
+        onTriggered: {
+            paletteReader.running = false
+            paletteReader.running = true
+        }
+    }
+
+    // Omarchy writes theme.name immediately after the complete theme directory
+    // swap, before its slower application retint commands and final hooks.
+    FileView {
+        id: currentThemeNameWatcher
+        path: theme.themeNamePath
+        watchChanges: theme.omarchyCurrentRootResolved
+        printErrors: false
+        onFileChanged: {
+            reload()
+            theme.reloadCurrentThemeFiles()
         }
     }
 

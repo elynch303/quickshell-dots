@@ -228,6 +228,17 @@ test_theme_apply_exports_omarchy_path() {
   assert_contains "export OMARCHY_PATH=\"\$HOME/.local/share/omarchy\"" "$postboot" "post-boot legacy export"
 }
 
+test_theme_change_watcher_contract_is_present() {
+  local theme="$REPO_ROOT/versions/V1/Theme.qml"
+  local block
+
+  block="$(sed -n '/id: currentThemeNameWatcher/,/^    }/p' "$theme")"
+  [[ $block == *'path: theme.themeNamePath'* ]] || fail "theme watcher does not use the resolved theme.name path"
+  [[ $block == *'watchChanges: theme.omarchyCurrentRootResolved'* ]] || fail "theme watcher is not gated by current-root resolution"
+  [[ $block == *'theme.reloadCurrentThemeFiles()'* ]] || fail "theme watcher does not schedule a palette reload"
+  assert_contains 'id: themeReloadDebounce' "$theme" "theme reload debounce"
+}
+
 test_ignored_untracked_collision_blocks_check_and_apply() {
   local root="$WORK/ignored" name="demo"
   init_fixture "$root" "$name"
@@ -342,6 +353,7 @@ test_default_current_file_prefers_omarchy4_state
 test_default_current_file_uses_legacy_path
 test_palette_alias_contract_is_present
 test_theme_apply_exports_omarchy_path
+test_theme_change_watcher_contract_is_present
 test_ignored_untracked_collision_blocks_check_and_apply
 test_ignored_file_blocks_incoming_subpath
 test_ignored_subpath_blocks_incoming_file
