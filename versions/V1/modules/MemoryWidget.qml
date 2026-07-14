@@ -33,6 +33,7 @@ Item {
     Row {
         id: row
         anchors.centerIn: parent
+        anchors.horizontalCenterOffset: root.compactMemory ? -1 : 0
         spacing: root.compactMemory ? 4 : 5
 
         UiText {
