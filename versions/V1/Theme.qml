@@ -378,11 +378,23 @@ Item {
         if (!_closingPopups && theme[prop]) closePopups(prop)
     }
 
-    function openImagePicker(mode) {
-        activateFocusedPopupScreen()
+    function openImagePicker(mode, screen) {
+        if (imagePickerVisible && imagePickerMode !== mode)
+            imagePickerVisible = false
+        if (screen && screen.name !== "") activatePopupScreen(screen)
+        else activateFocusedPopupScreen()
         mediaBrowserVisible = false
         imagePickerMode = mode
         imagePickerVisible = true
+    }
+
+    function toggleImagePicker(mode, screen) {
+        if (imagePickerVisible && imagePickerMode === mode) {
+            imagePickerVisible = false
+            return
+        }
+
+        openImagePicker(mode, screen)
     }
 
     function openMediaBrowser(mode) {

@@ -34,13 +34,9 @@ Item {
         onExited:  tip.hide()
         onClicked: function(mouse) {
             tip.hide()
-            if (root.imagePickerVisible) {
-                root.imagePickerVisible = false
-                return
-            }
-            root.activatePopupScreen(rootMod.screen)
-            root.imagePickerMode    = (mouse.button === Qt.RightButton) ? "wallpaper" : "theme"
-            root.imagePickerVisible = true
+            rootMod.root.toggleImagePicker(
+                mouse.button === Qt.RightButton ? "wallpaper" : "theme",
+                rootMod.screen)
         }
     }
 }

@@ -239,6 +239,21 @@ test_theme_change_watcher_contract_is_present() {
   assert_contains 'id: themeReloadDebounce' "$theme" "theme reload debounce"
 }
 
+test_image_picker_entry_contract_is_centralized() {
+  local theme="$REPO_ROOT/versions/V1/Theme.qml"
+  local widget="$REPO_ROOT/versions/V1/modules/ThemeDisplayWidget.qml"
+
+  assert_contains 'function openImagePicker(mode, screen)' "$theme" "screen-aware image picker entry"
+  assert_contains 'function toggleImagePicker(mode, screen)' "$theme" "image picker toggle entry"
+  assert_contains 'imagePickerVisible && imagePickerMode === mode' "$theme" "same-mode picker toggle closes"
+  assert_contains 'imagePickerVisible && imagePickerMode !== mode' "$theme" "cross-mode picker reset"
+  assert_contains 'rootMod.root.toggleImagePicker(' "$widget" "theme widget uses centralized picker entry"
+
+  if grep -Eq 'root\.(imagePickerMode|imagePickerVisible)[[:space:]]*=' "$widget"; then
+    fail "theme widget still mutates picker state directly"
+  fi
+}
+
 test_ignored_untracked_collision_blocks_check_and_apply() {
   local root="$WORK/ignored" name="demo"
   init_fixture "$root" "$name"
@@ -354,6 +369,7 @@ test_default_current_file_uses_legacy_path
 test_palette_alias_contract_is_present
 test_theme_apply_exports_omarchy_path
 test_theme_change_watcher_contract_is_present
+test_image_picker_entry_contract_is_centralized
 test_ignored_untracked_collision_blocks_check_and_apply
 test_ignored_file_blocks_incoming_subpath
 test_ignored_subpath_blocks_incoming_file
