@@ -941,27 +941,23 @@ PanelWindow {
                                     anchors.margins: 8
                                     spacing: 6
 
-                                    Flow {
+                                    UiText {
                                         width: parent.width
-                                        spacing: 10
-                                        UiText {
-                                            text: netPanel.protectionLabel(modelData)
-                                            color: root.sumiHi
-                                            font.family: root.mono; font.pixelSize: 10
+                                        text: {
+                                            var details = [
+                                                netPanel.protectionLabel(modelData),
+                                                modelData.visible === false
+                                                    ? "Not currently visible"
+                                                    : "Signal " + (modelData.sig * 25) + "%"
+                                            ]
+                                            if (modelData.known)
+                                                details.push(netPanel.isNeverConnected(modelData)
+                                                    ? "Never connected" : "Saved")
+                                            return details.join(" · ")
                                         }
-                                        UiText {
-                                            text: modelData.visible === false
-                                                ? "Not currently visible"
-                                                : "Signal " + (modelData.sig * 25) + "%"
-                                            color: root.sumiHi
-                                            font.family: root.mono; font.pixelSize: 10
-                                        }
-                                        UiText {
-                                            visible: modelData.known
-                                            text: netPanel.isNeverConnected(modelData) ? "Never connected" : "Saved"
-                                            color: root.seal
-                                            font.family: root.mono; font.pixelSize: 10
-                                        }
+                                        color: root.sumiHi
+                                        font.family: root.mono; font.pixelSize: 10
+                                        wrapMode: Text.Wrap
                                     }
 
                                     Row {
