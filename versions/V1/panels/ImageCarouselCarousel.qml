@@ -36,6 +36,7 @@ PanelWindow {
     property string currentImage: ""
     property string loadedMode:   ""
     property int thumbEpoch:      0
+    property string readyThumbUrl: ""
 
     property var    wallpaperImageArray: []
     property int    wallpaperSelectedIndex: 0
@@ -131,6 +132,7 @@ PanelWindow {
         function onImagePickerModeChanged()    { panel.syncOpen() }
         function onPickerStyleChanged()         { panel.syncOpen() }
     }
+    Component.onCompleted: panel.syncOpen()
 
     // step 1: current image
     Process {
@@ -313,18 +315,16 @@ PanelWindow {
         id: priorityWarmProc
         property string requestMode: "wallpaper"
         command: []
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: panel.applyThumbRows(this.text, priorityWarmProc.requestMode)
+        stdout: SplitParser {
+            onRead: function(line) { panel.applyThumbRows(line, priorityWarmProc.requestMode) }
         }
     }
     Process {
         id: warmProc
         property string requestMode: "wallpaper"
         command: []
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: panel.applyThumbRows(this.text, warmProc.requestMode)
+        stdout: SplitParser {
+            onRead: function(line) { panel.applyThumbRows(line, warmProc.requestMode) }
         }
     }
     Process {
@@ -339,14 +339,20 @@ PanelWindow {
     }
     Timer { id: warmTimer; interval: 450; onTriggered: panel.warmAll() }
     function visibleSourcePaths() {
-        var srcs = [], seen = {}
+        var srcs = [], seen = {}, candidates = []
+        var selectedPos = panel.selectedFiltPos()
         for (var i = 0; i < imageArray.length; i++) {
             if (!panel.itemMatches(i)) continue
-            var rel = panel.filteredPos(i) - panel.selectedFiltPos()
+            var rel = panel.filteredPos(i) - selectedPos
             if (Math.abs(rel) > 14) continue
             var p = imageArray[i].filePath
-            if (p && !seen[p]) { seen[p] = true; srcs.push(p) }
+            if (p && !seen[p]) { seen[p] = true; candidates.push({ path: p, rel: rel }) }
         }
+        candidates.sort(function(a, b) {
+            var distance = Math.abs(a.rel) - Math.abs(b.rel)
+            return distance !== 0 ? distance : a.rel - b.rel
+        })
+        for (var j = 0; j < candidates.length; j++) srcs.push(candidates[j].path)
         return srcs
     }
     function backgroundSourcePaths() {
@@ -387,9 +393,13 @@ PanelWindow {
         if (!t) return
         var rows = t.split("\n")
         var thumbs = {}
+        var readyPath = ""
         for (var r = 0; r < rows.length; r++) {
             var cols = rows[r].split("\t")
-            if (cols.length >= 2 && cols[0] && cols[1]) thumbs[cols[0]] = cols[1]
+            if (cols.length >= 2 && cols[0] && cols[1]) {
+                thumbs[cols[0]] = cols[1]
+                readyPath = cols[1]
+            }
         }
         var hasGeneratedThumbs = false
         for (var key in thumbs) { hasGeneratedThumbs = true; break }
@@ -416,7 +426,10 @@ PanelWindow {
             panel.saveModeState()
             panel.persistScanCache(mode)
         }
-        if (hasGeneratedThumbs) panel.thumbEpoch++
+        if (hasGeneratedThumbs) {
+            panel.readyThumbUrl = "file://" + readyPath
+            panel.thumbEpoch++
+        }
     }
     function startWarm(proc, srcs, niceLevel) {
         if (srcs.length === 0) return
@@ -429,8 +442,7 @@ PanelWindow {
             "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
             "hash_for() { local s=\"$1\" r m key h t; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; t=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$t\" && mv -f \"$t\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; }; " +
             "for s in \"$@\"; do k=$(hash_for \"$s\") || continue; o=\"$D/$k-512.jpg\"; [ -s \"$o\" ] || printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
-            "if [ -s \"$tmp\" ]; then nice -n " + nice + " xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0[0]\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; fi; " +
-            "if [ -s \"$tmp\" ]; then while IFS= read -r src && IFS= read -r out; do [ -s \"$out\" ] && printf '%s\\t%s\\n' \"$src\" \"$out\"; done < \"$tmp\"; fi",
+            "if [ -s \"$tmp\" ]; then nice -n " + nice + " xargs -d '\\n' -P 3 -n 2 sh -c 'magick -define jpeg:size=1024x1024 \"$0[0]\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true; [ -s \"$1\" ] && printf \"%s\\t%s\\n\" \"$0\" \"$1\"; exit 0' < \"$tmp\"; fi",
             "warm"].concat(srcs)
         proc.running = false; proc.running = true
     }
@@ -623,10 +635,11 @@ PanelWindow {
                                 source: wantedSource
                                 onWantedSourceChanged: source = wantedSource
                                 Connections {
-                                    target: panel
-                                    function onThumbEpochChanged() {
-                                        if (thumbImage.wantedSource && (thumbImage.status === Image.Error || thumbImage.status === Image.Null)) {
-                                            var s = thumbImage.wantedSource
+                                target: panel
+                                function onThumbEpochChanged() {
+                                    if (thumbImage.wantedSource === panel.readyThumbUrl
+                                            && thumbImage.status !== Image.Ready) {
+                                        var s = thumbImage.wantedSource
                                             thumbImage.source = ""
                                             thumbImage.source = s
                                         }

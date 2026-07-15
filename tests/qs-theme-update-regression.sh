@@ -285,6 +285,15 @@ test_image_picker_entry_contract_is_centralized() {
   assert_contains 'imagePickerVisible && imagePickerMode !== mode' "$theme" "cross-mode picker reset"
   assert_contains 'rootMod.root.toggleImagePicker(' "$widget" "theme widget uses centralized picker entry"
 
+  local picker
+  for picker in \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselPanel.qml" \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselCarousel.qml" \
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselHearthstone.qml"; do
+    assert_contains 'Component.onCompleted: panel.syncOpen()' "$picker" \
+      "lazy image picker reconciles already-open state after creation"
+  done
+
   if grep -Eq 'root\.(imagePickerMode|imagePickerVisible)[[:space:]]*=' "$widget"; then
     fail "theme widget still mutates picker state directly"
   fi
@@ -307,7 +316,10 @@ test_wallpaper_source_contract_is_shared() {
     assert_contains 'root.wallpaperSourcePaths' "$picker" "picker uses central wallpaper sources"
     assert_contains "-iname '*.bmp'" "$picker" "picker supports bmp wallpapers"
     assert_contains "-iname '*.gif'" "$picker" "picker supports gif wallpapers"
-    assert_contains "magick \\\"${dollar}0[0]\\\"" "$picker" "picker thumbnails only the first image frame"
+    assert_contains "\\\"${dollar}0[0]\\\"" "$picker" "picker thumbnails only the first image frame"
+    assert_contains 'jpeg:size=1024x1024' "$picker" "picker uses reduced JPEG decode size"
+    assert_contains 'readyThumbUrl' "$picker" "picker reloads the completed thumbnail only"
+    assert_contains 'stdout: SplitParser {' "$picker" "picker streams completed thumbnails"
   done
 }
 
