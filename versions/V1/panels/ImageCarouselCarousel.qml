@@ -201,8 +201,8 @@ PanelWindow {
                 "HASHCACHE=$HOME/.cache/quickshell-img-thumb-hashes.tsv; touch \"$HASHCACHE\";",
                 "hash_for() { local s=\"$1\" r m key h tmp; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; tmp=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$tmp\" && mv -f \"$tmp\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; };",
                 "thumb_for() { local s=\"$1\" k; k=$(hash_for \"$s\") || return 1; printf '%s/%s-512.jpg' \"$D\" \"$k\"; };",
-                "find -L " + shq(root.currentBackgroundsPath) + " -maxdepth 1 -type f " +
-                "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \\) " +
+                "find -L " + wallpaperFindRoots() + " -maxdepth 1 -type f " +
+                "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.bmp' -o -iname '*.gif' \\) " +
                 "2>/dev/null | sort | while IFS= read -r f; do thumb=$(thumb_for \"$f\") || continue; printf '%s\\t%s\\n' \"$f\" \"$thumb\"; done"
             ].join(" ")]
         }
@@ -250,6 +250,13 @@ PanelWindow {
     }
 
     function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+    function wallpaperFindRoots() {
+        var paths = root.wallpaperSourcePaths || []
+        var args = []
+        for (var i = 0; i < paths.length; i++)
+            if (paths[i]) args.push(panel.shq(paths[i]))
+        return args.join(" ")
+    }
 
     // ── scan-result cache → instant (re)open: paint last result immediately,
     // refresh live in the background, only reassign if the list actually changed ──
@@ -422,7 +429,7 @@ PanelWindow {
             "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; " +
             "hash_for() { local s=\"$1\" r m key h t; r=$(readlink -f \"$s\" 2>/dev/null || printf '%s' \"$s\"); m=$(stat -Lc '%s:%Y:%Z' \"$s\" 2>/dev/null) || return 1; key=\"$r|$m\"; h=$(awk -F '\\t' -v k=\"$key\" '$1 == k { v=$2 } END { print v }' \"$HASHCACHE\" 2>/dev/null); if [ -z \"$h\" ]; then h=$(sha256sum \"$s\" 2>/dev/null | cut -d' ' -f1); [ -n \"$h\" ] || return 1; t=\"$HASHCACHE.$$\"; { awk -F '\\t' -v k=\"$key\" '$1 != k' \"$HASHCACHE\" 2>/dev/null; printf '%s\\t%s\\n' \"$key\" \"$h\"; } > \"$t\" && mv -f \"$t\" \"$HASHCACHE\"; fi; printf '%s' \"$h\"; }; " +
             "for s in \"$@\"; do k=$(hash_for \"$s\") || continue; o=\"$D/$k-512.jpg\"; [ -s \"$o\" ] || printf '%s\\n%s\\n' \"$s\" \"$o\" >> \"$tmp\"; done; " +
-            "if [ -s \"$tmp\" ]; then nice -n " + nice + " xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; fi; " +
+            "if [ -s \"$tmp\" ]; then nice -n " + nice + " xargs -d '\\n' -P 3 -n 2 sh -c 'magick \"$0[0]\" -auto-orient -strip -thumbnail 512x512^ -quality 82 \"$1\" >/dev/null 2>&1 || true' < \"$tmp\"; fi; " +
             "if [ -s \"$tmp\" ]; then while IFS= read -r src && IFS= read -r out; do [ -s \"$out\" ] && printf '%s\\t%s\\n' \"$src\" \"$out\"; done < \"$tmp\"; fi",
             "warm"].concat(srcs)
         proc.running = false; proc.running = true

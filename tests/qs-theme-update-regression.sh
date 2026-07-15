@@ -24,7 +24,7 @@ assert_eq() {
 
 assert_contains() {
   local needle="$1" file="$2" msg="$3"
-  grep -Fq "$needle" "$file" || fail "$msg: missing '$needle'"
+  grep -Fq -- "$needle" "$file" || fail "$msg: missing '$needle'"
 }
 
 init_fixture() {
@@ -112,6 +112,8 @@ write_test_images() {
   printf 'one\n' > "$dir/one.jpg"
   printf 'two\n' > "$dir/two.png"
   printf 'three\n' > "$dir/three.webp"
+  printf 'four\n' > "$dir/four.bmp"
+  printf 'five\n' > "$dir/five.gif"
 }
 
 prepare_hook_home() {
@@ -135,8 +137,8 @@ test_hook_legacy_current_root_writes_cache() {
 
   run_hook_fixture "$root"
 
-  assert_eq 3 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "legacy hook cache line count"
-  assert_eq 3 "$(awk -F '\t' '$1 ~ /\.config\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "legacy hook cache paths"
+  assert_eq 5 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "legacy hook cache line count"
+  assert_eq 5 "$(awk -F '\t' '$1 ~ /\.config\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "legacy hook cache paths"
   assert_eq legacy-theme "$(tr -d '[:space:]' < "$root/home/.cache/quickshell-scan-wallpaper.theme")" "legacy hook theme stamp"
 }
 
@@ -152,9 +154,43 @@ test_hook_omarchy4_current_root_writes_cache() {
 
   run_hook_fixture "$root"
 
-  assert_eq 3 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "omarchy4 hook cache line count"
-  assert_eq 3 "$(awk -F '\t' '$1 ~ /\.local\/state\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "omarchy4 hook cache paths"
+  assert_eq 5 "$(wc -l < "$root/home/.cache/quickshell-scan-wallpaper" | tr -d '[:space:]')" "omarchy4 hook cache line count"
+  assert_eq 5 "$(awk -F '\t' '$1 ~ /\.local\/state\/omarchy\/current\/theme\/backgrounds\// && $2 ~ /\/\.cache\/quickshell-img-thumbs\/[0-9a-f]{64}-512\.jpg$/ { n++ } END { print n + 0 }' "$root/home/.cache/quickshell-scan-wallpaper")" "omarchy4 hook cache paths"
   assert_eq omarchy4-theme "$(tr -d '[:space:]' < "$root/home/.cache/quickshell-scan-wallpaper.theme")" "omarchy4 hook theme stamp"
+}
+
+test_hook_omarchy4_combines_theme_and_user_backgrounds() {
+  local root="$WORK/hook-omarchy4-combined"
+  prepare_hook_home "$root"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/omarchy-shell"
+  chmod +x "$root/bin/omarchy-shell"
+  mkdir -p "$root/home/.local/state/omarchy/current"
+  printf 'combined-theme\n' > "$root/home/.local/state/omarchy/current/theme.name"
+  write_test_images "$root/home/.local/state/omarchy/current/theme/backgrounds"
+  write_test_images "$root/home/.config/omarchy/backgrounds/combined-theme"
+
+  run_hook_fixture "$root"
+
+  local cache="$root/home/.cache/quickshell-scan-wallpaper"
+  assert_eq 10 "$(wc -l < "$cache" | tr -d '[:space:]')" "combined hook cache line count"
+  assert_eq 5 "$(awk -F '\t' '$1 ~ /\.local\/state\/omarchy\/current\/theme\/backgrounds\// { n++ } END { print n + 0 }' "$cache")" "combined hook theme paths"
+  assert_eq 5 "$(awk -F '\t' '$1 ~ /\.config\/omarchy\/backgrounds\/combined-theme\// { n++ } END { print n + 0 }' "$cache")" "combined hook user paths"
+}
+
+test_hook_omarchy4_accepts_user_backgrounds_without_theme_directory() {
+  local root="$WORK/hook-omarchy4-user-only"
+  prepare_hook_home "$root"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$root/bin/omarchy-shell"
+  chmod +x "$root/bin/omarchy-shell"
+  mkdir -p "$root/home/.local/state/omarchy/current"
+  printf 'user-theme\n' > "$root/home/.local/state/omarchy/current/theme.name"
+  write_test_images "$root/home/.config/omarchy/backgrounds/user-theme"
+
+  run_hook_fixture "$root"
+
+  local cache="$root/home/.cache/quickshell-scan-wallpaper"
+  assert_eq 5 "$(wc -l < "$cache" | tr -d '[:space:]')" "user-only hook cache line count"
+  assert_eq 5 "$(awk -F '\t' '$1 ~ /\.config\/omarchy\/backgrounds\/user-theme\// { n++ } END { print n + 0 }' "$cache")" "user-only hook paths"
 }
 
 test_hook_without_valid_root_keeps_existing_cache() {
@@ -252,6 +288,27 @@ test_image_picker_entry_contract_is_centralized() {
   if grep -Eq 'root\.(imagePickerMode|imagePickerVisible)[[:space:]]*=' "$widget"; then
     fail "theme widget still mutates picker state directly"
   fi
+}
+
+test_wallpaper_source_contract_is_shared() {
+  local theme="$REPO_ROOT/versions/V1/Theme.qml"
+  local pickers=(
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselPanel.qml"
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselCarousel.qml"
+    "$REPO_ROOT/versions/V1/panels/ImageCarouselHearthstone.qml"
+  )
+  local picker
+  local dollar='$'
+
+  assert_contains 'readonly property var wallpaperSourcePaths:' "$theme" "central wallpaper source list"
+  assert_contains '/.config/omarchy/backgrounds/' "$theme" "omarchy user backgrounds root"
+  assert_contains 'currentThemeNameWatcher.reload()' "$theme" "theme name reload after current-root resolution"
+  for picker in "${pickers[@]}"; do
+    assert_contains 'root.wallpaperSourcePaths' "$picker" "picker uses central wallpaper sources"
+    assert_contains "-iname '*.bmp'" "$picker" "picker supports bmp wallpapers"
+    assert_contains "-iname '*.gif'" "$picker" "picker supports gif wallpapers"
+    assert_contains "magick \\\"${dollar}0[0]\\\"" "$picker" "picker thumbnails only the first image frame"
+  done
 }
 
 test_ignored_untracked_collision_blocks_check_and_apply() {
@@ -363,6 +420,8 @@ test_apply_aborts_when_check_lock_is_held() {
 test_clean_pinned_apply
 test_hook_legacy_current_root_writes_cache
 test_hook_omarchy4_current_root_writes_cache
+test_hook_omarchy4_combines_theme_and_user_backgrounds
+test_hook_omarchy4_accepts_user_backgrounds_without_theme_directory
 test_hook_without_valid_root_keeps_existing_cache
 test_default_current_file_prefers_omarchy4_state
 test_default_current_file_uses_legacy_path
@@ -370,6 +429,7 @@ test_palette_alias_contract_is_present
 test_theme_apply_exports_omarchy_path
 test_theme_change_watcher_contract_is_present
 test_image_picker_entry_contract_is_centralized
+test_wallpaper_source_contract_is_shared
 test_ignored_untracked_collision_blocks_check_and_apply
 test_ignored_file_blocks_incoming_subpath
 test_ignored_subpath_blocks_incoming_file

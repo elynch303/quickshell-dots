@@ -16,6 +16,20 @@ Item {
     readonly property string colorsPath: omarchyCurrentRoot + "/theme/colors.toml"
     readonly property string currentBackgroundPath: omarchyCurrentRoot + "/background"
     readonly property string currentBackgroundsPath: omarchyCurrentRoot + "/theme/backgrounds"
+    property string currentThemeName: ""
+    readonly property string userBackgroundsPath: currentThemeName === ""
+        ? ""
+        : Quickshell.env("HOME") + "/.config/omarchy/backgrounds/" + currentThemeName
+    readonly property var wallpaperSourcePaths: userBackgroundsPath === ""
+        ? [currentBackgroundsPath]
+        : [currentBackgroundsPath, userBackgroundsPath]
+
+    function setCurrentThemeName(rawName) {
+        var name = String(rawName || "").trim()
+        if (name === "." || name === ".." || name.indexOf("/") >= 0 || name.indexOf("\\") >= 0)
+            name = ""
+        currentThemeName = name
+    }
 
     function reloadCurrentThemeFiles() {
         if (!omarchyCurrentRootResolved) return
@@ -2224,6 +2238,7 @@ Item {
                 if (resolved) theme.omarchyCurrentRoot = resolved
                 if (installRoot) theme.omarchyInstallRoot = installRoot
                 theme.omarchyCurrentRootResolved = true
+                currentThemeNameWatcher.reload()
                 theme.reloadCurrentThemeFiles()
             }
         }
@@ -2246,6 +2261,11 @@ Item {
         path: theme.themeNamePath
         watchChanges: theme.omarchyCurrentRootResolved
         printErrors: false
+        onLoaded: {
+            theme.setCurrentThemeName(currentThemeNameWatcher.text())
+            theme.reloadCurrentThemeFiles()
+        }
+        onLoadFailed: theme.setCurrentThemeName("")
         onFileChanged: {
             reload()
             theme.reloadCurrentThemeFiles()

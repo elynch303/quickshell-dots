@@ -20,9 +20,24 @@ resolve_current_root() {
 current_root="$(resolve_current_root || true)"
 [ -n "$current_root" ] && [ -d "$current_root" ] || exit 0
 
-bg="$current_root/theme/backgrounds"
 theme_name_file="$current_root/theme.name"
-[ -d "$bg" ] || exit 0
+
+# theme.name is authoritative on Omarchy 4, where current/theme is a real
+# directory named "theme". The symlink fallback is only for the legacy layout.
+theme_name="$(tr -d '[:space:]' < "$theme_name_file" 2>/dev/null || true)"
+if [ -z "$theme_name" ] && [ "$current_root" = "$HOME/.config/omarchy/current" ]; then
+  theme_name="$(basename "$(readlink "$current_root/theme" 2>/dev/null)" 2>/dev/null || true)"
+fi
+case "$theme_name" in
+  ""|.|..|*/*|*\\*) theme_name="" ;;
+esac
+
+background_sources=()
+[ -d "$current_root/theme/backgrounds" ] && background_sources+=("$current_root/theme/backgrounds")
+if [ -n "$theme_name" ] && [ -d "$HOME/.config/omarchy/backgrounds/$theme_name" ]; then
+  background_sources+=("$HOME/.config/omarchy/backgrounds/$theme_name")
+fi
+((${#background_sources[@]} > 0)) || exit 0
 
 # 2) pre-generate the wallpaper scan cache for the freshly switched theme.
 #    This must match the image picker wallpaper scan contract:
@@ -38,8 +53,8 @@ stamp_tmp=""
 tmp="$(mktemp "$cache_dir/.quickshell-scan-wallpaper.XXXXXX")"
 trap 'rm -f "$tmp" "$stamp_tmp"' EXIT
 
-find -L "$bg" -maxdepth 1 -type f \
-     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+find -L "${background_sources[@]}" -maxdepth 1 -type f \
+     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.bmp' -o -iname '*.gif' \) \
      2>/dev/null | sort | while IFS= read -r f; do
        k=$(sha256sum "$f" 2>/dev/null | cut -d' ' -f1) || continue
        [ -n "$k" ] || continue
@@ -48,12 +63,7 @@ find -L "$bg" -maxdepth 1 -type f \
 mv -f "$tmp" "$C"
 
 # Theme sidecar stamp — prepares Schicht 2 (cache validation); inert until QML
-# reads it. Canonical theme id: theme.name; fallback to current/theme symlink
-# basename for compatibility with older/current layouts that expose it.
-theme_name="$(tr -d '[:space:]' < "$theme_name_file" 2>/dev/null || true)"
-if [ -z "$theme_name" ]; then
-  theme_name="$(basename "$(readlink "$current_root/theme" 2>/dev/null)" 2>/dev/null || true)"
-fi
+# reads it.
 if [ -n "$theme_name" ]; then
   stamp_tmp="$(mktemp "$cache_dir/.quickshell-scan-wallpaper.theme.XXXXXX")"
   printf '%s\n' "$theme_name" > "$stamp_tmp"
