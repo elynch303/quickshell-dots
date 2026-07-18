@@ -42,7 +42,22 @@ PanelWindow {
             var cx = root.tooltipX;
             return Math.max(4, Math.min(parent.width - width - 4, cx - width / 2));
         }
-        y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
+        // Follow the actual owner, including freely rearranged widgets and panel
+        // row actions. Prefer the inward side of the bar, then flip when the
+        // preferred side would leave the screen.
+        y: {
+            var above = root.tooltipTopY - gap - height
+            var below = root.tooltipBottomY + gap
+            var maxY = parent.height - height - 4
+            var candidate = root.barPosition === "bottom" ? above : below
+
+            if (candidate < 4 && below <= maxY)
+                candidate = below
+            else if (candidate > maxY && above >= 4)
+                candidate = above
+
+            return Math.max(4, Math.min(maxY, candidate))
+        }
 
         color: root.barBg   // frosts with the bar's Frost toggle (0.68 ⇄ 0.94)
         border.color: root.pillBorder

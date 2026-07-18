@@ -464,14 +464,18 @@ Item {
     property string tooltipText: ""
     property real tooltipX: 0
     property real tooltipY: 0
+    property real tooltipTopY: 0
+    property real tooltipBottomY: 0
     property bool tooltipShown: false
     property var tooltipOwner: null   // the widget currently owning the tooltip
 
-    function showTooltip(text, x, y, owner) {
+    function showTooltip(text, x, topY, bottomY, owner) {
         if (!text) return;
         tooltipText = text;
         tooltipX = x;
-        tooltipY = y;
+        tooltipTopY = topY;
+        tooltipBottomY = bottomY;
+        tooltipY = (topY + bottomY) / 2;
         tooltipOwner = owner !== undefined ? owner : null;
         tooltipShown = true;
     }

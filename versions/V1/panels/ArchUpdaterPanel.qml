@@ -18,12 +18,54 @@ PanelWindow {
 
     readonly property int barBottom: 35
     readonly property int gap: 8
+    // Shared theme-table grid. Keeping the header and delegate on these exact
+    // tokens makes the five-part action/info block a stable right-aligned unit.
+    readonly property int themeGridGap: 6
+    readonly property int themeActionsWidth: 132
+    readonly property int themeBehindWidth: 60
+    readonly property int themeStateWidth: 60
+    readonly property int themeRightBlockWidth: themeActionsWidth
+        + themeBehindWidth + themeStateWidth + themeGridGap * 2
 
     Process {
         id: panelUpdateRunner
         // No default command: package updates and theme-terminal launches build
         // the command only on click, so an accidental start cannot run anything.
         command: []
+    }
+
+    // Theme removal is deliberately panel-native: confirmation, progress and
+    // errors stay in this window, and no presentation terminal is spawned.
+    property string pendingRemoveName: ""
+    property bool removeBusy: false
+    property string removeError: ""
+    property bool removeCommandFinished: false
+    property int removeResultCode: -1
+    property string removeResultDetail: ""
+
+    Process {
+        id: themeRemoveProc
+        command: []
+        running: false
+        stdout: StdioCollector { id: themeRemoveStdout }
+        stderr: StdioCollector { id: themeRemoveStderr }
+        onExited: (exitCode) => {
+            var detail = String(themeRemoveStderr.text || themeRemoveStdout.text || "").trim()
+            if (detail !== "") detail = detail.split(/\r?\n/)[0]
+            archPanel.removeResultCode = exitCode
+            archPanel.removeResultDetail = detail
+            archPanel.removeCommandFinished = true
+            archPanel.finishThemeRemoveIfReady()
+        }
+    }
+
+    // Keep the panel-native progress state visible long enough to be perceived.
+    // The command starts immediately; only the row's final UI transition waits.
+    Timer {
+        id: themeRemoveMinimumTimer
+        interval: 300
+        repeat: false
+        onTriggered: archPanel.finishThemeRemoveIfReady()
     }
 
     // ── Theme-updates backend (this panel is the single instance in shell.qml,
@@ -94,7 +136,7 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
-        onClicked: root.closeArchUpdatesPanel()
+        onClicked: archPanel.closeOrCancelRemove()
     }
 
     function refreshPackagesTabState() {
@@ -110,7 +152,10 @@ PanelWindow {
     Connections {
         target: root
         function onArchVisibleChanged() {
-            if (!root.archVisible) return
+            if (!root.archVisible) {
+                if (!archPanel.removeBusy) archPanel.cancelRemoveTheme()
+                return
+            }
             if (root.activeUpdateTab === "packages") archPanel.refreshPackagesTabState()
         }
         function onActiveUpdateTabChanged() {
@@ -271,6 +316,145 @@ PanelWindow {
             + shellQuote(themeCheckScript) + "; exit $rc")
     }
 
+    function themeNameFromRepoUrl(repoUrl) {
+        var value = String(repoUrl || "").trim()
+        if (value === "") return ""
+        if (value.indexOf("://") < 0 && /^[^/:]+@[^:]+:.+/.test(value))
+            value = value.substring(value.indexOf(":") + 1)
+        value = value.replace(/[?#].*$/, "")
+        var slash = value.lastIndexOf("/")
+        var base = slash >= 0 ? value.substring(slash + 1) : value
+        return base.replace(/\.git$/i, "")
+                   .replace(/^omarchy-/i, "")
+                   .replace(/-theme$/i, "")
+                   .toLowerCase()
+    }
+
+    function isSupportedThemeRepoUrl(repoUrl) {
+        var value = String(repoUrl || "").trim()
+        return /^https:\/\/[^\s]+$/i.test(value)
+            || /^ssh:\/\/[^\s]+$/i.test(value)
+            || /^git@[^\s:]+:[^\s]+$/.test(value)
+    }
+
+    function canReinstallTheme(t) {
+        t = t || {}
+        var name = String(t.name || "")
+        var repoUrl = String(t.remoteUrl || "")
+        return !root.themeUpdChecking
+            && /^[A-Za-z0-9._-]+$/.test(name)
+            && isSupportedThemeRepoUrl(repoUrl)
+            && themeNameFromRepoUrl(repoUrl) === name.toLowerCase()
+    }
+
+    // Reinstall the selected row from the exact origin URL recorded by the last
+    // theme scan. shellQuote keeps the git URL an argument, never shell syntax.
+    function reinstallTheme(name, repoUrl) {
+        if (root.themeUpdChecking) return
+        if (!/^[A-Za-z0-9._-]+$/.test(name || "")) return
+        if (!isSupportedThemeRepoUrl(repoUrl)) return
+        if (themeNameFromRepoUrl(repoUrl) !== String(name).toLowerCase()) return
+        launchThemeTerminal("set +e; omarchy theme install " + shellQuote(repoUrl) + "; rc=$?; "
+            + "if [ \"$rc\" -eq 0 ]; then " + shellQuote(themeCheckScript)
+            + "; fi; exit \"$rc\"")
+    }
+
+    // A successful remove is already authoritative local information. Update the
+    // published model/cache directly instead of blocking on 79+ network probes;
+    // the explicit "Check themes" action remains the full remote refresh.
+    function publishRemovedTheme(name) {
+        var list = root.themeUpdList || []
+        var next = []
+        var removed = null
+        for (var i = 0; i < list.length; i++) {
+            var item = list[i] || {}
+            if (String(item.name || "") === name) removed = item
+            else next.push(item)
+        }
+
+        root.themeUpdList = next
+        root.themeUpdTotal = Math.max(0, root.themeUpdTotal - 1)
+        if (removed && removed.state !== "unreachable")
+            root.themeUpdReachable = Math.max(0, root.themeUpdReachable - 1)
+        if (removed && Number(removed.behind || 0) > 0)
+            root.themeUpdOutdated = Math.max(0, root.themeUpdOutdated - 1)
+        if (removed && removed.state === "local-edits" && Number(removed.behind || 0) > 0)
+            root.themeUpdLocalEdits = Math.max(0, root.themeUpdLocalEdits - 1)
+        if (removed && removed.current) root.themeUpdCurrentStale = false
+
+        try {
+            var state = JSON.parse(themeState.text())
+            state.total = root.themeUpdTotal
+            state.reachable = root.themeUpdReachable
+            state.outdated = root.themeUpdOutdated
+            state.localEdits = root.themeUpdLocalEdits
+            state.currentStale = root.themeUpdCurrentStale
+            state.themes = next
+            themeState.setText(JSON.stringify(state))
+        } catch (e) {
+            // The live model is already correct. A later explicit scan repairs an
+            // absent or malformed cache without delaying this local operation.
+        }
+    }
+
+    // Removal is row-specific and gated by inline Remove/Cancel actions before
+    // Omarchy receives the validated theme name.
+    function removeTheme(name) {
+        if (root.themeUpdChecking || removeBusy) return
+        if (!/^[A-Za-z0-9._-]+$/.test(name || "")) return
+        pendingRemoveName = String(name)
+        removeError = ""
+    }
+
+    function cancelRemoveTheme() {
+        if (removeBusy) return
+        pendingRemoveName = ""
+        removeError = ""
+    }
+
+    function confirmRemoveTheme() {
+        if (removeBusy || root.themeUpdChecking) return
+        var name = String(pendingRemoveName || "")
+        if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+            removeError = "Invalid theme name"
+            return
+        }
+
+        removeError = ""
+        removeBusy = true
+        removeCommandFinished = false
+        removeResultCode = -1
+        removeResultDetail = ""
+        themeRemoveMinimumTimer.restart()
+        themeRemoveProc.command = ["omarchy", "theme", "remove", name]
+        themeRemoveProc.running = true
+    }
+
+    function finishThemeRemoveIfReady() {
+        if (!removeBusy || !removeCommandFinished || themeRemoveMinimumTimer.running) return
+
+        var removedName = pendingRemoveName
+        removeBusy = false
+        if (removeResultCode === 0) {
+            publishRemovedTheme(removedName)
+            pendingRemoveName = ""
+            removeError = ""
+            return
+        }
+
+        removeError = removeResultDetail !== ""
+            ? removeResultDetail
+            : "Remove failed (exit " + removeResultCode + ")"
+    }
+
+    function closeOrCancelRemove() {
+        if (pendingRemoveName !== "") {
+            cancelRemoveTheme()
+            return
+        }
+        root.closeArchUpdatesPanel()
+    }
+
     function viewThemeChanges(name) {
         if (!/^[A-Za-z0-9._-]+$/.test(name)) return
         var dir = Quickshell.env("HOME") + "/.config/omarchy/themes/" + name
@@ -379,7 +563,7 @@ PanelWindow {
 
         Keys.onPressed: function(event) {
             if (event.key === Qt.Key_Escape) {
-                root.closeArchUpdatesPanel();
+                archPanel.closeOrCancelRemove();
                 event.accepted = true;
             }
         }
@@ -419,7 +603,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.closeArchUpdatesPanel()
+                        onClicked: archPanel.closeOrCancelRemove()
                     }
                 }
                 Row {
@@ -887,6 +1071,16 @@ PanelWindow {
                     }
                 }
 
+                UiText {
+                    visible: archPanel.removeError !== ""
+                    width: parent.width
+                    text: "Remove failed · " + archPanel.removeError
+                    color: root.seal
+                    font.family: root.mono
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+
                 // ── current theme became stale after its repo advanced ──
                 Item {
                     visible: root.themeUpdCurrentStale
@@ -929,10 +1123,12 @@ PanelWindow {
                 // ── column headers ──
                 Row {
                     width: parent.width
-                    spacing: 6
-                    UiText { width: parent.width - 220; text: "Theme";  color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
-                    UiText { width: 60;  text: "Behind"; color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
-                    UiText { width: 148; text: "State";  color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
+                    spacing: archPanel.themeGridGap
+                    UiText { width: parent.width - archPanel.themeRightBlockWidth - archPanel.themeGridGap; text: "Theme";  color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
+                    // Intentionally blank: row actions (update, reinstall, remove).
+                    Item { width: archPanel.themeActionsWidth; height: 1 }
+                    UiText { width: archPanel.themeBehindWidth; text: "Behind"; color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
+                    UiText { width: archPanel.themeStateWidth; text: "State"; color: Qt.rgba(root.ink.r,root.ink.g,root.ink.b,0.6); font.family: root.mono; font.pixelSize: 10; font.letterSpacing: 1 }
                 }
 
                 // ── theme list (only outdated + unreachable themes are in the model) ──
@@ -967,12 +1163,39 @@ PanelWindow {
                                 readonly property string localFileLabel: localFiles.length > 0
                                     ? localFiles[0] + (localFiles.length > 1 ? " +" + (localFiles.length - 1) : "")
                                     : localReason
-                                readonly property string stateLabel: isUnreach ? "unreachable"
-                                    : isLocalEdits ? ("blocked" + (localFileLabel !== "" ? ": " + localFileLabel : ""))
+                                readonly property string stateLabel: isUnreach ? "offline"
+                                    : isLocalEdits ? (localReason === "untracked conflict" ? "conflict"
+                                        : localReason === "tracked edits" ? "edits"
+                                        : localReason === "local commits" ? "commits"
+                                        : "changes")
                                     : "clean"
+                                readonly property string stateTooltip: {
+                                    if (!isLocalEdits) return ""
+                                    if (localReason === "local commits")
+                                        return "Blocked · local commits ahead of upstream"
+
+                                    var title = localReason === "untracked conflict"
+                                        ? "Blocked · untracked overwrite conflict"
+                                        : localReason === "tracked edits"
+                                            ? "Blocked · tracked edits (staged or unstaged)"
+                                            : "Blocked · local changes"
+                                    if (localFiles.length === 0) return title
+
+                                    var noun = localReason === "untracked conflict"
+                                        ? (localFiles.length === 1 ? "conflicting path shown" : "conflicting paths shown")
+                                        : (localFiles.length === 1 ? "changed file shown" : "changed files shown")
+                                    return title + "\n" + localFiles.length + " " + noun + " · " + localFileLabel
+                                }
                                 // A per-theme update is pinned to the commit saved by the last
                                 // scan. Local-edits/unreachable/old-schema rows stay review-only.
                                 readonly property bool canPull: archPanel.isPinnedThemeUpdate(modelData)
+                                readonly property bool canReinstall: archPanel.canReinstallTheme(modelData)
+                                readonly property bool canRemove: !root.themeUpdChecking
+                                    && /^[A-Za-z0-9._-]+$/.test(modelData.name || "")
+                                readonly property bool confirmingRemove:
+                                    archPanel.pendingRemoveName === String(modelData.name || "")
+                                readonly property bool removeFlowIdle:
+                                    archPanel.pendingRemoveName === ""
 
                                 width: parent.width
                                 height: 22
@@ -980,9 +1203,9 @@ PanelWindow {
                                 Row {
                                     width: parent.width
                                     height: 22
-                                    spacing: 6
+                                    spacing: archPanel.themeGridGap
                                     UiText {
-                                        width: parent.width - 220
+                                        width: parent.width - archPanel.themeRightBlockWidth - archPanel.themeGridGap
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: modelData.name
                                         color: modelData.current ? root.seal : root.ink
@@ -990,7 +1213,193 @@ PanelWindow {
                                         elide: Text.ElideRight
                                     }
                                     Item {
-                                        width: 60
+                                        width: archPanel.themeActionsWidth
+                                        height: 22
+
+                                        Row {
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: themeRow.confirmingRemove ? 132 : 100
+                                            height: parent.height
+                                            spacing: 4
+
+                                            // Slot 1: normal update, or the explicit inline remove
+                                            // confirmation. The fixed outer action area keeps the
+                                            // following information columns aligned in every state.
+                                            Item {
+                                                width: themeRow.confirmingRemove
+                                                    ? archPanel.removeBusy ? 108 : 52
+                                                    : 52
+                                                height: 22
+                                                Rectangle {
+                                                    id: primaryAction
+                                                    readonly property bool actionEnabled: themeRow.confirmingRemove
+                                                        ? !archPanel.removeBusy && !root.themeUpdChecking
+                                                        : themeRow.removeFlowIdle && themeRow.canPull
+                                                    visible: themeRow.confirmingRemove
+                                                        || (themeRow.removeFlowIdle && themeRow.canPull)
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    anchors.verticalCenterOffset: -2
+                                                    width: parent.width; height: 18; radius: root.tileRadius
+                                                    color: (primaryMa.containsMouse && actionEnabled)
+                                                        ? root.fillPrimaryHover : root.seal
+                                                    opacity: archPanel.removeBusy && themeRow.confirmingRemove ? 0.65 : 1.0
+                                                    Behavior on color { ColorAnimation { duration: 100 } }
+                                                    TooltipMixin {
+                                                        id: primaryTip
+                                                        root: archPanel.root
+                                                        owner: primaryAction
+                                                        text: themeRow.confirmingRemove
+                                                            ? archPanel.removeBusy
+                                                                ? "Removing theme · " + modelData.name
+                                                                : archPanel.removeError !== ""
+                                                                    ? "Retry removal · " + archPanel.removeError
+                                                                    : "Confirm removal · " + modelData.name
+                                                            : "Update theme · " + modelData.name
+                                                    }
+                                                    UiText {
+                                                        anchors.centerIn: parent
+                                                        text: themeRow.confirmingRemove
+                                                            ? archPanel.removeBusy ? "removing…"
+                                                                : archPanel.removeError !== "" ? "retry" : "remove"
+                                                            : "update"
+                                                        color: root.paper
+                                                        font.family: root.mono
+                                                        font.pixelSize: 9
+                                                    }
+                                                    MouseArea {
+                                                        id: primaryMa
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        enabled: primaryAction.actionEnabled
+                                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                        onEntered: primaryTip.show()
+                                                        onExited: primaryTip.hide()
+                                                        onClicked: {
+                                                            primaryTip.hide()
+                                                            if (themeRow.confirmingRemove)
+                                                                archPanel.confirmRemoveTheme()
+                                                            else
+                                                                archPanel.updateOneTheme(modelData.name)
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Slot 2 becomes a text button matching Remove while
+                                            // armed. Once removal starts, the progress button uses
+                                            // both text slots until the command finishes.
+                                            Rectangle {
+                                                id: secondaryAction
+                                                readonly property bool actionEnabled: themeRow.confirmingRemove
+                                                    ? !archPanel.removeBusy
+                                                    : themeRow.removeFlowIdle && themeRow.canReinstall
+                                                visible: !themeRow.confirmingRemove || !archPanel.removeBusy
+                                                width: themeRow.confirmingRemove ? 52 : 20
+                                                height: 18; radius: root.tileRadius
+                                                color: themeRow.confirmingRemove
+                                                    ? (secondaryMa.containsMouse && actionEnabled)
+                                                        ? root.fillPrimaryHover : root.seal
+                                                    : (secondaryMa.containsMouse && actionEnabled)
+                                                        ? root.fillHover : "transparent"
+                                                opacity: actionEnabled ? 1.0 : 0.28
+                                                Behavior on color { ColorAnimation { duration: 100 } }
+                                                TooltipMixin {
+                                                    id: secondaryTip
+                                                    root: archPanel.root
+                                                    owner: secondaryAction
+                                                    text: themeRow.confirmingRemove
+                                                        ? "Cancel removal · " + modelData.name
+                                                        : "Reinstall theme · " + modelData.name
+                                                }
+                                                UiText {
+                                                    anchors.centerIn: parent
+                                                    visible: themeRow.confirmingRemove
+                                                    text: "cancel"
+                                                    color: root.paper
+                                                    font.family: root.mono
+                                                    font.pixelSize: 9
+                                                }
+                                                IconText {
+                                                    anchors.centerIn: parent
+                                                    visible: !themeRow.confirmingRemove
+                                                    text: "\uE5D5"
+                                                    color: secondaryMa.containsMouse && secondaryAction.actionEnabled
+                                                        ? root.seal : root.sumi
+                                                    font.pixelSize: 14
+                                                }
+                                                MouseArea {
+                                                    id: secondaryMa
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    enabled: secondaryAction.actionEnabled
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onEntered: secondaryTip.show()
+                                                    onExited: secondaryTip.hide()
+                                                    onClicked: {
+                                                        secondaryTip.hide()
+                                                        if (themeRow.confirmingRemove)
+                                                            archPanel.cancelRemoveTheme()
+                                                        else
+                                                            archPanel.reinstallTheme(modelData.name, modelData.remoteUrl)
+                                                    }
+                                                }
+                                            }
+
+                                            // Slot 3 is trash normally; while armed it keeps the
+                                            // reinstall action to the right of Cancel.
+                                            Rectangle {
+                                                id: tertiaryAction
+                                                readonly property bool actionEnabled: themeRow.confirmingRemove
+                                                    ? !archPanel.removeBusy && themeRow.canReinstall
+                                                    : themeRow.removeFlowIdle && themeRow.canRemove
+                                                width: 20; height: 18; radius: root.tileRadius
+                                                color: {
+                                                    if (!tertiaryMa.containsMouse || !actionEnabled) return "transparent"
+                                                    if (themeRow.confirmingRemove) return root.fillHover
+                                                    return Qt.rgba(root.sealRaw.r, root.sealRaw.g, root.sealRaw.b, root.fillHoverAlpha)
+                                                }
+                                                opacity: actionEnabled ? 1.0 : 0.28
+                                                Behavior on color { ColorAnimation { duration: 100 } }
+                                                TooltipMixin {
+                                                    id: tertiaryTip
+                                                    root: archPanel.root
+                                                    owner: tertiaryAction
+                                                    text: themeRow.confirmingRemove
+                                                        ? "Reinstall theme · " + modelData.name
+                                                        : "Remove theme · " + modelData.name
+                                                }
+                                                IconText {
+                                                    anchors.centerIn: parent
+                                                    text: themeRow.confirmingRemove ? "\uE5D5" : "\uE872"
+                                                    color: tertiaryMa.containsMouse && tertiaryAction.actionEnabled
+                                                        ? themeRow.confirmingRemove ? root.seal : root.sealRaw
+                                                        : root.sumi
+                                                    font.pixelSize: themeRow.confirmingRemove ? 14 : 13
+                                                }
+                                                MouseArea {
+                                                    id: tertiaryMa
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    enabled: tertiaryAction.actionEnabled
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onEntered: tertiaryTip.show()
+                                                    onExited: tertiaryTip.hide()
+                                                    onClicked: {
+                                                        tertiaryTip.hide()
+                                                        if (themeRow.confirmingRemove) {
+                                                            archPanel.cancelRemoveTheme()
+                                                            archPanel.reinstallTheme(modelData.name, modelData.remoteUrl)
+                                                        } else {
+                                                            archPanel.removeTheme(modelData.name)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Item {
+                                        width: archPanel.themeBehindWidth
                                         height: 22
                                         UiText {
                                             anchors.verticalCenter: parent.verticalCenter
@@ -1009,41 +1418,38 @@ PanelWindow {
                                             onClicked: archPanel.viewThemeChanges(modelData.name)
                                         }
                                     }
-                                    // right slot: neutral state word + a per-theme "update" chip
+                                    // right slot: status only; all per-theme actions live in the
+                                    // intentionally unlabelled column immediately before Behind.
                                     Item {
-                                        width: 148
+                                        id: stateSlot
+                                        width: archPanel.themeStateWidth
                                         height: 22
+                                        TooltipMixin {
+                                            id: stateTip
+                                            root: archPanel.root
+                                            owner: stateSlot
+                                            text: themeRow.stateTooltip
+                                        }
                                         UiText {
                                             anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 10
                                             anchors.verticalCenter: parent.verticalCenter
-                                            width: parent.width - (themeRow.canPull ? 76 : 16)
                                             text: themeRow.stateLabel
-                                            color: isLocalEdits ? root.inkDeep : root.sumi
+                                            color: stateMa.containsMouse && themeRow.stateTooltip !== ""
+                                                ? root.seal
+                                                : isLocalEdits ? root.inkDeep : root.sumi
                                             font.family: root.mono; font.pixelSize: 10
                                             elide: Text.ElideRight
                                         }
-                                        Rectangle {
-                                            visible: themeRow.canPull
-                                            anchors.right: parent.right
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.verticalCenterOffset: -2   // mono line-box sits high; nudge the button onto the text's optical centre
-                                            anchors.rightMargin: 16
-                                            width: 52; height: 18; radius: root.tileRadius
-                                            color: pullMa.containsMouse ? root.fillPrimaryHover : root.seal
-                                            Behavior on color { ColorAnimation { duration: 120 } }
-                                            UiText {
-                                                anchors.centerIn: parent
-                                                text: "update"
-                                                color: root.paper
-                                                font.family: root.mono; font.pixelSize: 9
-                                            }
-                                            MouseArea {
-                                                id: pullMa
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: archPanel.updateOneTheme(modelData.name)
-                                            }
+                                        MouseArea {
+                                            id: stateMa
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                            cursorShape: themeRow.stateTooltip !== "" ? Qt.WhatsThisCursor : Qt.ArrowCursor
+                                            onEntered: { if (themeRow.stateTooltip !== "") stateTip.show() }
+                                            onExited: stateTip.hide()
                                         }
                                     }
                                 }
@@ -1132,6 +1538,7 @@ PanelWindow {
                         }
                     }
                 }
+
             }
             // ══════════ END THEMES TAB ══════════
 
@@ -1141,5 +1548,6 @@ PanelWindow {
                 visible: root.activeUpdateTab === "shell"
             }
         }
+
     }
 }

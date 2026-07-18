@@ -23,8 +23,9 @@ Item {
         interval: mixin.delay
         onTriggered: {
             if (!mixin.text) return
-            var p = mixin.owner.mapToItem(null, mixin.owner.width / 2, mixin.owner.height / 2)
-            mixin.root.showTooltip(mixin.text, p.x, p.y, mixin.owner)
+            var top = mixin.owner.mapToItem(null, mixin.owner.width / 2, 0)
+            var bottom = mixin.owner.mapToItem(null, mixin.owner.width / 2, mixin.owner.height)
+            mixin.root.showTooltip(mixin.text, top.x, top.y, bottom.y, mixin.owner)
         }
     }
 }
