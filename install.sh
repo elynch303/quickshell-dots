@@ -174,13 +174,13 @@ install_theme_updater() {
 }
 
 # ── 1. dependencies ─────────────────────────────────────────────
-need=(qs git jq curl checkupdates)
+need=(qs git jq curl checkupdates lslocks md5sum readlink timeout setsid pkill)
 opt=(wpctl pactl pamixer brightnessctl upower powerprofilesctl bluetoothctl iwctl makoctl hypridle)
 miss=()
 for b in "${need[@]}"; do command -v "$b" >/dev/null 2>&1 || miss+=("$b"); done
 if ((${#miss[@]})); then
   err "Missing required: ${miss[*]}"
-  warn "On Arch:  sudo pacman -S quickshell git jq curl pacman-contrib"
+  warn "On Arch:  sudo pacman -S quickshell git jq curl pacman-contrib coreutils util-linux procps-ng"
   exit 1
 fi
 optmiss=()
@@ -223,6 +223,32 @@ trap cleanup_install EXIT
 info "Downloading…"
 git clone --depth 1 "$REPO_URL" "$tmp/repo" >/dev/null 2>&1
 
+# Load the same bounded lifecycle helper used by the post-boot hook. It reads
+# Quickshell's registry directly and deliberately never invokes `qs list`.
+runtime_helper="$tmp/repo/contrib/post-boot.d/quickshell-rise"
+[[ -r "$runtime_helper" ]] || { err "Runtime helper missing from repository"; exit 1; }
+export QSR_CONFIG_PATH="$DEST/shell.qml"
+export QSR_RUNTIME_LIB_ONLY=1
+# shellcheck source=/dev/null
+source "$runtime_helper"
+unset QSR_RUNTIME_LIB_ONLY
+qsr_export_omarchy_path
+
+autostart_dir="$HOME/.config/omarchy/hooks/post-boot.d"
+autostart_hook="$autostart_dir/quickshell-rise"
+hook_was_installed=false
+[[ -f "$autostart_hook" ]] && hook_was_installed=true
+
+quattro_mode=false
+qsr_has_quattro && quattro_mode=true
+
+# Quattro's bar-off flag persists across logins. Only take ownership when the
+# user requested autostart or already had the Rise hook installed.
+hide_stock_after_install=false
+if [[ "$WANT_AUTOSTART" == "yes" || ( -z "$WANT_AUTOSTART" && "$hook_was_installed" == true ) ]]; then
+  hide_stock_after_install=true
+fi
+
 mapfile -t versions < <(find "$tmp/repo/versions" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
 ((${#versions[@]})) || { err "No versions found in repo"; exit 1; }
 
@@ -244,6 +270,21 @@ ts="$(date +%Y%m%d-%H%M%S)"
 stage="$(mktemp -d -p "$(dirname "$DEST")" .qs-install-stage.XXXXXX)"
 cp -r "$tmp/repo/versions/$choice/." "$stage/"
 echo "$choice" > "$stage/.qsrise"
+
+# On a Quattro reinstall, return our persistent bar-off state before touching
+# the running Rise instance. If any later step fails, a known-good bar remains.
+if [[ "$quattro_mode" == true ]] && qsr_owns_stock_bar_hide; then
+  if ! qsr_release_owned_stock_bar; then
+    err "Could not restore the Omarchy stock bar; installation aborted before replacing anything."
+    exit 1
+  fi
+  info "Temporarily restored the Omarchy stock bar for the safe reinstall."
+fi
+
+if ! qsr_stop_bar_instances; then
+  err "Could not stop all registered Rise instances; installation aborted before replacing the config."
+  exit 1
+fi
 
 if [[ -d "$DEST" ]]; then
   if [[ -e "$DEST/.qsrise" ]]; then
@@ -300,42 +341,80 @@ if [[ -f "$tmp/repo/hooks/50-quickshell-bar.sh" ]]; then
   info "Theme hook installed (bar follows Omarchy themes)"
 fi
 
-# ── 6. stop waybar (would overlap) and start the bar now ────────
-pkill -x waybar 2>/dev/null && info "Stopped waybar (use the panel/control to manage)" || true
-# stop existing bar (supports both -c bar and -p $DEST modes)
-pkill -f "qs.*-c bar" 2>/dev/null || true
-pkill -f "quickshell -p $DEST" 2>/dev/null || true
-sleep 0.3
-setsid qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
-info "Bar started — try it out."
+# ── 6. start and verify Rise before changing the stock provider ─
+if ! qsr_start_bar || ! qsr_wait_for_bar; then
+  # This only restores a bar-off state previously owned by Rise. A state set by
+  # the user or another tool is never claimed or changed automatically.
+  if [[ "$quattro_mode" == true ]] && ! qsr_release_owned_stock_bar; then
+    warn "Rise did not start and its previous Omarchy bar state could not be restored."
+  fi
+  err "Rise did not become ready; the existing stock-bar state was preserved or restored when owned by Rise."
+  exit 1
+fi
+info "Bar started and verified through the Quickshell instance registry."
+
+if [[ "$quattro_mode" != true ]]; then
+  # Omarchy 3.8.x and generic Waybar sessions retain their previous behavior,
+  # but Waybar is stopped only after Rise has proven healthy.
+  pkill -x waybar 2>/dev/null && info "Stopped waybar (use the panel/control to manage)" || true
+fi
 
 # ── 6b. shell self-updater (never blocks the bar install) ───────
 install_shell_updater "$tmp/repo" || warn "Self-updater setup incomplete — the bar is fine; the update badge just won't appear."
 
 # ── 7. autostart hook / hint ─────────────────────────────────────
 RAW="https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main"
-autostart_dir="$HOME/.config/omarchy/hooks/post-boot.d"
-autostart_hook="$autostart_dir/quickshell-rise"
 case "$WANT_AUTOSTART" in
   yes)
-    mkdir -p "$autostart_dir"
-    install -m 0755 "$tmp/repo/contrib/post-boot.d/quickshell-rise" "$autostart_hook"
-    info "Autostart hook installed → $autostart_hook"
+    if command -v omarchy >/dev/null 2>&1; then
+      mkdir -p "$autostart_dir"
+      install -m 0755 "$runtime_helper" "$autostart_hook"
+      info "Autostart hook installed → $autostart_hook"
+    else
+      warn "--autostart uses Omarchy's hook system, which is unavailable here; Rise still runs for this session."
+    fi
     ;;
   no)
     rm -f "$autostart_hook"
     info "Autostart hook removed → $autostart_hook"
     ;;
   *)
-    info "Autostart at login via Omarchy post-boot hook:"
-    printf "  ${c_b}curl -fsSL -o %s/quickshell-rise %s/contrib/post-boot.d/quickshell-rise${c_0}\n" \
-      "\$HOME/.config/omarchy/hooks/post-boot.d" "$RAW"
-    printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
-      "\$HOME/.config/omarchy/hooks/post-boot.d"
-    printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
-      "\$HOME/.config/omarchy/hooks/post-boot.d"
+    if [[ "$hook_was_installed" == true ]] && command -v omarchy >/dev/null 2>&1; then
+      install -m 0755 "$runtime_helper" "$autostart_hook"
+      info "Existing autostart hook refreshed → $autostart_hook"
+    elif command -v omarchy >/dev/null 2>&1; then
+      info "Autostart at login via Omarchy post-boot hook:"
+      printf "  ${c_b}curl -fsSL -o %s/quickshell-rise %s/contrib/post-boot.d/quickshell-rise${c_0}\n" \
+        "\$HOME/.config/omarchy/hooks/post-boot.d" "$RAW"
+      printf "  ${c_b}chmod +x %s/quickshell-rise${c_0}\n" \
+        "\$HOME/.config/omarchy/hooks/post-boot.d"
+      printf "  ${c_b}rm -f %s/quickshell-rise${c_0}  # to remove\n" \
+        "\$HOME/.config/omarchy/hooks/post-boot.d"
+    else
+      info "No Omarchy hook system detected; configure autostart with your desktop's normal session mechanism."
+    fi
     ;;
 esac
+
+if [[ "$quattro_mode" == true ]]; then
+  if [[ "$hide_stock_after_install" == true ]]; then
+    if qsr_hide_stock_bar_owned; then
+      if qsr_owns_stock_bar_hide; then
+        info "Omarchy Quattro stock bar hidden (Rise owns this bar-off state)."
+      else
+        info "Omarchy Quattro stock bar was already hidden; its existing ownership was left unchanged."
+      fi
+    else
+      qsr_warn_stock_bar_hide_failure
+    fi
+  else
+    if qsr_stock_bar_hidden; then
+      info "Omarchy Quattro stock bar was already hidden and was left unchanged; Rise does not own that state."
+    else
+      info "Omarchy Quattro stock bar left visible; use --autostart to let Rise manage it persistently."
+    fi
+  fi
+fi
 
 # ── 8. AI usage backends (opt-in; never block the bar install) ──
 do_claude="$WANT_CLAUDE"

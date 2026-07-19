@@ -1,13 +1,312 @@
-#!/bin/bash
-# Quickshell Rise — launch the bar at session start.
-# stop waybar (omarchy re-autostarts it at login → would overlap), then launch
-# the bar detached so we don't block later post-boot.d hooks (omarchy-hook runs
-# them sequentially). -n bails out if an instance is already running (idempotent).
-if command -v omarchy-shell >/dev/null 2>&1 && [ -d /usr/share/omarchy ]; then
-  export OMARCHY_PATH=/usr/share/omarchy
-else
-  export OMARCHY_PATH="$HOME/.local/share/omarchy"
-fi
+#!/usr/bin/env bash
+# Quickshell Rise — runtime helpers and non-blocking Omarchy post-boot launcher.
 
-pkill -x waybar 2>/dev/null || true
-setsid qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
+QSR_CONFIG_PATH="${QSR_CONFIG_PATH:-$HOME/.config/quickshell/bar/shell.qml}"
+QSR_RUNTIME_ROOT="${QSR_RUNTIME_ROOT:-${XDG_RUNTIME_DIR:-/run/user/$UID}/quickshell}"
+QSR_PROC_ROOT="${QSR_PROC_ROOT:-/proc}"
+QSR_STATE_ROOT="${QSR_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/quickshell-rise}"
+QSR_BAR_MARKER="${QSR_BAR_MARKER:-$QSR_STATE_ROOT/owns-omarchy-bar-off}"
+QSR_BAR_PENDING="${QSR_BAR_PENDING:-$QSR_BAR_MARKER.pending}"
+QSR_TOGGLE_ROOT="${QSR_TOGGLE_ROOT:-$HOME/.local/state/omarchy/toggles}"
+QSR_READY_ROUNDS="${QSR_READY_ROUNDS:-80}"
+QSR_STOP_ROUNDS="${QSR_STOP_ROUNDS:-60}"
+QSR_STABLE_ROUNDS="${QSR_STABLE_ROUNDS:-5}"
+QSR_POLL_INTERVAL="${QSR_POLL_INTERVAL:-0.1}"
+QSR_COMMAND_TIMEOUT="${QSR_COMMAND_TIMEOUT:-4}"
+
+qsr_warn() {
+  printf 'quickshell-rise: %s\n' "$*" >&2
+}
+
+qsr_export_omarchy_path() {
+  if command -v omarchy-shell >/dev/null 2>&1 && [[ -d /usr/share/omarchy ]]; then
+    export OMARCHY_PATH=/usr/share/omarchy
+  else
+    export OMARCHY_PATH="$HOME/.local/share/omarchy"
+  fi
+}
+
+qsr_has_quattro() {
+  command -v omarchy >/dev/null 2>&1 && command -v omarchy-toggle-bar >/dev/null 2>&1
+}
+
+qsr_config_absolute_path() {
+  if [[ $QSR_CONFIG_PATH == /* ]]; then
+    printf '%s\n' "$QSR_CONFIG_PATH"
+  else
+    printf '%s/%s\n' "$(pwd -P)" "$QSR_CONFIG_PATH"
+  fi
+}
+
+qsr_config_registry_dir() {
+  local config_path path_id
+
+  config_path="$(qsr_config_absolute_path)" || return 1
+  path_id="$(printf '%s' "$config_path" | md5sum 2>/dev/null)" || return 1
+  path_id="${path_id%% *}"
+  [[ $path_id =~ ^[0-9a-f]{32}$ ]] || return 1
+  printf '%s/by-path/%s\n' "$QSR_RUNTIME_ROOT" "$path_id"
+}
+
+qsr_pid_holds_lock() {
+  local pid="$1" lock_path="$2" process_fd target
+
+  for process_fd in "$QSR_PROC_ROOT/$pid/fd/"*; do
+    [[ -e $process_fd || -L $process_fd ]] || continue
+    target="$(readlink -f "$process_fd" 2>/dev/null)" || continue
+    [[ $target == "$lock_path" ]] && return 0
+  done
+  return 1
+}
+
+# Print only PIDs that pass every independent registry check. Registry entries
+# survive crashes on some Quickshell builds, so a symlink alone is not evidence.
+qsr_live_bar_pids() {
+  local config_dir instance_link instance_dir
+  local lock_pid lock_path locks_text candidate candidate_exe process_exe linked_instance
+  local -A allowed_instances=() expected_exes=() emitted_pids=()
+
+  config_dir="$(qsr_config_registry_dir)" || return 1
+  [[ -d $config_dir ]] || return 0
+  command -v lslocks >/dev/null 2>&1 || return 1
+
+  # Normal instances run as `qs`; Quickshell's crash handler may relaunch the
+  # same config as a bare `quickshell` process with no original CLI arguments.
+  for candidate in qs quickshell; do
+    candidate_exe="$(command -v "$candidate" 2>/dev/null)" || continue
+    candidate_exe="$(readlink -f "$candidate_exe" 2>/dev/null)" || continue
+    expected_exes["$candidate_exe"]=1
+  done
+  ((${#expected_exes[@]} > 0)) || return 1
+
+  for instance_link in "$config_dir/"*; do
+    [[ -L $instance_link ]] || continue
+    instance_dir="$(readlink -f "$instance_link" 2>/dev/null)" || continue
+    [[ $instance_dir == "$QSR_RUNTIME_ROOT/by-id/"* ]] || continue
+    allowed_instances["$instance_dir"]=1
+  done
+
+  locks_text="$(timeout "$QSR_COMMAND_TIMEOUT" lslocks -n -o PID,PATH 2>/dev/null)" || return 1
+  while read -r lock_pid lock_path; do
+    [[ $lock_pid =~ ^[0-9]+$ ]] || continue
+    instance_dir="${lock_path%/instance.lock}"
+    [[ $lock_path == "$instance_dir/instance.lock" ]] || continue
+    [[ -n ${allowed_instances[$instance_dir]+x} ]] || continue
+    [[ -d $QSR_PROC_ROOT/$lock_pid ]] || continue
+    process_exe="$(readlink -f "$QSR_PROC_ROOT/$lock_pid/exe" 2>/dev/null)" || continue
+    [[ -n ${expected_exes[$process_exe]+x} ]] || continue
+    linked_instance="$(readlink -f "$QSR_RUNTIME_ROOT/by-pid/$lock_pid" 2>/dev/null)" || continue
+    [[ $linked_instance == "$instance_dir" ]] || continue
+    qsr_pid_holds_lock "$lock_pid" "$lock_path" || continue
+    [[ -n ${emitted_pids[$lock_pid]+x} ]] && continue
+    emitted_pids[$lock_pid]=1
+    printf '%s\n' "$lock_pid"
+  done <<< "$locks_text"
+}
+
+qsr_bar_ready() {
+  local pid instance_dir pids_text
+
+  pids_text="$(qsr_live_bar_pids)" || return 2
+  while read -r pid; do
+    [[ -n $pid ]] || continue
+    instance_dir="$(readlink -f "$QSR_RUNTIME_ROOT/by-pid/$pid" 2>/dev/null)" || continue
+    [[ -S $instance_dir/ipc.sock ]] || continue
+    grep -Fq 'Configuration Loaded' "$instance_dir/log.log" 2>/dev/null || continue
+    return 0
+  done <<< "$pids_text"
+  return 1
+}
+
+qsr_wait_for_bar() {
+  local attempt
+
+  for ((attempt = 0; attempt < QSR_READY_ROUNDS; attempt++)); do
+    qsr_bar_ready && return 0
+    sleep "$QSR_POLL_INTERVAL"
+  done
+  return 1
+}
+
+qsr_start_bar() {
+  local ready_rc=0
+
+  qsr_bar_ready || ready_rc=$?
+  ((ready_rc == 0)) && return 0
+  # A registry read failure is not evidence that no instance exists.
+  ((ready_rc == 1)) || return 1
+  command -v qs >/dev/null 2>&1 || return 1
+  command -v setsid >/dev/null 2>&1 || return 1
+  setsid qs -n -d -c bar >/dev/null 2>&1 < /dev/null &
+}
+
+qsr_term_pid() {
+  kill -TERM "$1" 2>/dev/null || true
+}
+
+qsr_stop_registered_bars() {
+  local rounds="${1:-$QSR_STOP_ROUNDS}" stable="${2:-$QSR_STABLE_ROUNDS}"
+  local attempt quiet=0 pid pids_text
+  local -a pids=()
+
+  for ((attempt = 0; attempt < rounds; attempt++)); do
+    pids_text="$(qsr_live_bar_pids)" || return 1
+    pids=()
+    [[ -n $pids_text ]] && mapfile -t pids <<< "$pids_text"
+    if ((${#pids[@]} == 0)); then
+      ((quiet += 1))
+      ((quiet >= stable)) && return 0
+    else
+      quiet=0
+      for pid in "${pids[@]}"; do
+        qsr_term_pid "$pid"
+      done
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+
+  pids_text="$(qsr_live_bar_pids)" || return 1
+  pids=()
+  [[ -n $pids_text ]] && mapfile -t pids <<< "$pids_text"
+  ((${#pids[@]} == 0))
+}
+
+qsr_stop_legacy_patterns() {
+  local config_dir="${QSR_CONFIG_PATH%/shell.qml}"
+
+  pkill -f 'qs.*[[:space:]]-c[[:space:]]bar([[:space:]]|$)' 2>/dev/null || true
+  pkill -f "quickshell -p $config_dir" 2>/dev/null || true
+}
+
+qsr_stop_bar_instances() {
+  local rc=0
+
+  qsr_stop_registered_bars "$QSR_STOP_ROUNDS" "$QSR_STABLE_ROUNDS" || true
+  qsr_stop_legacy_patterns
+  qsr_stop_registered_bars 30 "$QSR_STABLE_ROUNDS" || rc=1
+  return "$rc"
+}
+
+qsr_stock_bar_hidden() {
+  # Read the persistent capability flag directly. The helper command uses the
+  # same nonzero status for "disabled" and operational errors, which cannot
+  # prove the visible state needed before Rise is stopped.
+  [[ -f $QSR_TOGGLE_ROOT/bar-off ]]
+}
+
+qsr_wait_for_stock_state() {
+  local wanted="$1" attempt
+
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    if [[ $wanted == hidden ]]; then
+      qsr_stock_bar_hidden && return 0
+    else
+      qsr_stock_bar_hidden || return 0
+    fi
+    sleep "$QSR_POLL_INTERVAL"
+  done
+  return 1
+}
+
+qsr_set_stock_bar() {
+  local wanted="$1" action
+
+  qsr_has_quattro || return 1
+  if [[ $wanted == hidden ]]; then
+    qsr_stock_bar_hidden && return 0
+    action=on  # Omarchy's `bar on` enables bar-off, therefore hides the bar.
+  else
+    qsr_stock_bar_hidden || return 0
+    action=off # Omarchy's `bar off` removes bar-off, therefore shows the bar.
+  fi
+
+  timeout "$QSR_COMMAND_TIMEOUT" omarchy toggle bar "$action" >/dev/null 2>&1 || return 1
+  qsr_wait_for_stock_state "$wanted"
+}
+
+qsr_owns_stock_bar_hide() {
+  [[ -f $QSR_BAR_MARKER || -f $QSR_BAR_PENDING ]]
+}
+
+qsr_rollback_stock_bar_hide() {
+  # A timed-out toggle may already have changed bar-off. Trust the persistent
+  # flag, not the command status, and discard ownership only after visibility
+  # has been verified. On rollback failure the marker/pending file is retained
+  # so a later post-boot run or uninstall can still recover the stock bar.
+  qsr_set_stock_bar visible || true
+  qsr_wait_for_stock_state visible || return 1
+  rm -f "$QSR_BAR_MARKER" "$QSR_BAR_PENDING"
+}
+
+qsr_hide_stock_bar_owned() {
+  # Recover an interrupted hide transaction. The final marker appears only
+  # after bar-off was verified; the pending file bridges the tiny crash window.
+  if [[ -f $QSR_BAR_PENDING ]]; then
+    if qsr_stock_bar_hidden; then
+      if ! mv -f "$QSR_BAR_PENDING" "$QSR_BAR_MARKER"; then
+        qsr_rollback_stock_bar_hide || true
+        return 1
+      fi
+      return 0
+    fi
+    rm -f "$QSR_BAR_PENDING" || return 1
+  fi
+
+  if [[ -f $QSR_BAR_MARKER ]]; then
+    qsr_set_stock_bar hidden && return 0
+    qsr_rollback_stock_bar_hide || true
+    return 1
+  fi
+
+  # A pre-existing bar-off flag belongs to the user or another tool.
+  qsr_stock_bar_hidden && return 0
+  if ! mkdir -p "$QSR_STATE_ROOT" || ! (umask 077; : > "$QSR_BAR_PENDING"); then
+    return 1
+  fi
+  if ! qsr_set_stock_bar hidden; then
+    qsr_rollback_stock_bar_hide || true
+    return 1
+  fi
+  if ! mv -f "$QSR_BAR_PENDING" "$QSR_BAR_MARKER"; then
+    qsr_rollback_stock_bar_hide || true
+    return 1
+  fi
+}
+
+qsr_release_owned_stock_bar() {
+  qsr_owns_stock_bar_hide || return 0
+  qsr_set_stock_bar visible || return 1
+  rm -f "$QSR_BAR_MARKER" "$QSR_BAR_PENDING"
+}
+
+qsr_warn_stock_bar_hide_failure() {
+  if qsr_stock_bar_hidden; then
+    qsr_warn "Rise is ready, but the stock bar is still hidden after a failed handoff. Run 'omarchy toggle bar off' to restore it."
+  else
+    qsr_warn 'Rise is ready, but the stock bar could not be hidden safely; it remains visible.'
+  fi
+}
+
+qsr_post_boot_main() {
+  qsr_export_omarchy_path
+
+  if ! qsr_start_bar || ! qsr_wait_for_bar; then
+    qsr_warn 'Rise did not become ready; preserving or restoring only Rise-owned stock-bar state.'
+    if qsr_has_quattro && ! qsr_release_owned_stock_bar; then
+      qsr_warn 'Could not restore the Rise-owned Omarchy bar state.'
+    fi
+    return 0
+  fi
+
+  if qsr_has_quattro; then
+    qsr_hide_stock_bar_owned || qsr_warn_stock_bar_hide_failure
+  else
+    # Legacy Omarchy and generic Waybar sessions: only remove Waybar after Rise
+    # is proven healthy, so a failed launch never leaves the user without a bar.
+    pkill -x waybar 2>/dev/null || true
+  fi
+}
+
+if [[ ${QSR_RUNTIME_LIB_ONLY:-0} != 1 ]]; then
+  qsr_post_boot_main "$@"
+fi

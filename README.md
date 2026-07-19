@@ -45,6 +45,10 @@ curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/
 
 The installer backs up an existing config to `~/.config/quickshell/bar.bak.<timestamp>`.
 
+On Omarchy Quattro, `--autostart` also hides the stock bar after Rise has been
+verified healthy. Without `--autostart`, Rise starts for the current session but
+the persistent stock-bar state is left unchanged (normally visible).
+
 ### Manual Start / Restart
 
 After installation, the bar lives at `~/.config/quickshell/bar` and can be run as the named Quickshell config `bar`.
@@ -74,10 +78,9 @@ qs kill -c bar
 qs -n -d -c bar
 ```
 
-Check running instances and logs:
+Read the named config's current log:
 
 ```bash
-qs list --all
 qs log -c bar
 ```
 
@@ -130,7 +133,7 @@ Built for **Omarchy / Hyprland**. It integrates with `omarchy-*` helpers, Omarch
 Required packages are checked by the installer:
 
 ```bash
-sudo pacman -S quickshell git jq curl ttf-jetbrains-mono-nerd ttf-material-symbols-variable
+sudo pacman -S quickshell git jq curl coreutils util-linux procps-ng ttf-jetbrains-mono-nerd ttf-material-symbols-variable
 ```
 
 <details>
@@ -153,12 +156,39 @@ Notes:
 
 ## Compatibility
 
-This bar is built for classic Omarchy setups where Waybar is the stock bar. The installer stops Waybar so both bars do not overlap.
+Rise supports three transition paths without changing its QML layout:
+
+- **Omarchy Quattro:** the Quattro shell keeps running for notifications,
+  launcher, OSD, and other services. With Rise autostart enabled, only its stock
+  bar surface is hidden after Rise passes a bounded registry health check.
+- **Omarchy 3.8.x / Waybar:** the existing Waybar path remains active. Waybar is
+  stopped only after Rise is healthy and is restored by the uninstaller.
+- **Other Hyprland systems:** Rise still installs and starts normally. Omarchy
+  hooks and theme integration are optional; configure login autostart through
+  your desktop's normal session mechanism.
 
 <details>
-<summary>Omarchy 4 / omarchy-shell note</summary>
+<summary>Omarchy Quattro stock-bar controls</summary>
 
-On **Omarchy 4.0 / omarchy-shell**, this setup is not tested yet. Omarchy 4 already ships its own Quickshell shell, so running both shells at the same time may create duplicate bars or conflicting keybinds. Use this on Omarchy 4 only if you know how to disable or separate the built-in shell.
+The command direction follows Omarchy's persistent `bar-off` toggle and is easy
+to misread:
+
+```bash
+omarchy toggle bar on   # hide the Quattro stock bar
+omarchy toggle bar off  # show the Quattro stock bar again
+```
+
+The installer owns this state only when it hid a previously visible stock bar.
+That ownership is recorded under
+`~/.local/state/quickshell-rise/owns-omarchy-bar-off`; uninstall and
+`--no-autostart` restore the stock bar only when that marker exists. A stock bar
+already hidden by the user or another tool remains user-owned and unchanged.
+
+Recovery never requires a keybind: open a terminal or TTY and run
+`omarchy toggle bar off`. A normal `omarchy restart shell` leaves a regular
+`qs -c bar` Rise process running. The rare Quickshell crash-relaunch form can run
+as a bare `quickshell` process and may be stopped by that Omarchy restart; showing
+the stock bar is the recovery path for this documented edge case.
 
 </details>
 
@@ -229,7 +259,8 @@ qs -c bar ipc call picker videos
 <details>
 <summary>Manual autostart hook</summary>
 
-If you did not install with `--autostart`, add the Omarchy post-boot hook manually:
+If you did not install with `--autostart`, add the Omarchy post-boot hook manually.
+On Quattro it starts and verifies Rise before hiding the stock bar:
 
 ```bash
 mkdir -p ~/.config/omarchy/hooks/post-boot.d
@@ -238,9 +269,14 @@ curl -fsSL -o ~/.config/omarchy/hooks/post-boot.d/quickshell-rise \
 chmod +x ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
 
-Remove only the hook:
+Remove the hook safely. The conditional block returns only a stock-bar state
+owned by Rise; it does not override a bar the user had already hidden:
 
 ```bash
+marker=~/.local/state/quickshell-rise/owns-omarchy-bar-off
+if [[ -f $marker || -f $marker.pending ]]; then
+  omarchy toggle bar off && rm -f "$marker" "$marker.pending"
+fi
 rm -f ~/.config/omarchy/hooks/post-boot.d/quickshell-rise
 ```
 
