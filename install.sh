@@ -242,6 +242,21 @@ hook_was_installed=false
 quattro_mode=false
 qsr_has_quattro && quattro_mode=true
 
+# An interactive Quattro install without an existing Rise hook can opt into the
+# existing autostart path.
+# Probe /dev/tty separately: checking only that its device node exists is unsafe
+# without a controlling TTY, while redirecting read's stderr would hide -p.
+if [[ "$quattro_mode" == true && -z "$WANT_AUTOSTART" && "$hook_was_installed" == false ]]; then
+  if : 2>/dev/null </dev/tty; then
+    if read -r -p "Omarchy Quattro detected. Hide the stock bar and start Rise automatically at login? [Y/n] " quattro_autostart_answer </dev/tty; then
+      case "${quattro_autostart_answer,,}" in
+        ""|y|yes) WANT_AUTOSTART="yes" ;;
+        n|no) ;;
+      esac
+    fi
+  fi
+fi
+
 # Quattro's bar-off flag persists across logins. Only take ownership when the
 # user requested autostart or already had the Rise hook installed.
 hide_stock_after_install=false

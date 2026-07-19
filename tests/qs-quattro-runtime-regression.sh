@@ -122,6 +122,234 @@ SCRIPT
     "$root/bin/setsid" "$root/bin/waybar"
 }
 
+build_installer_fixture() {
+  local repo="$WORK/installer-source"
+
+  mkdir -p "$repo/contrib/post-boot.d" "$repo/versions/V1" \
+    "$repo/scripts" "$repo/systemd"
+  printf 'import QtQuick\nItem {}\n' > "$repo/versions/V1/shell.qml"
+
+  # The real lifecycle helper has dedicated coverage elsewhere in this suite.
+  # This fixture records which existing installer branch was selected without
+  # touching host processes or the real Omarchy toggle state.
+  cat > "$repo/contrib/post-boot.d/quickshell-rise" <<'SCRIPT'
+#!/usr/bin/env bash
+QSR_STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/quickshell-rise"
+QSR_BAR_MARKER="$QSR_STATE_ROOT/owns-omarchy-bar-off"
+QSR_BAR_PENDING="$QSR_BAR_MARKER.pending"
+QSR_TOGGLE_ROOT="${QSR_TOGGLE_ROOT:-$HOME/.local/state/omarchy/toggles}"
+export QSR_STATE_ROOT QSR_BAR_MARKER QSR_BAR_PENDING QSR_TOGGLE_ROOT
+
+qsr_export_omarchy_path() { :; }
+qsr_has_quattro() {
+  command -v omarchy >/dev/null 2>&1 && command -v omarchy-toggle-bar >/dev/null 2>&1
+}
+qsr_owns_stock_bar_hide() {
+  [[ -f $QSR_BAR_MARKER || -f $QSR_BAR_PENDING ]]
+}
+qsr_stock_bar_hidden() {
+  [[ -f $QSR_TOGGLE_ROOT/bar-off ]]
+}
+qsr_release_owned_stock_bar() {
+  qsr_owns_stock_bar_hide || return 0
+  omarchy toggle bar off || return 1
+  rm -f "$QSR_BAR_MARKER" "$QSR_BAR_PENDING"
+}
+qsr_stop_bar_instances() {
+  printf 'stop\n' >> "${QSR_TEST_LOG:?}"
+}
+qsr_start_bar() {
+  printf 'start\n' >> "${QSR_TEST_LOG:?}"
+}
+qsr_wait_for_bar() {
+  printf 'ready\n' >> "${QSR_TEST_LOG:?}"
+}
+qsr_hide_stock_bar_owned() {
+  printf 'hide\n' >> "${QSR_TEST_LOG:?}"
+  qsr_stock_bar_hidden && return 0
+  mkdir -p "$QSR_STATE_ROOT" "$QSR_TOGGLE_ROOT"
+  (umask 077; : > "$QSR_BAR_PENDING")
+  omarchy toggle bar on || return 1
+  qsr_stock_bar_hidden || return 1
+  mv -f "$QSR_BAR_PENDING" "$QSR_BAR_MARKER"
+}
+qsr_warn_stock_bar_hide_failure() {
+  printf 'fixture hide failure\n' >&2
+}
+SCRIPT
+
+  cat > "$repo/scripts/qs-shell-check-update.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  cat > "$repo/scripts/qs-shell-apply-update.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  printf '[Unit]\nDescription=fixture\n' > "$repo/systemd/qs-shell-update-check.service"
+  printf '[Unit]\nDescription=fixture\n' > "$repo/systemd/qs-shell-update-check.timer"
+  chmod 0755 "$repo/contrib/post-boot.d/quickshell-rise" \
+    "$repo/scripts/qs-shell-check-update.sh" "$repo/scripts/qs-shell-apply-update.sh"
+
+  git init "$repo" >/dev/null
+  git -C "$repo" config user.email test@example.invalid
+  git -C "$repo" config user.name Test
+  git -C "$repo" add -A
+  git -C "$repo" commit -m fixture >/dev/null
+
+  sed "s|^REPO_URL=.*|REPO_URL=\"$repo\"|" "$INSTALLER" > "$WORK/install-under-test.sh"
+  chmod 0755 "$WORK/install-under-test.sh"
+}
+
+make_installer_case() {
+  local root="$1"
+
+  mkdir -p "$root/home" "$root/run" "$root/state" "$root/toggles"
+  : > "$root/actions.log"
+  make_fake_tools "$root"
+
+  cat > "$root/bin/qs" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  cat > "$root/bin/checkupdates" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  cat > "$root/bin/fc-list" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'JetBrainsMono Nerd\nMaterial Symbols Rounded\n'
+SCRIPT
+  cat > "$root/bin/systemctl" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'systemctl %s\n' "$*" >> "${QSR_TEST_LOG:?}"
+exit 0
+SCRIPT
+  chmod 0755 "$root/bin/qs" "$root/bin/checkupdates" "$root/bin/fc-list" \
+    "$root/bin/systemctl"
+
+  cat > "$root/run-installer" <<SCRIPT
+#!/usr/bin/env bash
+export HOME="$root/home"
+export XDG_RUNTIME_DIR="$root/run"
+export XDG_STATE_HOME="$root/state"
+export QSR_TOGGLE_ROOT="$root/toggles"
+export QSR_TEST_LOG="$root/actions.log"
+export PATH="$root/bin:/usr/bin:/bin"
+exec /usr/bin/bash "$WORK/install-under-test.sh" V1 --no-ai-backend "\$@"
+SCRIPT
+  chmod 0755 "$root/run-installer"
+}
+
+run_installer_with_tty() {
+  local root="$1" answer="$2" argument
+  local command="$root/run-installer"
+  shift 2
+
+  for argument in "$@"; do
+    printf -v command '%s %q' "$command" "$argument"
+  done
+  printf '%s\n' "$answer" | script -qefc "$command" /dev/null \
+    > "$root/installer.out" 2>&1
+}
+
+run_installer_without_tty() {
+  local root="$1"
+  shift
+
+  /usr/bin/setsid -f -w "$root/run-installer" "$@" </dev/null \
+    > "$root/installer.out" 2>&1
+}
+
+assert_installer_autostart() {
+  local root="$1" message="$2"
+
+  assert_file "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" "$message hook"
+  assert_file "$root/state/quickshell-rise/owns-omarchy-bar-off" "$message marker"
+  assert_file "$root/toggles/bar-off" "$message stock flag"
+  assert_contains "omarchy toggle bar on" "$root/actions.log" "$message toggle"
+  assert_before "ready" "omarchy toggle bar on" "$root/actions.log" "$message health-before-hide"
+}
+
+assert_installer_manual_mode() {
+  local root="$1" message="$2"
+
+  assert_no_file "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" "$message hook"
+  assert_no_file "$root/state/quickshell-rise/owns-omarchy-bar-off" "$message marker"
+  assert_no_file "$root/toggles/bar-off" "$message stock flag"
+  assert_not_contains "omarchy toggle bar" "$root/actions.log" "$message toggle"
+  assert_contains "stock bar left visible" "$root/installer.out" "$message hint"
+}
+
+case_installer_interactive_prompt_matrix() {
+  local prompt="Omarchy Quattro detected. Hide the stock bar and start Rise automatically at login? [Y/n]"
+  local root
+
+  command -v script >/dev/null 2>&1 || fail "script is required for installer PTY regressions"
+  build_installer_fixture
+
+  root="$WORK/installer-y"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" y
+  assert_contains "$prompt" "$root/installer.out" "yes prompt"
+  assert_installer_autostart "$root" "yes answer"
+
+  root="$WORK/installer-enter"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" ""
+  assert_contains "$prompt" "$root/installer.out" "enter prompt"
+  assert_installer_autostart "$root" "enter answer"
+
+  root="$WORK/installer-no"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" n
+  assert_contains "$prompt" "$root/installer.out" "no prompt"
+  assert_installer_manual_mode "$root" "no answer"
+
+  root="$WORK/installer-invalid"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" x
+  assert_contains "$prompt" "$root/installer.out" "invalid prompt"
+  assert_installer_manual_mode "$root" "invalid answer"
+
+  root="$WORK/installer-no-tty"
+  make_installer_case "$root"
+  run_installer_without_tty "$root"
+  assert_not_contains "$prompt" "$root/installer.out" "no-TTY prompt"
+  assert_not_contains "No such device or address" "$root/installer.out" "no-TTY device error"
+  assert_installer_manual_mode "$root" "no-TTY"
+
+  root="$WORK/installer-flag-on"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" n --autostart
+  assert_not_contains "$prompt" "$root/installer.out" "explicit autostart prompt"
+  assert_installer_autostart "$root" "explicit autostart"
+
+  root="$WORK/installer-flag-off"
+  make_installer_case "$root"
+  run_installer_with_tty "$root" y --no-autostart
+  assert_not_contains "$prompt" "$root/installer.out" "explicit no-autostart prompt"
+  assert_installer_manual_mode "$root" "explicit no-autostart"
+
+  root="$WORK/installer-hook"
+  make_installer_case "$root"
+  mkdir -p "$root/home/.config/omarchy/hooks/post-boot.d"
+  : > "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise"
+  run_installer_with_tty "$root" n
+  assert_not_contains "$prompt" "$root/installer.out" "existing hook prompt"
+  assert_contains "Existing autostart hook refreshed" "$root/installer.out" "existing hook refresh"
+  assert_installer_autostart "$root" "existing hook"
+
+  root="$WORK/installer-legacy"
+  make_installer_case "$root"
+  rm -f "$root/bin/omarchy-toggle-bar"
+  run_installer_with_tty "$root" y
+  assert_not_contains "$prompt" "$root/installer.out" "legacy prompt"
+  assert_no_file "$root/home/.config/omarchy/hooks/post-boot.d/quickshell-rise" "legacy hook"
+  assert_not_contains "omarchy toggle bar" "$root/actions.log" "legacy toggle"
+  assert_contains "pkill -x waybar" "$root/actions.log" "legacy Waybar behavior"
+}
+
 run_uninstaller() {
   local root="$1"
   HOME="$root/home" \
@@ -454,6 +682,8 @@ case_static_contracts() {
   assert_not_contains "qs list --all" "$README" "README unsafe instance query"
   assert_contains "qsr_has_quattro" "$INSTALLER" "installer capability gate"
   assert_contains "hook_was_installed" "$INSTALLER" "installer existing-hook gate"
+  assert_contains "if : 2>/dev/null </dev/tty; then" "$INSTALLER" "installer usable-TTY probe"
+  assert_before "Omarchy Quattro detected" "hide_stock_after_install=false" "$INSTALLER" "prompt before hide gating"
   assert_contains "qsr_hide_stock_bar_owned" "$INSTALLER" "installer ownership hide"
   assert_contains "pkill -x waybar" "$INSTALLER" "legacy/generic Waybar overlap guard"
   assert_contains "if [[ \"\$quattro_mode\" != true ]]" "$INSTALLER" "Waybar Quattro exclusion"
@@ -462,6 +692,7 @@ case_static_contracts() {
   assert_before "if ! qsr_release_owned_stock_bar" "if ! qsr_stop_bar_instances" "$UNINSTALLER" "show before stop"
   assert_contains "left it stopped because the Omarchy stock bar is active" "$UNINSTALLER" "backup double-bar guard"
   assert_contains "Other Hyprland systems" "$README" "non-Omarchy compatibility docs"
+  assert_contains "For scripted" "$README" "non-interactive prompt docs"
 
   # uninstall.sh intentionally stays standalone. Keep the shared lifecycle
   # functions byte-identical so future fixes cannot silently land in one copy.
@@ -475,6 +706,7 @@ case_static_contracts() {
   done
 }
 
+case_installer_interactive_prompt_matrix
 case_runtime_toggle_ownership
 case_runtime_postboot_order_and_fail_open
 case_registry_live_health_and_stop

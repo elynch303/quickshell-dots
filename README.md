@@ -45,9 +45,11 @@ curl -fsSL https://raw.githubusercontent.com/HANCORE-linux/quickshell-dots/main/
 
 The installer backs up an existing config to `~/.config/quickshell/bar.bak.<timestamp>`.
 
-On Omarchy Quattro, `--autostart` also hides the stock bar after Rise has been
-verified healthy. Without `--autostart`, Rise starts for the current session but
-the persistent stock-bar state is left unchanged (normally visible).
+On an interactive install without an existing Rise login hook, Omarchy Quattro
+asks whether to enable Rise at login and hide the stock bar after Rise has been
+verified healthy. For scripted installs, choose explicitly with `--autostart` or
+`--no-autostart`; without a TTY or either flag, Rise starts for the current
+session and leaves the persistent stock-bar state unchanged (normally visible).
 
 ### Manual Start / Restart
 
