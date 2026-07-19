@@ -202,7 +202,7 @@ Item {
             color: rootMod.mode === "ethernet"
                 ? root.seal
                 : Qt.rgba(root.seal.r, root.seal.g, root.seal.b, 0.65)
-            font.pixelSize: 15
+            font.pixelSize: rootMod.mode === "ethernet" ? 14 : 15
             Behavior on color { ColorAnimation { duration: 160 } }
         }
 

@@ -9,11 +9,11 @@ Item {
     implicitWidth: 22
     implicitHeight: 28
 
-    UiText {
+    IconText {
         anchors.centerIn: parent
-        text: String.fromCodePoint(0xF0194)
-        renderType: Text.QtRendering
-        font.family: root.mono; font.pixelSize: 14
+        text: "palette"
+        font.pixelSize: 14
+        font.weight: Font.Normal
         color: root.imagePickerVisible
             ? root.seal
             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.65)

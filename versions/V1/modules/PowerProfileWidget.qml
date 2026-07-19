@@ -21,7 +21,7 @@ Item {
     readonly property string profileIcon: {
         if (isPowerSaver)  return "\uF06C"
         if (isPerformance) return "\uF0E7"
-        return "\uF24E"
+        return "\uE279"
     }
 
     readonly property color profileColor: {
@@ -76,7 +76,7 @@ Item {
             renderType: Text.QtRendering
             color: rootMod.profileColor
             font.family: root.mono
-            font.pixelSize: 15
+            font.pixelSize: 14
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 

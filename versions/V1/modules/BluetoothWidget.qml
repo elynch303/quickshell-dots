@@ -59,7 +59,7 @@ Item {
             color: rootMod.connected
                 ? root.seal
                 : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, rootMod.btOn ? 0.7 : 0.3)
-            font.pixelSize: root.compactBluetooth ? 15 : 14
+            font.pixelSize: 14
             Behavior on color { ColorAnimation { duration: 200 } }
         }
 

@@ -16,9 +16,10 @@ Item {
     readonly property bool isOpenCode: root.aiTool === "opencode"
     readonly property bool isLogo: isCodex || isOpenCode
     readonly property url  logoSource: Qt.resolvedUrl(isOpenCode ? "../assets/opencode-mark.svg" : "../assets/codex.svg")
-    readonly property var  logoSourceSize: isOpenCode ? Qt.size(22, 14) : Qt.size(48, 48)
-    readonly property int  ocMarkW: 22
-    readonly property int  ocMarkH: 14
+    readonly property var  logoSourceSize: isOpenCode ? Qt.size(20, 12) : Qt.size(56, 56)
+    readonly property int  codexMarkSize: 14
+    readonly property int  ocMarkW: 20
+    readonly property int  ocMarkH: 12
 
     // ── Claude: process detection is local (drives the pill's visibility); all
     //    usage data comes from root.ai* — the single shared parse in Theme.qml that
@@ -178,8 +179,10 @@ Item {
         Item {
             id: iconItem
             anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: rootMod.isOpenCode ? rootMod.ocMarkW : 15
-            implicitHeight: rootMod.isOpenCode ? rootMod.ocMarkH : 15
+            implicitWidth: rootMod.isOpenCode ? rootMod.ocMarkW
+                : (rootMod.isCodex ? rootMod.codexMarkSize : 15)
+            implicitHeight: rootMod.isOpenCode ? rootMod.ocMarkH
+                : (rootMod.isCodex ? rootMod.codexMarkSize : 15)
             width: implicitWidth
             height: implicitHeight
 
@@ -233,9 +236,9 @@ Item {
                     mipmap: !rootMod.isOpenCode
                     // thinner-stroked than the Claude glyph → needs more presence
                     // than the glyph's 0.25 faint base to stay recognizable
-                    opacity: 0.5
+                    opacity: rootMod.isCodex ? 0.65 : 0.5
                     layer.enabled: true
-                    layer.smooth: true
+                    layer.smooth: !rootMod.isCodex
                     layer.effect: ShaderEffect {
                         property color tintColor: root.ink
                         fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")
@@ -258,7 +261,7 @@ Item {
                         smooth: !rootMod.isOpenCode
                         mipmap: !rootMod.isOpenCode
                         layer.enabled: true
-                        layer.smooth: true
+                        layer.smooth: !rootMod.isCodex
                         layer.effect: ShaderEffect {
                             property color tintColor: root.seal
                             fragmentShader: Qt.resolvedUrl("../shaders/logo-tint.frag.qsb")

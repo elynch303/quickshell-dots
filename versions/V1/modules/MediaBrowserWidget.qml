@@ -11,11 +11,11 @@ Item {
     implicitWidth: 22
     implicitHeight: 28
 
-    UiText {
+    IconText {
         anchors.centerIn: parent
-        text: String.fromCodePoint(0xF021B)   // nf-md-image_multiple
-        renderType: Text.QtRendering
-        font.family: root.mono; font.pixelSize: 14
+        text: "collections"
+        font.pixelSize: 14
+        font.weight: Font.Normal
         color: root.mediaBrowserVisible
             ? root.seal
             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.65)

@@ -16,7 +16,7 @@ Item {
         id: bellIcon
         anchors.centerIn: parent
         text: "\uE7F4"   // notifications (bell)
-        font.pixelSize: 16
+        font.pixelSize: 15
         color: root.notifCount > 0
             ? root.seal
             : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4)

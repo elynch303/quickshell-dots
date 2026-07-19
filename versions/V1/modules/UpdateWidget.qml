@@ -20,7 +20,7 @@ Item {
         anchors.centerIn: parent
         text: "\uE627"   // sync
         color: root.seal
-        font.pixelSize: 14
+        font.pixelSize: 15
     }
 
     Process {
