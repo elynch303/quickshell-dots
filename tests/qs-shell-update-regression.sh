@@ -205,9 +205,35 @@ commit_payload() {
   git -C "$repo" commit -m "payload-$label" >/dev/null
 }
 
+install_fake_process_tools() {
+  local root="$1"
+  mkdir -p "$root/bin"
+
+  cat > "$root/bin/qs" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'qs %s\n' "$*" >> "$HOME/process-tools.log"
+if [ "${1:-}" = list ] && [ "${2:-}" = --all ]; then
+  exit 0
+fi
+exit 97
+SCRIPT
+  cat > "$root/bin/pgrep" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'pgrep %s\n' "$*" >> "$HOME/process-tools.log"
+exit 1
+SCRIPT
+  cat > "$root/bin/pkill" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'pkill %s\n' "$*" >> "$HOME/process-tools.log"
+exit 1
+SCRIPT
+  chmod 755 "$root/bin/qs" "$root/bin/pgrep" "$root/bin/pkill"
+}
+
 init_fixture() {
   local root="$1"
   mkdir -p "$root/home" "$root/state" "$root/dest"
+  install_fake_process_tools "$root"
   git init --bare "$root/remote.git" >/dev/null
   git init "$root/repo" >/dev/null
   git -C "$root/repo" config user.email test@example.invalid
@@ -245,10 +271,21 @@ make_update_and_check() {
     and (.postBootHookBlob | type == "string")' "$(state_file "$root")" >/dev/null
 }
 
+assert_process_tools_isolated() {
+  local root="$1" tool resolved
+
+  for tool in qs pgrep pkill; do
+    resolved="$(PATH="$root/bin:$PATH" command -v "$tool")"
+    [ "$resolved" = "$root/bin/$tool" ] || \
+      fail "fixture leaked host process tool $tool: $resolved"
+  done
+}
+
 run_apply() {
   local root="$1"
   local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
   local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
+  assert_process_tools_isolated "$root"
   PATH="$root/bin:$PATH" \
   HOME="$root/home" \
   XDG_STATE_HOME="$root/state" \
@@ -266,6 +303,7 @@ run_apply_with_restart() {
   local root="$1"
   local trace="${QS_SHELL_PROGRESS_TRACE:-$(progress_trace_file "$root")}"
   local screen="${QS_SHELL_PROGRESS_SCREEN:-DP-1}"
+  assert_process_tools_isolated "$root"
   PATH="$root/bin:$PATH" \
   HOME="$root/home" \
   XDG_STATE_HOME="$root/state" \
