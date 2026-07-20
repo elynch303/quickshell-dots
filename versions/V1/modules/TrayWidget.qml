@@ -26,17 +26,20 @@ Item {
                 id: trayDelegate
                 required property SystemTrayItem modelData
 
-                implicitWidth: 24
+                // Tray glyphs are visually smaller than the adjacent package/bell
+                // icons. Keep their cell compact so pinning does not open a large
+                // apparent gap inside the shared status pill.
+                implicitWidth: 18
                 implicitHeight: 28
                 visible: root.trayPinned.indexOf(modelData.id) >= 0
 
                 Image {
                     anchors.centerIn: parent
                     source: modelData.icon
-                    sourceSize.width: 12
-                    sourceSize.height: 12
-                    width: 12
-                    height: 12
+                    sourceSize.width: 14
+                    sourceSize.height: 14
+                    width: 14
+                    height: 14
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }

@@ -266,10 +266,14 @@ PanelWindow {
                 id: statusRow
                 anchors.verticalCenter: parent.verticalCenter
                 x: Math.round((parent.width - width) / 2)
-                spacing: 6
+                spacing: 4
                 ArchUpdaterWidget  { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
-                TrayWidget         { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
-                NotificationWidget { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    TrayWidget         { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                    NotificationWidget { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                }
             }
         }
     }
