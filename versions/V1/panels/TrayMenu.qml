@@ -74,6 +74,63 @@ PanelWindow {
             anchors.margins: 8
             spacing: 1
 
+            // App identity stays visible while navigating its DBusMenu tree.
+            Item {
+                width: parent.width
+                height: 28
+
+                Image {
+                    id: appIcon
+                    anchors.left: parent.left
+                    anchors.leftMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.trayMenuIcon !== ""
+                    source: root.trayMenuIcon
+                    sourceSize.width: 16
+                    sourceSize.height: 16
+                    width: visible ? 16 : 0
+                    height: 16
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+
+                UiText {
+                    anchors.left: appIcon.right
+                    anchors.leftMargin: appIcon.visible ? 8 : 0
+                    anchors.right: closeX.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.trayMenuTitle !== "" ? root.trayMenuTitle : "App Menu"
+                    color: root.ink
+                    font.family: root.mono
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+
+                UiText {
+                    id: closeX
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u2715"
+                    color: closeMa.containsMouse ? root.seal : root.sumi
+                    font.pixelSize: 12
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    MouseArea {
+                        id: closeMa
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.trayMenuVisible = false
+                    }
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: root.sep }
+
             // back row (only when inside a submenu)
             Rectangle {
                 width: parent.width; height: 24; radius: root.tileRadius

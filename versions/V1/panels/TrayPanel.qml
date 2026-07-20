@@ -19,9 +19,18 @@ PanelWindow {
 
     readonly property int barBottom: 35
     readonly property int gap: 8
-    readonly property int popupW: 56
+    readonly property int popupW: 328
+    readonly property int maxListH: 320
 
-    visible: root.trayVisible
+    property real reveal: root.trayVisible ? 1 : 0
+    Behavior on reveal {
+        NumberAnimation {
+            duration: root.trayVisible ? 160 : 120
+            easing.type: root.trayVisible ? Easing.OutCubic : Easing.InCubic
+        }
+    }
+
+    visible: reveal > 0.001
     WlrLayershell.keyboardFocus: root.trayVisible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     // auto-close when there are no hidden (unpinned) items left to show
@@ -29,6 +38,12 @@ PanelWindow {
         var n = 0, vals = SystemTray.items.values
         for (var i = 0; i < vals.length; i++)
             if (root.trayPinned.indexOf(vals[i].id) < 0) n++
+        return n
+    }
+    readonly property int attentionCount: {
+        var n = 0, vals = SystemTray.items.values
+        for (var i = 0; i < vals.length; i++)
+            if (root.trayPinned.indexOf(vals[i].id) < 0 && vals[i].status === Status.NeedsAttention) n++
         return n
     }
     onHiddenCountChanged: if (root.trayVisible && hiddenCount === 0) root.trayVisible = false
@@ -40,7 +55,7 @@ PanelWindow {
         id: card
         width: popupW
         height: col.implicitHeight + 24
-        radius: root.trayVisible ? root.pillRadius : 0
+        radius: reveal > 0.001 ? root.pillRadius : 0
         color: root.bg
         border.color: root.pillBorder
         border.width: root.pillBorderW
@@ -48,6 +63,7 @@ PanelWindow {
 
         x: Math.round(Math.max(6, Math.min(root.trayBarX, parent.width - width - 6)))
         y: root.barPosition === "bottom" ? (parent.height - barBottom - gap - height) : (barBottom + gap)
+        opacity: trayPanel.reveal
         focus: root.trayVisible
 
         Keys.onPressed: function(event) {
@@ -63,82 +79,235 @@ PanelWindow {
             id: col
             anchors.fill: parent
             anchors.margins: 12
-            spacing: 4
+            spacing: 8
 
+            // Match the updater's restrained title/count/close hierarchy.
             Item {
                 width: parent.width
-                implicitHeight: 18
-                height: 18
-                anchors.horizontalCenter: parent.horizontalCenter
+                height: 24
+
                 UiText {
-                    anchors.centerIn: parent
-                    text: "✕"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Tray Apps"
+                    color: root.ink
+                    font.family: root.mono
+                    font.pixelSize: 13
+                    font.letterSpacing: 2
+                    font.weight: Font.Medium
+                }
+
+                UiText {
+                    anchors.right: closeX.left
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: trayPanel.hiddenCount + (trayPanel.hiddenCount === 1 ? " APP" : " APPS")
+                        + (trayPanel.attentionCount > 0 ? "  ·  " + trayPanel.attentionCount + " ATTENTION" : "")
+                    color: trayPanel.attentionCount > 0 ? root.seal : root.sumiHi
+                    font.family: root.mono
+                    font.pixelSize: 10
+                }
+
+                UiText {
+                    id: closeX
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "\u2715"
                     color: closeMa.containsMouse ? root.seal : root.sumi
                     font.pixelSize: 12
                     Behavior on color { ColorAnimation { duration: 120 } }
-                }
-                MouseArea {
-                    id: closeMa
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.trayVisible = false
+
+                    MouseArea {
+                        id: closeMa
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.trayVisible = false
+                    }
                 }
             }
 
             Rectangle { width: parent.width; height: 1; color: root.sep }
 
-            Repeater {
-                model: SystemTray.items
+            Item {
+                width: parent.width
+                height: Math.min(trayRows.implicitHeight, trayPanel.maxListH)
 
-                delegate: Item {
-                    required property SystemTrayItem modelData
-                    required property int index
+                Flickable {
+                    id: appsFlick
+                    anchors.fill: parent
+                    contentHeight: trayRows.implicitHeight
+                    clip: true
+                    interactive: contentHeight > height
+                    boundsBehavior: Flickable.StopAtBounds
 
-                    width: parent.width
-                    height: 28
-                    visible: root.trayPinned.indexOf(modelData.id) < 0
+                    Column {
+                        id: trayRows
+                        width: appsFlick.width
+                        spacing: 6
 
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: root.tileRadius
-                        color: ma.containsMouse ? root.fillActive : "transparent"
-                        border.color: ma.containsMouse ? root.seal : "transparent"
-                        border.width: ma.containsMouse ? 1 : 0
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
+                        Repeater {
+                            model: SystemTray.items
 
-                    Row {
-                        anchors.centerIn: parent
+                            delegate: Item {
+                                id: appRow
+                                required property SystemTrayItem modelData
+                                required property int index
 
-                        Image {
-                            source: modelData.icon
-                            sourceSize.width: 16
-                            sourceSize.height: 16
-                            width: 16
-                            height: 16
-                            fillMode: Image.PreserveAspectFit
-                            smooth: true
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
+                                readonly property string appName: root.trayDisplayName(modelData)
+                                readonly property string appDescription: root.trayDescription(modelData, appName)
+                                readonly property bool needsAttention: modelData.status === Status.NeedsAttention
+                                readonly property string statusDescription: needsAttention
+                                    ? "\u26a0 " + (appDescription !== "" ? appDescription : "Needs attention")
+                                    : appDescription
+                                readonly property int cellWidth: 96
 
-                    MouseArea {
-                        id: ma
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: (e) => {
-                            if (e.button === Qt.LeftButton) {
-                                modelData.activate()
-                            } else if (e.button === Qt.RightButton) {
-                                root.trayToggleHide(modelData)
-                            } else if (e.button === Qt.MiddleButton) {
-                                if (modelData.hasMenu) {
-                                    var gp = ma.mapToItem(null, 0, 0)
-                                    root.openTrayMenu(modelData.menu, gp.x - 98)
+                                width: trayRows.width
+                                height: visible ? 28 : 0
+                                visible: root.trayPinned.indexOf(modelData.id) < 0
+
+                                function openAppMenu() {
+                                    if (!modelData.hasMenu) return
+                                    var gp = menuButton.mapToItem(null, 0, 0)
+                                    root.openTrayMenu(modelData.menu,
+                                                      gp.x + menuButton.width / 2 - 110,
+                                                      appName, modelData.icon)
                                 }
+
+                                Rectangle {
+                                    id: appButton
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: appRow.cellWidth
+                                    height: 28
+                                    radius: root.tileRadius
+                                    color: activateMa.containsMouse ? root.fillHover : root.fillIdle
+                                    border.color: activateMa.containsMouse ? root.seal : root.sep
+                                    border.width: 1
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                                    Image {
+                                        id: appIcon
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        source: appRow.modelData.icon
+                                        sourceSize.width: 16
+                                        sourceSize.height: 16
+                                        width: 16
+                                        height: 16
+                                        fillMode: Image.PreserveAspectFit
+                                        smooth: true
+                                    }
+
+                                    UiText {
+                                        anchors.left: appIcon.right
+                                        anchors.leftMargin: 6
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: 6
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: (appRow.needsAttention ? "\u26a0 " : "") + appRow.appName
+                                        color: appRow.needsAttention ? root.seal
+                                            : (activateMa.containsMouse ? root.seal : root.ink)
+                                        font.family: root.mono
+                                        font.pixelSize: 11
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    TooltipMixin {
+                                        id: appTip
+                                        root: trayPanel.root
+                                        owner: appButton
+                                        text: appRow.statusDescription !== ""
+                                            ? appRow.appName + "\n" + appRow.statusDescription
+                                            : appRow.appName
+                                    }
+
+                                    MouseArea {
+                                        id: activateMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onEntered: appTip.show()
+                                        onExited: appTip.hide()
+                                        onClicked: {
+                                            appTip.hide()
+                                            if (appRow.modelData.onlyMenu && appRow.modelData.hasMenu)
+                                                appRow.openAppMenu()
+                                            else
+                                                appRow.modelData.activate()
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: pinButton
+                                    anchors.left: appButton.right
+                                    anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: appRow.cellWidth
+                                    height: 28
+                                    radius: root.tileRadius
+                                    color: pinMa.containsMouse ? root.fillHover : root.fillIdle
+                                    border.color: pinMa.containsMouse ? root.seal : root.sep
+                                    border.width: 1
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                                    UiText {
+                                        anchors.centerIn: parent
+                                        text: "Pin"
+                                        color: pinMa.containsMouse ? root.seal : root.ink
+                                        font.family: root.mono
+                                        font.pixelSize: 11
+                                    }
+
+                                    MouseArea {
+                                        id: pinMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.trayToggleHide(appRow.modelData)
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: menuButton
+                                    anchors.left: pinButton.right
+                                    anchors.leftMargin: 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: appRow.cellWidth
+                                    height: 28
+                                    radius: root.tileRadius
+                                    color: appRow.modelData.hasMenu
+                                        ? (menuMa.containsMouse ? root.fillHover : root.fillIdle)
+                                        : "transparent"
+                                    border.color: appRow.modelData.hasMenu
+                                        ? (menuMa.containsMouse ? root.seal : root.sep)
+                                        : Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10)
+                                    border.width: 1
+                                    opacity: appRow.modelData.hasMenu ? 1.0 : 0.42
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                                    UiText {
+                                        anchors.centerIn: parent
+                                        text: appRow.modelData.hasMenu ? "AppMenu" : "No Menu"
+                                        color: menuMa.containsMouse && appRow.modelData.hasMenu ? root.seal : root.ink
+                                        font.family: root.mono
+                                        font.pixelSize: 11
+                                    }
+
+                                    MouseArea {
+                                        id: menuMa
+                                        anchors.fill: parent
+                                        enabled: appRow.modelData.hasMenu
+                                        hoverEnabled: enabled
+                                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: appRow.openAppMenu()
+                                    }
+                                }
+
                             }
                         }
                     }

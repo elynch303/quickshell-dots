@@ -2201,8 +2201,45 @@ Item {
     onTrayMenuVisibleChanged: popupOpened("trayMenuVisible")
     property var  trayMenuHandle: null   // the QsMenuHandle of the clicked item
     property real trayMenuX: 0           // global x to anchor the menu under the icon
-    function openTrayMenu(handle, x) {
+    property string trayMenuTitle: ""
+    property string trayMenuIcon: ""
+
+    function trayDisplayName(item) {
+        if (!item) return "Tray App"
+
+        var title = String(item.title || "").trim()
+        if (title !== "") return title
+
+        var tooltipTitle = String(item.tooltipTitle || "").trim()
+        if (tooltipTitle !== "") return tooltipTitle
+
+        var fallback = String(item.id || "").trim()
+        var slash = fallback.lastIndexOf("/")
+        if (slash >= 0 && slash < fallback.length - 1)
+            fallback = fallback.substring(slash + 1)
+        fallback = fallback.replace(/^org\.(kde|ayatana|freedesktop)\./i, "")
+                           .replace(/[_-]+/g, " ")
+        return fallback !== "" ? fallback : "Tray App"
+    }
+
+    function trayDescription(item, displayName) {
+        if (!item) return ""
+
+        var description = String(item.tooltipDescription || "").trim()
+        var tooltipTitle = String(item.tooltipTitle || "").trim()
+        var name = String(displayName || "").trim().toLowerCase()
+        if (description !== "" && description.toLowerCase() !== name)
+            return description
+        if (tooltipTitle !== "" && tooltipTitle.toLowerCase() !== name)
+            return tooltipTitle
+        return ""
+    }
+
+    function openTrayMenu(handle, x, title, icon) {
+        if (!handle) return
         trayMenuHandle = handle
+        trayMenuTitle = String(title || "App Menu")
+        trayMenuIcon = String(icon || "")
         setPanelAnchor("trayMenu", x)
         trayMenuVisible = true
     }
