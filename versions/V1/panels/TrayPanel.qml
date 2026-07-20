@@ -175,6 +175,16 @@ PanelWindow {
                                                       appName, modelData.icon)
                                 }
 
+                                function activateApp() {
+                                    var item = modelData
+                                    root.trayVisible = false
+                                    // Release the layer-shell keyboard focus before asking
+                                    // the application to surface/focus its primary window.
+                                    Qt.callLater(function() {
+                                        if (item) item.activate()
+                                    })
+                                }
+
                                 Rectangle {
                                     id: appButton
                                     anchors.left: parent.left
@@ -237,7 +247,7 @@ PanelWindow {
                                             if (appRow.modelData.onlyMenu && appRow.modelData.hasMenu)
                                                 appRow.openAppMenu()
                                             else
-                                                appRow.modelData.activate()
+                                                appRow.activateApp()
                                         }
                                     }
                                 }
