@@ -58,7 +58,7 @@ Item {
                         else if (e.button === Qt.MiddleButton) {
                             if (modelData.hasMenu) {
                                 var gp = trayDelegate.mapToItem(null, 0, 0)
-                                root.openTrayMenu(modelData.menu, gp.x - 98,
+                                root.openTrayMenu(modelData.menu, gp.x - 101,
                                                   root.trayDisplayName(modelData), modelData.icon)
                             }
                         }
