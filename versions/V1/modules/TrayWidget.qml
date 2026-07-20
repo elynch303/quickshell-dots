@@ -47,7 +47,7 @@ Item {
                 MouseArea {
                     id: ma
                     anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: (e) => {
@@ -55,13 +55,6 @@ Item {
                             modelData.activate()
                         else if (e.button === Qt.RightButton)
                             rootMod.toggleHide(modelData)
-                        else if (e.button === Qt.MiddleButton) {
-                            if (modelData.hasMenu) {
-                                var gp = trayDelegate.mapToItem(null, 0, 0)
-                                root.openTrayMenu(modelData.menu, gp.x - 101,
-                                                  root.trayDisplayName(modelData), modelData.icon)
-                            }
-                        }
                     }
                 }
             }
