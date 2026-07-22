@@ -119,6 +119,7 @@ Item {
         || batteryVisible || brightnessVisible || mprisVisible || weatherVisible
         || workspaceVisible || imagePickerVisible || mediaBrowserVisible || notifVisible
         || powerProfileVisible || archVisible || trayVisible || trayMenuVisible
+        || securityVisible
     readonly property bool keyboardPopupVisible: imagePickerVisible || mediaBrowserVisible
 
     function registerBarLayoutController(screenName, controller) {
@@ -324,6 +325,7 @@ Item {
         else if (name === "mpris") mprisBarX = x
         else if (name === "weather") weatherBarX = x
         else if (name === "launcher") launcherBarX = x
+        else if (name === "security") securityBarX = x
         else if (name === "trayMenu") trayMenuX = x
     }
 
@@ -382,6 +384,7 @@ Item {
         if (except !== "notifVisible") notifVisible = false
         if (except !== "powerProfileVisible") powerProfileVisible = false
         if (except !== "archVisible") archVisible = false
+        if (except !== "securityVisible") securityVisible = false
         if (except !== "trayVisible") trayVisible = false
         if (except !== "trayMenuVisible") trayMenuVisible = false
         hideTooltip()
@@ -2152,6 +2155,15 @@ Item {
         command: ["true"]
         onExited: shellProgressFile.reload()
     }
+
+    property bool securityVisible: false
+    onSecurityVisibleChanged: popupOpened("securityVisible")
+    property real securityBarX: 0
+    // whole parsed qs-security-status.json, written by qs-security-scan.sh
+    // (systemd timer, every 6h) — { checked, aur_malware:{...}, bumblebee:{...} }
+    property var securityStatus: ({})
+    property bool securityScanning: false
+    property int securityCheckTick: 0
 
     // ── Theme Updater state (fed by ArchUpdaterPanel's FileView over
     //    ~/.cache/qs-theme-updates.json; the panel owns the check Process so it
