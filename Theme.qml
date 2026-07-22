@@ -612,6 +612,54 @@ Item {
     property var    aiOcModels: []
     property int    aiClockTick: 0
 
+    // ── Ollama (local models — no quota/subscription, so a plain list rather
+    //    than the aiCl/aiCx/aiOc %-usage shape) ──
+    property var ollamaInstalled: []   // [{name, size, modified}]
+    property var ollamaActive: []      // [{name, size, until}]
+
+    // ── Ollama runtime config (per-request settings, not daemon-wide — see
+    //    ollama.service env vars for that) — persisted so pill choices survive
+    //    a bar restart. Shared here (not in ClaudeWidget.qml) because both the
+    //    per-monitor bar pill and the single-instance AiUsagePanel read it. ──
+    property var ollamaConfig: ({ keepAlive: "5m", numCtx: "auto", pollSec: 2, host: "http://localhost:11434" })
+    property bool ollamaConfigLoaded: false
+    property string ollamaConfigLastSaved: ""
+
+    readonly property string ollamaConfigPath: Quickshell.env("HOME") + "/.cache/qs-ollama-config.json"
+    FileView {
+        id: ollamaConfigFile
+        path: theme.ollamaConfigPath
+        onLoaded: {
+            try {
+                var j = JSON.parse(ollamaConfigFile.text())
+                theme.ollamaConfig = {
+                    keepAlive: j.keepAlive || "5m",
+                    numCtx: j.numCtx || "auto",
+                    pollSec: [1, 2, 5].includes(j.pollSec) ? j.pollSec : 2,
+                    host: /^https?:\/\/.+/.test(j.host || "") ? j.host : "http://localhost:11434"
+                }
+                theme.ollamaConfigLastSaved = ollamaConfigFile.text()
+            } catch (e) { /* keep defaults */ }
+            theme.ollamaConfigLoaded = true
+        }
+        onLoadFailed: { theme.ollamaConfigLoaded = true }
+    }
+    Component.onCompleted: ollamaConfigFile.reload()
+
+    function saveOllamaConfig() {
+        if (!ollamaConfigLoaded) return
+        var state = JSON.stringify(ollamaConfig)
+        if (state === ollamaConfigLastSaved) return
+        ollamaConfigLastSaved = state
+        ollamaConfigFile.setText(state)
+    }
+    function setOllamaConfig(key, value) {
+        var next = Object.assign({}, ollamaConfig)
+        next[key] = value
+        ollamaConfig = next
+        saveOllamaConfig()
+    }
+
     // F15: clamp an external 0..1 utilization to a 0–100 int (a negative/over-range value would
     // otherwise produce wrong text and negative/overwide usage bars)
     function aiPct(v) { return Math.max(0, Math.min(100, Math.round((parseFloat(v) || 0) * 100))) }
@@ -2344,6 +2392,7 @@ Item {
             paletteReader.running = false;
             paletteReader.running = true;
         }
+        function debugOllama(): void { aiTool = "ollama"; aiUsageVisible = true }
     }
 
     // entry point for keybinds: `qs -c bar ipc call picker theme|wallpaper|...`
