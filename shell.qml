@@ -1,10 +1,13 @@
-//@ pragma UseQApplication
 //
 // V1 bar lifecycle fix: bind one bar to each real Wayland output, skip
 // transient nameless/0x0 placeholder screens, and recreate a BarSlot when that
 // output disappears and returns. If a screen remains valid but the layer window
 // loses resources or closes, recreate only that window instead of reloading the
 // complete Quickshell configuration.
+//
+// Loaded as an Omarchy "bar"-kind plugin entry point (via Loader inside
+// omarchy-shell's own shell.qml), not as a standalone qs process root, so
+// this is a plain Item rather than ShellRoot.
 
 import Quickshell
 import Quickshell.Io
@@ -12,8 +15,16 @@ import Quickshell.Wayland
 import QtQuick
 import "panels"
 
-ShellRoot {
+Item {
     id: root
+
+    // Duck-type injected by omarchy-shell's configureBar(); unused by this
+    // fixed-layout port but declared so the host can wire them without error.
+    property string omarchyPath: ""
+    property var shell: null
+    property var manifest: null
+    property var barWidgetRegistry: null
+    property var barConfig: null
 
     Theme { id: theme }
 
