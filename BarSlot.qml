@@ -268,6 +268,12 @@ PanelWindow {
                 x: Math.round((parent.width - width) / 2)
                 spacing: 4
                 ArchUpdaterWidget  { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
+                // Plugin widgets targeting this bubble via
+                // `theme-manager bar plugin set <id> bubble status`.
+                PluginWidgetRow {
+                    anchors.verticalCenter: parent.verticalCenter
+                    ids: barSlot.pluginPlacements.bubbles.status
+                }
                 Row {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 2
@@ -441,6 +447,12 @@ PanelWindow {
                         }
                     }
                 }
+                // Plugin widgets targeting this bubble via
+                // `theme-manager bar plugin set <id> bubble center`.
+                PluginWidgetRow {
+                    anchors.verticalCenter: parent.verticalCenter
+                    ids: barSlot.pluginPlacements.bubbles.center
+                }
             }
         }
     }
@@ -469,6 +481,12 @@ PanelWindow {
                 IdleInhibitorWidget { root: barSlot.root; anchors.verticalCenter: parent.verticalCenter }
                 MediaBrowserWidget  { root: barSlot.root; screen: barSlot.screen; anchors.verticalCenter: parent.verticalCenter }
                 ThemeDisplayWidget  { root: barSlot.root; screen: barSlot.screen; anchors.verticalCenter: parent.verticalCenter }
+                // Plugin widgets targeting this bubble via
+                // `theme-manager bar plugin set <id> bubble quick`.
+                PluginWidgetRow {
+                    anchors.verticalCenter: parent.verticalCenter
+                    ids: barSlot.pluginPlacements.bubbles.quick
+                }
             }
         }
     }
@@ -485,6 +503,135 @@ PanelWindow {
         "G9": compMpris, "G10": compQuick, "G11": compNetwork,
         "G12": compBattery, "G13": compBrightness, "G14": compPower, "G15": compBluetooth
     })
+
+    // Minimal stand-in for Omarchy's real Bar instance, satisfying the
+    // BarWidget base contract (bar.vertical/barSize) plus whatever the
+    // widget's own popups need (PopupCard reads bar.position and the
+    // requestPopout/activePopout/releasePopout single-open coordinator).
+    // Rise's bar is always a horizontal top bar, so these are fixed.
+    readonly property QtObject pluginBarContext: QtObject {
+        readonly property string position: "top"
+        readonly property bool vertical: false
+        readonly property int barSize: 32
+        readonly property string fontFamily: barSlot.root.mono
+        readonly property color barForeground: barSlot.root.fg
+        readonly property color urgent: barSlot.root.accent
+        property var activePopout: null
+        function requestPopout(key) { activePopout = key }
+        function releasePopout(key) { if (activePopout === key) activePopout = null }
+        // WidgetButton (base of BarIconButton) calls bar.showTooltip(item, text)
+        // and bar.hideTooltip(item) unconditionally once `bar` is non-null —
+        // including from triggerPress(), right before it emits `pressed`. Left
+        // unimplemented, that call throws and silently aborts triggerPress
+        // before `pressed` fires, which is why clicks did nothing. Adapts to
+        // Rise's own Theme.showTooltip(text, x, topY, bottomY, owner), using
+        // the same screen-mapping TooltipMixin.qml uses for native widgets.
+        function showTooltip(item, text) {
+            if (!item || !text) return
+            var top = item.mapToItem(null, item.width / 2, 0)
+            var bottom = item.mapToItem(null, item.width / 2, item.height)
+            barSlot.root.showTooltip(text, top.x, top.y, bottom.y, item)
+        }
+        function hideTooltip(item) { barSlot.root.hideTooltip(item) }
+    }
+
+    // Third-party bar-widget plugins the user has added to the layout
+    // (`theme-manager bar plugin add <id>`), excluding Omarchy's own
+    // first-party "omarchy.*" widgets which Rise already implements natively.
+    // Grouped by which section (left/center/right) their layout entry is in,
+    // or into a named bubble ("status"/"center"/"quick") when the entry's
+    // `bubble` setting names one of Rise's existing composite pills — e.g.
+    // `theme-manager bar plugin set local.security-scan bubble status`.
+    // Section lists preserve relative order among plugin widgets, but always
+    // append after Rise's native G-slots in that section (no interleaving
+    // with specific native widgets via --before/--after).
+    readonly property var pluginPlacements: {
+        var empty = { left: [], center: [], right: [], bubbles: { status: [], center: [], quick: [] } }
+        var wr = barSlot.root.barWidgetRegistry
+        var cfg = barSlot.root.barConfig
+        if (!wr || !cfg || !cfg.layout) return empty
+        void(wr.revision)
+        var layout = cfg.layout
+        var result = { left: [], center: [], right: [], bubbles: { status: [], center: [], quick: [] } }
+        var seen = ({})
+        var sectionNames = ["left", "center", "right"]
+        for (var s = 0; s < sectionNames.length; s++) {
+            var section = sectionNames[s]
+            var entries = layout[section] || []
+            for (var i = 0; i < entries.length; i++) {
+                var entry = entries[i]
+                var id = entry && entry.id
+                if (!id || id.indexOf("omarchy.") === 0) continue
+                if (seen[id]) continue
+                if (!wr.has(id)) continue
+                seen[id] = true
+                var bubble = entry.bubble ? String(entry.bubble) : ""
+                if (result.bubbles[bubble]) result.bubbles[bubble].push(id)
+                else result[section].push(id)
+            }
+        }
+        return result
+    }
+
+    // All settings on a plugin's layout entry (everything but `id`), passed
+    // through to the widget's `.settings` property, same as the built-in bar.
+    function pluginSettingsFor(id) {
+        var cfg = barSlot.root.barConfig
+        if (!cfg || !cfg.layout) return ({})
+        var sections = [].concat(cfg.layout.left || [], cfg.layout.center || [], cfg.layout.right || [])
+        for (var i = 0; i < sections.length; i++) {
+            if (sections[i] && sections[i].id === id) {
+                var out = ({})
+                for (var k in sections[i]) if (k !== "id") out[k] = sections[i][k]
+                return out
+            }
+        }
+        return ({})
+    }
+
+    // Resolves a slot's component: Rise's fixed G-slots first, then any
+    // dynamically installed bar-widget plugin by its manifest id.
+    function componentFor(gid) {
+        if (barSlot.registry[gid]) return barSlot.registry[gid]
+        var wr = barSlot.root.barWidgetRegistry
+        return (wr && wr.has(gid)) ? wr.widgets[gid].component : null
+    }
+
+    // Injects the BarWidget-contract props (bar/moduleName/settings) into a
+    // dynamically loaded plugin widget; no-ops for Rise's own native widgets
+    // since those take `root` instead and don't declare these properties.
+    function injectPluginProps(item, gid) {
+        if (!item) return
+        if ("bar" in item) item.bar = barSlot.pluginBarContext
+        if ("moduleName" in item) item.moduleName = gid
+        if ("settings" in item) item.settings = barSlot.pluginSettingsFor(gid)
+        // Omarchy's own Bar.qml sizes a loaded widget via a Loader with
+        // anchors.fill: parent, which resizes the item to its own
+        // implicitWidth/Height. Rise's Loaders don't anchor-fill, so a
+        // plugin whose internal layout (e.g. anchors.fill: parent on its
+        // button) depends on being sized from outside would otherwise stay
+        // at width/height 0 — invisible hit area even though content can
+        // still paint past its bounds. Bind width/height here to match.
+        if ("width" in item) item.width = Qt.binding(function () { return item.implicitWidth })
+        if ("height" in item) item.height = Qt.binding(function () { return item.implicitHeight })
+    }
+
+    // Reusable row for nesting plugin widgets inside one of Rise's existing
+    // composite pills (status/center/quick) rather than a standalone slot.
+    component PluginWidgetRow: Row {
+        property var ids: []
+        spacing: 4
+        Repeater {
+            model: ids
+            delegate: Loader {
+                id: bubbleLoader
+                required property string modelData
+                anchors.verticalCenter: parent.verticalCenter
+                sourceComponent: barSlot.componentFor(modelData)
+                onLoaded: barSlot.injectPluginProps(item, modelData)
+            }
+        }
+    }
 
     // ───────────────────── reusable region row of slots ─────────────────────
     component SlotRow: Row {
@@ -547,7 +694,8 @@ PanelWindow {
                     id: ldr
                     x: slot.pad
                     anchors.verticalCenter: parent.verticalCenter
-                    sourceComponent: barSlot.registry[slot.gid]
+                    sourceComponent: barSlot.componentFor(slot.gid)
+                    onLoaded: barSlot.injectPluginProps(item, slot.gid)
                     // dim the original while its ghost is being dragged
                     opacity: (barSlot.dragItem === ldr && barSlot.dragActive) ? 0.25 : 1.0
                 }
@@ -878,6 +1026,24 @@ PanelWindow {
             ListElement { gid: "G15" }
         }
 
+        // Appends/removes standalone (non-bubble) plugin widgets at the end
+        // of their target section, keeping Rise's own G-slots untouched.
+        function syncPluginSection(model, ids) {
+            for (var i = model.count - 1; i >= 0; i--) {
+                if (!/^G\d+$/.test(model.get(i).gid)) model.remove(i)
+            }
+            for (var j = 0; j < ids.length; j++) model.append({ gid: ids[j] })
+        }
+        function syncPluginSections() {
+            island.syncPluginSection(leftModel, barSlot.pluginPlacements.left)
+            island.syncPluginSection(centerModel, barSlot.pluginPlacements.center)
+            island.syncPluginSection(rightModel, barSlot.pluginPlacements.right)
+        }
+        Connections {
+            target: barSlot
+            function onPluginPlacementsChanged() { island.syncPluginSections() }
+        }
+
         SlotRow {
             id: leftRowItem
             anchors { left: parent.left; leftMargin: island.rowMargin; verticalCenter: parent.verticalCenter }
@@ -946,7 +1112,10 @@ PanelWindow {
             }
         }
         onPanelAnchorsChanged: barSlot.root.publishBarAnchors(panelScreenName, panelAnchors)
-        Component.onCompleted: barSlot.root.publishBarAnchors(panelScreenName, panelAnchors)
+        Component.onCompleted: {
+            barSlot.root.publishBarAnchors(panelScreenName, panelAnchors)
+            island.syncPluginSections()
+        }
 
         // ── boundary split markers (left↔center, center↔right) ──
         // positioned via real Row geometries (no mapToItem → robust).

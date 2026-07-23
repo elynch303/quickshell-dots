@@ -18,15 +18,16 @@ import "panels"
 Item {
     id: root
 
-    // Duck-type injected by omarchy-shell's configureBar(); unused by this
-    // fixed-layout port but declared so the host can wire them without error.
+    // Duck-type injected by omarchy-shell's configureBar(). barWidgetRegistry
+    // and barConfig are forwarded to Theme so BarSlot can render third-party
+    // bar-widget plugins the user installs via `theme-manager bar plugin add`.
     property string omarchyPath: ""
     property var shell: null
     property var manifest: null
     property var barWidgetRegistry: null
     property var barConfig: null
 
-    Theme { id: theme }
+    Theme { id: theme; barWidgetRegistry: root.barWidgetRegistry; barConfig: root.barConfig }
 
     // IPC handlers must live outside the per-monitor BarSlot delegate. Otherwise
     // multi-monitor setups register the same target once per bar.
